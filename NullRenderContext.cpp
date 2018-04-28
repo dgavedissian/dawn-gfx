@@ -3,9 +3,16 @@
  * Written by David Avedissian (c) 2012-2018 (git@dga.me.uk)
  */
 #include "Common.h"
+<<<<<<< HEAD
 #include "renderer/api/NullRenderContext.h"
 
 namespace dw {
+=======
+#include "renderer/rhi/NullRenderContext.h"
+
+namespace dw {
+namespace rhi {
+>>>>>>> 4aa9e315... Cleaned up renderer module. Renamed Dawn -> DwCore.
 NullRenderContext::NullRenderContext(Context* ctx) : RenderContext(ctx) {
 }
 
@@ -49,5 +56,9 @@ void NullRenderContext::processCommandList(Vector<RenderCommand>&) {
 bool NullRenderContext::frame(const Frame*) {
     return true;
 }
+<<<<<<< HEAD
 
+=======
+}  // namespace rhi
+>>>>>>> 4aa9e315... Cleaned up renderer module. Renamed Dawn -> DwCore.
 }  // namespace dw
