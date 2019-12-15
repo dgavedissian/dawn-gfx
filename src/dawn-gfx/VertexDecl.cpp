@@ -1,12 +1,13 @@
 /*
- * Dawn Engine
- * Written by David Avedissian (c) 2012-2019 (git@dga.me.uk)
+ * Dawn Graphics
+ * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
 #include "Base.h"
 #include "VertexDecl.h"
+#include "dawn-gfx/detail/BaseTypes.h"
+#include <cassert>
 
 namespace dw {
-namespace rhi {
 VertexDecl::VertexDecl() : stride_{0} {
 }
 
@@ -14,11 +15,11 @@ VertexDecl& VertexDecl::begin() {
     return *this;
 }
 
-VertexDecl& VertexDecl::add(VertexDecl::Attribute attribute, uint count,
+VertexDecl& VertexDecl::add(VertexDecl::Attribute attribute, usize count,
                             VertexDecl::AttributeType type, bool normalised) {
     attributes_.emplace_back(
-        makePair(encodeAttributes(attribute, count, type, normalised),
-                 reinterpret_cast<byte*>(static_cast<std::uintptr_t>(stride_))));
+        std::make_pair(encodeAttributes(attribute, count, type, normalised),
+                       reinterpret_cast<std::byte*>(static_cast<std::uintptr_t>(stride_))));
     stride_ += static_cast<u16>(count) * attributeTypeSize(type);
     return *this;
 }
@@ -35,7 +36,7 @@ bool VertexDecl::empty() const {
     return stride_ == 0;
 }
 
-u16 VertexDecl::encodeAttributes(VertexDecl::Attribute attribute, uint count,
+u16 VertexDecl::encodeAttributes(VertexDecl::Attribute attribute, usize count,
                                  VertexDecl::AttributeType type, bool normalised) {
     // Attribute: 7
     // Count: 3
@@ -46,14 +47,14 @@ u16 VertexDecl::encodeAttributes(VertexDecl::Attribute attribute, uint count,
                             ((static_cast<u16>(type) & 0x1F) << 1) | (normalised ? 1 : 0));
 }
 
-void VertexDecl::decodeAttributes(u16 encoded_attribute, Attribute& attribute, uint& count,
+void VertexDecl::decodeAttributes(u16 encoded_attribute, Attribute& attribute, usize& count,
                                   AttributeType& type, bool& normalised) {
     // Attribute: 7
     // Count: 3
     // AttributeType: 5
     // Normalised: 1
     attribute = static_cast<Attribute>(encoded_attribute >> 9);
-    count = static_cast<uint>((encoded_attribute >> 6) & 0x7);
+    count = static_cast<usize>((encoded_attribute >> 6) & 0x7);
     type = static_cast<AttributeType>((encoded_attribute >> 1) & 0x1F);
     normalised = (encoded_attribute & 0x1) == 1;
 }
@@ -69,5 +70,4 @@ u16 VertexDecl::attributeTypeSize(AttributeType type) {
             return 0;
     }
 }
-}  // namespace rhi
 }  // namespace dw

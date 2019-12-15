@@ -1,16 +1,15 @@
 /*
- * Dawn Engine
- * Written by David Avedissian (c) 2012-2019 (git@dga.me.uk)
+ * Dawn Graphics
+ * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
 #include "Base.h"
 #include "RHIRenderer.h"
-#include "renderer/rhi/GLRenderContext.h"
-#include "renderer/rhi/NullRenderContext.h"
-#include "renderer/GLSL.h"
+#include "gl/GLRenderContext.h"
+#include "null/NullRenderContext.h"
+//#include "renderer/GLSL.h"
 
 namespace dw {
-namespace rhi {
-RenderContext::RenderContext(Context* context) : Object{context} {
+RenderContext::RenderContext() {
 }
 
 RenderItem::RenderItem() {
@@ -61,9 +60,9 @@ void View::clear() {
 
 Frame::Frame() {
     current_item.clear();
-    transient_vb_storage.data.reset(new byte[DW_MAX_TRANSIENT_VERTEX_BUFFER_SIZE]);
+    transient_vb_storage.data.reset(new std::byte[DW_MAX_TRANSIENT_VERTEX_BUFFER_SIZE]);
     transient_vb_storage.size = 0;
-    transient_ib_storage.data.reset(new byte[DW_MAX_TRANSIENT_INDEX_BUFFER_SIZE]);
+    transient_ib_storage.data.reset(new std::byte[DW_MAX_TRANSIENT_INDEX_BUFFER_SIZE]);
     transient_ib_storage.size = 0;
     next_transient_vertex_buffer_handle_ = TransientVertexBufferHandle{0};
     next_transient_index_buffer_handle_ = TransientIndexBufferHandle{0};
@@ -82,8 +81,8 @@ View& Frame::view(uint view_index) {
     return views[view_index];
 }
 
-RHIRenderer::RHIRenderer(Context* context)
-    : Module(context),
+RHIRenderer::RHIRenderer(Logger& logger)
+    : logger_(logger),
       use_render_thread_(false),
       is_first_frame_(true),
       shared_rt_should_exit_(false),
@@ -109,8 +108,9 @@ RHIRenderer::~RHIRenderer() {
     }
 }
 
-void RHIRenderer::init(RendererType type, u16 width, u16 height, const String& title,
-                    bool use_render_thread) {
+tl::expected<void, std::string> RHIRenderer::init(RendererType type, u16 width, u16 height,
+                                                  const std::string& title,
+                                                  bool use_render_thread) {
     if (type == RendererType::Null) {
         use_render_thread = false;
     }
@@ -124,45 +124,51 @@ void RHIRenderer::init(RendererType type, u16 width, u16 height, const String& t
     // Initialise transient vb/ib.
     transient_vb_max_size = DW_MAX_TRANSIENT_VERTEX_BUFFER_SIZE;
     transient_vb =
-        createVertexBuffer(nullptr, transient_vb_max_size, VertexDecl{}, BufferUsage::Stream);
+        createVertexBuffer(Memory(transient_vb_max_size), VertexDecl{}, BufferUsage::Stream);
     transient_ib_max_size = DW_MAX_TRANSIENT_INDEX_BUFFER_SIZE;
-    transient_ib = createIndexBuffer(nullptr, transient_ib_max_size, IndexBufferType::U16,
-                                     BufferUsage::Stream);
+    transient_ib =
+        createIndexBuffer(Memory(transient_vb_max_size), IndexBufferType::U16, BufferUsage::Stream);
     frames_[0].transient_vb_storage.handle = frames_[1].transient_vb_storage.handle = transient_vb;
     frames_[0].transient_ib_storage.handle = frames_[1].transient_ib_storage.handle = transient_ib;
 
     // Kick off rendering thread.
     switch (type) {
         case RendererType::Null:
-            log().info("Using Null renderer.");
-            shared_render_context_ = makeUnique<NullRenderContext>(context());
+            logger_.info("Using Null renderer.");
+            shared_render_context_ = std::make_unique<NullRenderContext>();
             break;
         case RendererType::OpenGL:
-            log().info("Using OpenGL renderer.");
-            shared_render_context_ = makeUnique<GLRenderContext>(context());
+            logger_.info("Using OpenGL renderer.");
+            shared_render_context_ = std::make_unique<GLRenderContext>(logger_);
             break;
         case RendererType::D3D12:
-            log().error("D3D12 renderer unimplemented. Falling back to OpenGL.");
-            shared_render_context_ = makeUnique<GLRenderContext>(context());
+            logger_.error("D3D12 renderer unimplemented. Falling back to OpenGL.");
+            shared_render_context_ = std::make_unique<GLRenderContext>(logger_);
             break;
         case RendererType::Vulkan:
-            log().error("Vulkan renderer unimplemented. Falling back to OpenGL.");
-            shared_render_context_ = makeUnique<GLRenderContext>(context());
+            logger_.error("Vulkan renderer unimplemented. Falling back to OpenGL.");
+            shared_render_context_ = std::make_unique<GLRenderContext>(logger_);
             break;
     }
-    shared_render_context_->createWindow(width_, height_, window_title_);
+    auto window_result = shared_render_context_->createWindow(width_, height_, window_title_);
+    if (!window_result) {
+        return window_result;
+    }
+
     if (use_render_thread) {
-        render_thread_ = Thread{[this]() { renderThread(); }};
+        render_thread_ = std::thread{[this]() { renderThread(); }};
     } else {
         shared_render_context_->startRendering();
     }
+    return {};
 }
 
-VertexBufferHandle RHIRenderer::createVertexBuffer(const void* data, uint size, const VertexDecl& decl,
-                                                BufferUsage usage) {
+VertexBufferHandle RHIRenderer::createVertexBuffer(Memory data, const VertexDecl& decl,
+                                                   BufferUsage usage) {
     // TODO: Validate data.
     auto handle = vertex_buffer_handle_.next();
-    submitPreFrameCommand(cmd::CreateVertexBuffer{handle, Memory{data, size}, size, decl, usage});
+    uint data_size = data.size();
+    submitPreFrameCommand(cmd::CreateVertexBuffer{handle, std::move(data), data_size, decl, usage});
     vertex_buffer_decl_[handle] = decl;
     return handle;
 }
@@ -173,15 +179,15 @@ void RHIRenderer::setVertexBuffer(VertexBufferHandle handle) {
     submit_->current_item.vertex_decl_override = VertexDecl{};
 }
 
-void RHIRenderer::updateVertexBuffer(VertexBufferHandle handle, const void* data, uint size,
-                                  uint offset) {
+void RHIRenderer::updateVertexBuffer(VertexBufferHandle handle, Memory data, uint offset) {
     // TODO: Validate data.
-    submitPreFrameCommand(cmd::UpdateVertexBuffer{handle, Memory{data, size}, offset});
+    submitPreFrameCommand(cmd::UpdateVertexBuffer{handle, std::move(data), offset});
 
 #ifdef DW_DEBUG
     if (submit_->updated_vertex_buffers.count(handle) != 0) {
-        log().warn("Warning: Updating vertex buffer %d which has been updated already this frame.",
-                   handle.internal());
+        logger_.warn(
+            "Warning: Updating vertex buffer %d which has been updated already this frame.",
+            handle.internal());
     } else {
         submit_->updated_vertex_buffers.insert(handle);
     }
@@ -192,10 +198,11 @@ void RHIRenderer::deleteVertexBuffer(VertexBufferHandle handle) {
     submitPostFrameCommand(cmd::DeleteVertexBuffer{handle});
 }
 
-IndexBufferHandle RHIRenderer::createIndexBuffer(const void* data, uint size, IndexBufferType type,
-                                              BufferUsage usage) {
+IndexBufferHandle RHIRenderer::createIndexBuffer(Memory data, IndexBufferType type,
+                                                 BufferUsage usage) {
     auto handle = index_buffer_handle_.next();
-    submitPreFrameCommand(cmd::CreateIndexBuffer{handle, Memory{data, size}, size, type, usage});
+    uint data_size = data.size();
+    submitPreFrameCommand(cmd::CreateIndexBuffer{handle, std::move(data), data_size, type, usage});
     index_buffer_types_[handle] = type;
     return handle;
 }
@@ -205,15 +212,14 @@ void RHIRenderer::setIndexBuffer(IndexBufferHandle handle) {
     submit_->current_item.ib_offset = 0;
 }
 
-void RHIRenderer::updateIndexBuffer(IndexBufferHandle handle, const void* data, uint size,
-                                 uint offset) {
+void RHIRenderer::updateIndexBuffer(IndexBufferHandle handle, Memory data, uint offset) {
     // TODO: Validate data.
-    submitPreFrameCommand(cmd::UpdateIndexBuffer{handle, Memory{data, size}, offset});
+    submitPreFrameCommand(cmd::UpdateIndexBuffer{handle, std::move(data), offset});
 
 #ifdef DW_DEBUG
     if (submit_->updated_index_buffers.count(handle) != 0) {
-        log().warn("Warning: Updating index buffer %d which has been updated already this frame.",
-                   handle.internal());
+        logger_.warn("Warning: Updating index buffer %d which has been updated already this frame.",
+                     handle.internal());
     } else {
         submit_->updated_index_buffers.insert(handle);
     }
@@ -225,7 +231,7 @@ void RHIRenderer::deleteIndexBuffer(IndexBufferHandle handle) {
 }
 
 TransientVertexBufferHandle RHIRenderer::allocTransientVertexBuffer(uint vertex_count,
-                                                                 const VertexDecl& decl) {
+                                                                    const VertexDecl& decl) {
     // Check that we have enough space.
     uint size = vertex_count * decl.stride();
     if (size > transient_vb_max_size - submit_->transient_vb_storage.size) {
@@ -234,13 +240,13 @@ TransientVertexBufferHandle RHIRenderer::allocTransientVertexBuffer(uint vertex_
 
     // Allocate handle.
     auto handle = submit_->next_transient_vertex_buffer_handle_++;
-    byte* data = submit_->transient_vb_storage.data.get() + submit_->transient_vb_storage.size;
+    std::byte* data = submit_->transient_vb_storage.data.get() + submit_->transient_vb_storage.size;
     submit_->transient_vb_storage.size += size;
     submit_->transient_vertex_buffers_[handle] = {data, size, decl};
     return handle;
 }
 
-byte* RHIRenderer::getTransientVertexBufferData(TransientVertexBufferHandle handle) {
+std::byte* RHIRenderer::getTransientVertexBufferData(TransientVertexBufferHandle handle) {
     auto it = submit_->transient_vertex_buffers_.find(handle);
     if (it != submit_->transient_vertex_buffers_.end()) {
         return it->second.data;
@@ -264,13 +270,13 @@ TransientIndexBufferHandle RHIRenderer::allocTransientIndexBuffer(uint index_cou
 
     // Allocate handle.
     auto handle = submit_->next_transient_index_buffer_handle_++;
-    byte* data = submit_->transient_ib_storage.data.get() + submit_->transient_ib_storage.size;
+    std::byte* data = submit_->transient_ib_storage.data.get() + submit_->transient_ib_storage.size;
     submit_->transient_ib_storage.size += size;
     submit_->transient_index_buffers_[handle] = {data, size};
     return handle;
 }
 
-byte* RHIRenderer::getTransientIndexBufferData(TransientIndexBufferHandle handle) {
+std::byte* RHIRenderer::getTransientIndexBufferData(TransientIndexBufferHandle handle) {
     auto it = submit_->transient_index_buffers_.find(handle);
     if (it != submit_->transient_index_buffers_.end()) {
         return it->second.data;
@@ -284,9 +290,9 @@ void RHIRenderer::setIndexBuffer(TransientIndexBufferHandle handle) {
     submit_->current_item.ib_offset = (uint)(tib.data - submit_->transient_ib_storage.data.get());
 }
 
-ShaderHandle RHIRenderer::createShader(ShaderStage stage, const void* data, u32 size) {
+ShaderHandle RHIRenderer::createShader(ShaderStage stage, Memory data) {
     auto handle = shader_handle_.next();
-    submitPreFrameCommand(cmd::CreateShader{handle, stage, Memory{data, size}});
+    submitPreFrameCommand(cmd::CreateShader{handle, stage, std::move(data)});
     return handle;
 }
 
@@ -312,43 +318,43 @@ void RHIRenderer::deleteProgram(ProgramHandle program) {
     submitPostFrameCommand(cmd::DeleteProgram{program});
 }
 
-void RHIRenderer::setUniform(const String& uniform_name, int value) {
+void RHIRenderer::setUniform(const std::string& uniform_name, int value) {
     setUniform(uniform_name, UniformData{value});
 }
 
-void RHIRenderer::setUniform(const String& uniform_name, float value) {
+void RHIRenderer::setUniform(const std::string& uniform_name, float value) {
     setUniform(uniform_name, UniformData{value});
 }
 
-void RHIRenderer::setUniform(const String& uniform_name, const Vec2& value) {
+void RHIRenderer::setUniform(const std::string& uniform_name, const Vec2& value) {
     setUniform(uniform_name, UniformData{value});
 }
 
-void RHIRenderer::setUniform(const String& uniform_name, const Vec3& value) {
+void RHIRenderer::setUniform(const std::string& uniform_name, const Vec3& value) {
     setUniform(uniform_name, UniformData{value});
 }
 
-void RHIRenderer::setUniform(const String& uniform_name, const Vec4& value) {
+void RHIRenderer::setUniform(const std::string& uniform_name, const Vec4& value) {
     setUniform(uniform_name, UniformData{value});
 }
 
-void RHIRenderer::setUniform(const String& uniform_name, const Mat3& value) {
+void RHIRenderer::setUniform(const std::string& uniform_name, const Mat3& value) {
     setUniform(uniform_name, UniformData{value});
 }
 
-void RHIRenderer::setUniform(const String& uniform_name, const Mat4& value) {
+void RHIRenderer::setUniform(const std::string& uniform_name, const Mat4& value) {
     setUniform(uniform_name, UniformData{value});
 }
 
-void RHIRenderer::setUniform(const String& uniform_name, UniformData data) {
+void RHIRenderer::setUniform(const std::string& uniform_name, UniformData data) {
     submit_->current_item.uniforms[uniform_name] = data;
 }
 
 TextureHandle RHIRenderer::createTexture2D(u16 width, u16 height, TextureFormat format,
-                                        const void* data, u32 size) {
+                                           Memory data) {
     auto handle = texture_handle_.next();
     texture_data_[handle] = {width, height, format};
-    submitPreFrameCommand(cmd::CreateTexture2D{handle, width, height, format, Memory{data, size}});
+    submitPreFrameCommand(cmd::CreateTexture2D{handle, width, height, format, std::move(data)});
     return handle;
 }
 
@@ -364,21 +370,21 @@ void RHIRenderer::deleteTexture(TextureHandle handle) {
 
 FrameBufferHandle RHIRenderer::createFrameBuffer(u16 width, u16 height, TextureFormat format) {
     auto handle = frame_buffer_handle_.next();
-    auto texture_handle = createTexture2D(width, height, format, nullptr, 0);
+    auto texture_handle = createTexture2D(width, height, format, Memory());
     frame_buffer_textures_[handle] = {texture_handle};
     submitPreFrameCommand(cmd::CreateFrameBuffer{handle, width, height, {texture_handle}});
     return handle;
 }
 
-FrameBufferHandle RHIRenderer::createFrameBuffer(Vector<TextureHandle> textures) {
+FrameBufferHandle RHIRenderer::createFrameBuffer(std::vector<TextureHandle> textures) {
     auto handle = frame_buffer_handle_.next();
     u16 width = texture_data_.at(textures[0]).width, height = texture_data_.at(textures[0]).height;
     for (size_t i = 1; i < textures.size(); ++i) {
         auto& data = texture_data_.at(textures[i]);
         if (data.width != width || data.height != height) {
             // TODO: error.
-            log().error("Frame buffer mismatch at index %d: Expected: %d x %d, Actual: %d x %d", i,
-                        width, height, data.width, data.height);
+            logger_.error("Frame buffer mismatch at index %d: Expected: %d x %d, Actual: %d x %d",
+                          i, width, height, data.width, data.height);
         }
     }
     frame_buffer_textures_[handle] = textures;
@@ -445,8 +451,8 @@ void RHIRenderer::setStateBlendEquation(BlendEquation equation, BlendFunc src, B
 }
 
 void RHIRenderer::setStateBlendEquation(BlendEquation equation_rgb, BlendFunc src_rgb,
-                                     BlendFunc dest_rgb, BlendEquation equation_a, BlendFunc src_a,
-                                     BlendFunc dest_a) {
+                                        BlendFunc dest_rgb, BlendEquation equation_a,
+                                        BlendFunc src_a, BlendFunc dest_a) {
     submit_->current_item.blend_equation_rgb = equation_rgb;
     submit_->current_item.blend_src_rgb = src_rgb;
     submit_->current_item.blend_dest_rgb = dest_rgb;
@@ -496,12 +502,12 @@ void RHIRenderer::submit(uint view, ProgramHandle program, uint vertex_count, ui
     item.clear();
 }
 
-void RHIRenderer::frame() {
+bool RHIRenderer::frame() {
     // If we are rendering in multithreaded mode, wait for the render thread.
     if (use_render_thread_) {
         // If the rendering thread is doing nothing, print a warning and give up.
         if (shared_rt_finished_) {
-            log().warn("Rendering thread has finished running.");
+            logger_.warn("Rendering thread has finished running.");
             return false;
         }
 
@@ -511,7 +517,7 @@ void RHIRenderer::frame() {
         // Wait for frame swap, then reset swapped_frames_. This has no race here, because the
         // render thread will not modify "swapped_frames_" again until after this thread hits the
         // barrier.
-        UniqueLock<Mutex> lock{swap_mutex_};
+        std::unique_lock<std::mutex> lock{swap_mutex_};
         swap_cv_.wait(lock, [this] { return swapped_frames_; });
         swapped_frames_ = false;
     } else {
@@ -519,7 +525,7 @@ void RHIRenderer::frame() {
             is_first_frame_ = false;
         }
         if (!renderFrame(submit_)) {
-            log().warn("Rendering failed.");
+            logger_.warn("Rendering failed.");
             return false;
         }
     }
@@ -527,7 +533,7 @@ void RHIRenderer::frame() {
     // Update window events.
     shared_render_context_->processEvents();
     if (shared_render_context_->isWindowClosed()) {
-        log().info("Window closed.");
+        logger_.info("Window closed.");
         return false;
     }
 
@@ -547,11 +553,11 @@ Vec2i RHIRenderer::backbufferSize() const {
     return shared_render_context_->backbufferSize();
 }
 
-void RHIRenderer::submitPreFrameCommand(RenderCommand&& command) {
+void RHIRenderer::submitPreFrameCommand(RenderCommand command) {
     submit_->commands_pre.emplace_back(std::move(command));
 }
 
-void RHIRenderer::submitPostFrameCommand(RenderCommand&& command) {
+void RHIRenderer::submitPostFrameCommand(RenderCommand command) {
     submit_->commands_post.emplace_back(std::move(command));
 }
 
@@ -625,8 +631,7 @@ uint RHIRenderer::backbufferView() const {
             return view_index;
         }
     }
-    log().error("No views are bound to the backbuffer.");
+    logger_.error("No views are bound to the backbuffer.");
     return static_cast<uint>(-1);
 }
-}  // namespace rhi
 }  // namespace dw

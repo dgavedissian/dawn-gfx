@@ -2,25 +2,17 @@
  * Dawn Engine
  * Written by David Avedissian (c) 2012-2018 (git@dga.me.uk)
  */
-#include "Common.h"
-<<<<<<< HEAD
-#include "renderer/api/NullRenderContext.h"
+#include "null/NullRenderContext.h"
 
 namespace dw {
-=======
-#include "renderer/rhi/NullRenderContext.h"
-
-namespace dw {
-namespace rhi {
->>>>>>> 4aa9e315... Cleaned up renderer module. Renamed Dawn -> DwCore.
-NullRenderContext::NullRenderContext(Context* ctx) : RenderContext(ctx) {
+NullRenderContext::NullRenderContext() {
 }
 
 NullRenderContext::~NullRenderContext() {
 }
 
-Result<void> NullRenderContext::createWindow(u16, u16, const String&) {
-    return Result<void>();
+tl::expected<void, std::string> NullRenderContext::createWindow(u16, u16, const std::string&) {
+    return {};
 }
 
 void NullRenderContext::destroyWindow() {
@@ -51,15 +43,10 @@ void NullRenderContext::startRendering() {
 void NullRenderContext::stopRendering() {
 }
 
-void NullRenderContext::processCommandList(Vector<RenderCommand>&) {
+void NullRenderContext::processCommandList(std::vector<RenderCommand>&) {
 }
 
 bool NullRenderContext::frame(const Frame*) {
     return true;
 }
-<<<<<<< HEAD
-
-=======
-}  // namespace rhi
->>>>>>> 4aa9e315... Cleaned up renderer module. Renamed Dawn -> DwCore.
 }  // namespace dw

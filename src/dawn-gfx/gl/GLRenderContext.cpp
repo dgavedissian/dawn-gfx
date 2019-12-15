@@ -1,43 +1,44 @@
 /*
- * Dawn Engine
- * Written by David Avedissian (c) 2012-2019 (git@dga.me.uk)
+ * Dawn Graphics
+ * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
 #include "Base.h"
-#include "core/StringUtils.h"
 #include "SPIRV.h"
-#include "renderer/rhi/GLRenderContext.h"
-#include "input/Input.h"
+#include "gl/GLRenderContext.h"
+#include "Input.h"
 
+#include <str_algorithms/str_algorithms.h>
+#include <fmt/format.h>
 #include <locale>
 #include <codecvt>
+#include <exception>
 
 /**
- * GLRenderContext. A render context implementation which targets GL 3.3 on desktop platforms, GLES 3.0 on mobile
- * platforms (Apple A7 and above (iPhone 5s and above), Android 4.3 and above), and WebGL 2 on HTML5.
+ * GLRenderContext. A render context implementation which targets GL 3.3 on desktop platforms,
+ * GLES 3.0 on mobile platforms (Apple A7 and above (iPhone 5s and above), Android 4.3 and above),
+ * and WebGL 2 on HTML5.
  */
 
 #define DW_GL_330 1
 #define DW_GLES_300 2
 
-#ifndef DW_EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
 #define DW_GL_VERSION DW_GL_330
 #else
 #define DW_GL_VERSION DW_GLES_300
 #endif
 
 #define GL_CHECK() __CHECK(__FILE__, __LINE__)
-#define __CHECK(FILE, LINE)                                                        \
-    {                                                                              \
-        GLuint err = glGetError();                                                 \
-        if (err != 0) {                                                            \
-            log().error("glGetError() returned 0x%.4X at %s:%s", err, FILE, LINE); \
-            assert(false);                                                         \
-            abort();                                                               \
-        }                                                                          \
+#define __CHECK(FILE, LINE)                                                             \
+    {                                                                                   \
+        GLuint err = glGetError();                                                      \
+        if (err != 0) {                                                                 \
+            throw std::runtime_error(                                                   \
+                fmt::format("glGetError() returned 0x%.4X at %s:%s", err, FILE, LINE)); \
+        }                                                                               \
     }
 
 namespace dw {
-namespace rhi {
 namespace {
 // Buffer usage.
 GLenum mapBufferUsage(BufferUsage usage) {
@@ -65,213 +66,210 @@ struct TextureFormatInfo {
 
 // clang-format off
 TextureFormatInfo s_texture_format[] = {
-        {GL_ALPHA,              GL_ZERO,         GL_ALPHA,            GL_UNSIGNED_BYTE,                false}, // A8
-        {GL_R8,                 GL_ZERO,         GL_RED,              GL_UNSIGNED_BYTE,                false}, // R8
-        {GL_R8I,                GL_ZERO,         GL_RED,              GL_BYTE,                         false}, // R8I
-        {GL_R8UI,               GL_ZERO,         GL_RED,              GL_UNSIGNED_BYTE,                false}, // R8U
-        {GL_R8_SNORM,           GL_ZERO,         GL_RED,              GL_BYTE,                         false}, // R8S
-        {GL_R16,                GL_ZERO,         GL_RED,              GL_UNSIGNED_SHORT,               false}, // R16
-        {GL_R16I,               GL_ZERO,         GL_RED,              GL_SHORT,                        false}, // R16I
-        {GL_R16UI,              GL_ZERO,         GL_RED,              GL_UNSIGNED_SHORT,               false}, // R16U
-        {GL_R16F,               GL_ZERO,         GL_RED,              GL_HALF_FLOAT,                   false}, // R16F
-        {GL_R16_SNORM,          GL_ZERO,         GL_RED,              GL_SHORT,                        false}, // R16S
-        {GL_R32I,               GL_ZERO,         GL_RED,              GL_INT,                          false}, // R32I
-        {GL_R32UI,              GL_ZERO,         GL_RED,              GL_UNSIGNED_INT,                 false}, // R32U
-        {GL_R32F,               GL_ZERO,         GL_RED,              GL_FLOAT,                        false}, // R32F
-        {GL_RG8,                GL_ZERO,         GL_RG,               GL_UNSIGNED_BYTE,                false}, // RG8
-        {GL_RG8I,               GL_ZERO,         GL_RG,               GL_BYTE,                         false}, // RG8I
-        {GL_RG8UI,              GL_ZERO,         GL_RG,               GL_UNSIGNED_BYTE,                false}, // RG8U
-        {GL_RG8_SNORM,          GL_ZERO,         GL_RG,               GL_BYTE,                         false}, // RG8S
-        {GL_RG16,               GL_ZERO,         GL_RG,               GL_UNSIGNED_SHORT,               false}, // RG16
-        {GL_RG16I,              GL_ZERO,         GL_RG,               GL_SHORT,                        false}, // RG16I
-        {GL_RG16UI,             GL_ZERO,         GL_RG,               GL_UNSIGNED_SHORT,               false}, // RG16U
-        {GL_RG16F,              GL_ZERO,         GL_RG,               GL_FLOAT,                        false}, // RG16F
-        {GL_RG16_SNORM,         GL_ZERO,         GL_RG,               GL_SHORT,                        false}, // RG16S
-        {GL_RG32I,              GL_ZERO,         GL_RG,               GL_INT,                          false}, // RG32I
-        {GL_RG32UI,             GL_ZERO,         GL_RG,               GL_UNSIGNED_INT,                 false}, // RG32U
-        {GL_RG32F,              GL_ZERO,         GL_RG,               GL_FLOAT,                        false}, // RG32F
-        {GL_RGB8,               GL_SRGB8,        GL_RGB,              GL_UNSIGNED_BYTE,                false}, // RGB8
-        {GL_RGB8I,              GL_ZERO,         GL_RGB,              GL_BYTE,                         false}, // RGB8I
-        {GL_RGB8UI,             GL_ZERO,         GL_RGB,              GL_UNSIGNED_BYTE,                false}, // RGB8U
-        {GL_RGB8_SNORM,         GL_ZERO,         GL_RGB,              GL_BYTE,                         false}, // RGB8S
-        {GL_RGBA8,              GL_SRGB8_ALPHA8, GL_BGRA,             GL_UNSIGNED_BYTE,                false}, // BGRA8
-        {GL_RGBA8,              GL_SRGB8_ALPHA8, GL_RGBA,             GL_UNSIGNED_BYTE,                false}, // RGBA8
-        {GL_RGBA8I,             GL_ZERO,         GL_RGBA,             GL_BYTE,                         false}, // RGBA8I
-        {GL_RGBA8UI,            GL_ZERO,         GL_RGBA,             GL_UNSIGNED_BYTE,                false}, // RGBA8U
-        {GL_RGBA8_SNORM,        GL_ZERO,         GL_RGBA,             GL_BYTE,                         false}, // RGBA8S
-        {GL_RGBA16,             GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT,               false}, // RGBA16
-        {GL_RGBA16I,            GL_ZERO,         GL_RGBA,             GL_SHORT,                        false}, // RGBA16I
-        {GL_RGBA16UI,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT,               false}, // RGBA16U
-        {GL_RGBA16F,            GL_ZERO,         GL_RGBA,             GL_HALF_FLOAT,                   false}, // RGBA16F
-        {GL_RGBA16_SNORM,       GL_ZERO,         GL_RGBA,             GL_SHORT,                        false}, // RGBA16S
-        {GL_RGBA32I,            GL_ZERO,         GL_RGBA,             GL_INT,                          false}, // RGBA32I
-        {GL_RGBA32UI,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_INT,                 false}, // RGBA32U
-        {GL_RGBA32F,            GL_ZERO,         GL_RGBA,             GL_FLOAT,                        false}, // RGBA32F
-        {GL_RGB565,             GL_ZERO,         GL_RGB,              GL_UNSIGNED_SHORT_5_6_5,         false}, // R5G6B5
-        {GL_RGBA4,              GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT_4_4_4_4_REV,   false}, // RGBA4
-        {GL_RGB5_A1,            GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT_1_5_5_5_REV,   false}, // RGB5A1
-        {GL_RGB10_A2,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_INT_2_10_10_10_REV,  false}, // RGB10A2
-        {GL_R11F_G11F_B10F,     GL_ZERO,         GL_RGB,              GL_UNSIGNED_INT_10F_11F_11F_REV, false}, // RG11B10F
-        {GL_DEPTH_COMPONENT16,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_SHORT,               false}, // D16
-        {GL_DEPTH_COMPONENT24,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_INT,                 false}, // D24
-        {GL_DEPTH24_STENCIL8,   GL_ZERO,         GL_DEPTH_STENCIL,    GL_UNSIGNED_INT_24_8,            false}, // D24S8
-        {GL_DEPTH_COMPONENT32,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_INT,                 false}, // D32
-        {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,                        false}, // D16F
-        {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,                        false}, // D24F
-        {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,                        false}, // D32F
-        {GL_STENCIL_INDEX8,     GL_ZERO,         GL_STENCIL_INDEX,    GL_UNSIGNED_BYTE,                false}, // D0S8
-    };
+    {GL_ALPHA,              GL_ZERO,         GL_ALPHA,            GL_UNSIGNED_BYTE,                false}, // A8
+    {GL_R8,                 GL_ZERO,         GL_RED,              GL_UNSIGNED_BYTE,                false}, // R8
+    {GL_R8I,                GL_ZERO,         GL_RED,              GL_BYTE,                         false}, // R8I
+    {GL_R8UI,               GL_ZERO,         GL_RED,              GL_UNSIGNED_BYTE,                false}, // R8U
+    {GL_R8_SNORM,           GL_ZERO,         GL_RED,              GL_BYTE,                         false}, // R8S
+    {GL_R16,                GL_ZERO,         GL_RED,              GL_UNSIGNED_SHORT,               false}, // R16
+    {GL_R16I,               GL_ZERO,         GL_RED,              GL_SHORT,                        false}, // R16I
+    {GL_R16UI,              GL_ZERO,         GL_RED,              GL_UNSIGNED_SHORT,               false}, // R16U
+    {GL_R16F,               GL_ZERO,         GL_RED,              GL_HALF_FLOAT,                   false}, // R16F
+    {GL_R16_SNORM,          GL_ZERO,         GL_RED,              GL_SHORT,                        false}, // R16S
+    {GL_R32I,               GL_ZERO,         GL_RED,              GL_INT,                          false}, // R32I
+    {GL_R32UI,              GL_ZERO,         GL_RED,              GL_UNSIGNED_INT,                 false}, // R32U
+    {GL_R32F,               GL_ZERO,         GL_RED,              GL_FLOAT,                        false}, // R32F
+    {GL_RG8,                GL_ZERO,         GL_RG,               GL_UNSIGNED_BYTE,                false}, // RG8
+    {GL_RG8I,               GL_ZERO,         GL_RG,               GL_BYTE,                         false}, // RG8I
+    {GL_RG8UI,              GL_ZERO,         GL_RG,               GL_UNSIGNED_BYTE,                false}, // RG8U
+    {GL_RG8_SNORM,          GL_ZERO,         GL_RG,               GL_BYTE,                         false}, // RG8S
+    {GL_RG16,               GL_ZERO,         GL_RG,               GL_UNSIGNED_SHORT,               false}, // RG16
+    {GL_RG16I,              GL_ZERO,         GL_RG,               GL_SHORT,                        false}, // RG16I
+    {GL_RG16UI,             GL_ZERO,         GL_RG,               GL_UNSIGNED_SHORT,               false}, // RG16U
+    {GL_RG16F,              GL_ZERO,         GL_RG,               GL_FLOAT,                        false}, // RG16F
+    {GL_RG16_SNORM,         GL_ZERO,         GL_RG,               GL_SHORT,                        false}, // RG16S
+    {GL_RG32I,              GL_ZERO,         GL_RG,               GL_INT,                          false}, // RG32I
+    {GL_RG32UI,             GL_ZERO,         GL_RG,               GL_UNSIGNED_INT,                 false}, // RG32U
+    {GL_RG32F,              GL_ZERO,         GL_RG,               GL_FLOAT,                        false}, // RG32F
+    {GL_RGB8,               GL_SRGB8,        GL_RGB,              GL_UNSIGNED_BYTE,                false}, // RGB8
+    {GL_RGB8I,              GL_ZERO,         GL_RGB,              GL_BYTE,                         false}, // RGB8I
+    {GL_RGB8UI,             GL_ZERO,         GL_RGB,              GL_UNSIGNED_BYTE,                false}, // RGB8U
+    {GL_RGB8_SNORM,         GL_ZERO,         GL_RGB,              GL_BYTE,                         false}, // RGB8S
+    {GL_RGBA8,              GL_SRGB8_ALPHA8, GL_BGRA,             GL_UNSIGNED_BYTE,                false}, // BGRA8
+    {GL_RGBA8,              GL_SRGB8_ALPHA8, GL_RGBA,             GL_UNSIGNED_BYTE,                false}, // RGBA8
+    {GL_RGBA8I,             GL_ZERO,         GL_RGBA,             GL_BYTE,                         false}, // RGBA8I
+    {GL_RGBA8UI,            GL_ZERO,         GL_RGBA,             GL_UNSIGNED_BYTE,                false}, // RGBA8U
+    {GL_RGBA8_SNORM,        GL_ZERO,         GL_RGBA,             GL_BYTE,                         false}, // RGBA8S
+    {GL_RGBA16,             GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT,               false}, // RGBA16
+    {GL_RGBA16I,            GL_ZERO,         GL_RGBA,             GL_SHORT,                        false}, // RGBA16I
+    {GL_RGBA16UI,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT,               false}, // RGBA16U
+    {GL_RGBA16F,            GL_ZERO,         GL_RGBA,             GL_HALF_FLOAT,                   false}, // RGBA16F
+    {GL_RGBA16_SNORM,       GL_ZERO,         GL_RGBA,             GL_SHORT,                        false}, // RGBA16S
+    {GL_RGBA32I,            GL_ZERO,         GL_RGBA,             GL_INT,                          false}, // RGBA32I
+    {GL_RGBA32UI,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_INT,                 false}, // RGBA32U
+    {GL_RGBA32F,            GL_ZERO,         GL_RGBA,             GL_FLOAT,                        false}, // RGBA32F
+    {GL_RGBA4,              GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT_4_4_4_4_REV,   false}, // RGBA4
+    {GL_RGB5_A1,            GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT_1_5_5_5_REV,   false}, // RGB5A1
+    {GL_RGB10_A2,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_INT_2_10_10_10_REV,  false}, // RGB10A2
+    {GL_R11F_G11F_B10F,     GL_ZERO,         GL_RGB,              GL_UNSIGNED_INT_10F_11F_11F_REV, false}, // RG11B10F
+    {GL_DEPTH_COMPONENT16,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_SHORT,               false}, // D16
+    {GL_DEPTH_COMPONENT24,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_INT,                 false}, // D24
+    {GL_DEPTH24_STENCIL8,   GL_ZERO,         GL_DEPTH_STENCIL,    GL_UNSIGNED_INT_24_8,            false}, // D24S8
+    {GL_DEPTH_COMPONENT32,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_INT,                 false}, // D32
+    {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,                        false}, // D16F
+    {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,                        false}, // D24F
+    {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,                        false}, // D32F
+    {GL_STENCIL_INDEX8,     GL_ZERO,         GL_STENCIL_INDEX,    GL_UNSIGNED_BYTE,                false}, // D0S8
+};
 
-HashMap<BlendEquation, GLenum> s_blend_equation_map = {
-        {BlendEquation::Add, GL_FUNC_ADD},
-        {BlendEquation::Subtract, GL_FUNC_SUBTRACT},
-        {BlendEquation::ReverseSubtract, GL_FUNC_REVERSE_SUBTRACT},
-        {BlendEquation::Min, GL_MIN},
-        {BlendEquation::Max, GL_MAX}
-    };
-HashMap<BlendFunc, GLenum> s_blend_func_map = {
-        {BlendFunc::Zero, GL_ZERO},
-        {BlendFunc::One, GL_ONE},
-        {BlendFunc::SrcColor, GL_SRC_COLOR},
-        {BlendFunc::OneMinusSrcColor, GL_ONE_MINUS_SRC_COLOR},
-        {BlendFunc::DstColor, GL_DST_COLOR},
-        {BlendFunc::OneMinusDstColor, GL_ONE_MINUS_DST_COLOR},
-        {BlendFunc::SrcAlpha, GL_SRC_ALPHA},
-        {BlendFunc::OneMinusSrcAlpha, GL_ONE_MINUS_SRC_ALPHA},
-        {BlendFunc::DstAlpha, GL_DST_ALPHA},
-        {BlendFunc::OneMinusDstAlpha, GL_ONE_MINUS_DST_ALPHA},
-        {BlendFunc::ConstantColor, GL_CONSTANT_COLOR},
-        {BlendFunc::OneMinusConstantColor, GL_ONE_MINUS_CONSTANT_COLOR},
-        {BlendFunc::ConstantAlpha, GL_CONSTANT_ALPHA},
-        {BlendFunc::OneMinusConstantAlpha, GL_ONE_MINUS_CONSTANT_ALPHA},
-        {BlendFunc::SrcAlphaSaturate, GL_SRC_ALPHA_SATURATE},
-    };
+std::unordered_map<BlendEquation, GLenum> s_blend_equation_map = {
+    {BlendEquation::Add, GL_FUNC_ADD},
+    {BlendEquation::Subtract, GL_FUNC_SUBTRACT},
+    {BlendEquation::ReverseSubtract, GL_FUNC_REVERSE_SUBTRACT},
+    {BlendEquation::Min, GL_MIN},
+    {BlendEquation::Max, GL_MAX}
+};
+std::unordered_map<BlendFunc, GLenum> s_blend_func_map = {
+    {BlendFunc::Zero, GL_ZERO},
+    {BlendFunc::One, GL_ONE},
+    {BlendFunc::SrcColor, GL_SRC_COLOR},
+    {BlendFunc::OneMinusSrcColor, GL_ONE_MINUS_SRC_COLOR},
+    {BlendFunc::DstColor, GL_DST_COLOR},
+    {BlendFunc::OneMinusDstColor, GL_ONE_MINUS_DST_COLOR},
+    {BlendFunc::SrcAlpha, GL_SRC_ALPHA},
+    {BlendFunc::OneMinusSrcAlpha, GL_ONE_MINUS_SRC_ALPHA},
+    {BlendFunc::DstAlpha, GL_DST_ALPHA},
+    {BlendFunc::OneMinusDstAlpha, GL_ONE_MINUS_DST_ALPHA},
+    {BlendFunc::ConstantColor, GL_CONSTANT_COLOR},
+    {BlendFunc::OneMinusConstantColor, GL_ONE_MINUS_CONSTANT_COLOR},
+    {BlendFunc::ConstantAlpha, GL_CONSTANT_ALPHA},
+    {BlendFunc::OneMinusConstantAlpha, GL_ONE_MINUS_CONSTANT_ALPHA},
+    {BlendFunc::SrcAlphaSaturate, GL_SRC_ALPHA_SATURATE},
+};
 
 // GLFW key map.
-HashMap<int, Key::Enum> s_key_map = {
-        {GLFW_KEY_SPACE, Key::Space},
-        {GLFW_KEY_APOSTROPHE, Key::Apostrophe},
-        {GLFW_KEY_COMMA, Key::Comma},
-        {GLFW_KEY_MINUS, Key::Minus},
-        {GLFW_KEY_PERIOD, Key::Period},
-        {GLFW_KEY_SLASH, Key::Slash},
-        {GLFW_KEY_0, Key::Key0},
-        {GLFW_KEY_1, Key::Key1},
-        {GLFW_KEY_2, Key::Key2},
-        {GLFW_KEY_3, Key::Key3},
-        {GLFW_KEY_4, Key::Key4},
-        {GLFW_KEY_5, Key::Key5},
-        {GLFW_KEY_6, Key::Key6},
-        {GLFW_KEY_7, Key::Key7},
-        {GLFW_KEY_8, Key::Key8},
-        {GLFW_KEY_9, Key::Key9},
-        {GLFW_KEY_SEMICOLON, Key::Semicolon},
-        {GLFW_KEY_EQUAL, Key::Equal},
-        {GLFW_KEY_A, Key::A},
-        {GLFW_KEY_B, Key::B},
-        {GLFW_KEY_C, Key::C},
-        {GLFW_KEY_D, Key::D},
-        {GLFW_KEY_E, Key::E},
-        {GLFW_KEY_F, Key::F},
-        {GLFW_KEY_G, Key::G},
-        {GLFW_KEY_H, Key::H},
-        {GLFW_KEY_I, Key::I},
-        {GLFW_KEY_J, Key::J},
-        {GLFW_KEY_K, Key::K},
-        {GLFW_KEY_L, Key::L},
-        {GLFW_KEY_M, Key::M},
-        {GLFW_KEY_N, Key::N},
-        {GLFW_KEY_O, Key::O},
-        {GLFW_KEY_P, Key::P},
-        {GLFW_KEY_Q, Key::Q},
-        {GLFW_KEY_R, Key::R},
-        {GLFW_KEY_S, Key::S},
-        {GLFW_KEY_T, Key::T},
-        {GLFW_KEY_U, Key::U},
-        {GLFW_KEY_V, Key::V},
-        {GLFW_KEY_W, Key::W},
-        {GLFW_KEY_X, Key::X},
-        {GLFW_KEY_Y, Key::Y},
-        {GLFW_KEY_Z, Key::Z},
-        {GLFW_KEY_LEFT_BRACKET, Key::LeftBracket},
-        {GLFW_KEY_BACKSLASH, Key::Backslash},
-        {GLFW_KEY_RIGHT_BRACKET, Key::RightBracket},
-        {GLFW_KEY_GRAVE_ACCENT, Key::Backtick},
-        {GLFW_KEY_ESCAPE, Key::Escape},
-        {GLFW_KEY_ENTER, Key::Enter},
-        {GLFW_KEY_TAB, Key::Tab},
-        {GLFW_KEY_BACKSPACE, Key::Backspace},
-        {GLFW_KEY_INSERT, Key::Insert},
-        {GLFW_KEY_DELETE, Key::Delete},
-        {GLFW_KEY_RIGHT, Key::Right},
-        {GLFW_KEY_LEFT, Key::Left},
-        {GLFW_KEY_DOWN, Key::Down},
-        {GLFW_KEY_UP, Key::Up},
-        {GLFW_KEY_PAGE_UP, Key::PageUp},
-        {GLFW_KEY_PAGE_DOWN, Key::PageDown},
-        {GLFW_KEY_HOME, Key::Home},
-        {GLFW_KEY_END, Key::End},
-        {GLFW_KEY_CAPS_LOCK, Key::CapsLock},
-        {GLFW_KEY_SCROLL_LOCK, Key::ScrollLock},
-        {GLFW_KEY_NUM_LOCK, Key::NumLock},
-        {GLFW_KEY_PRINT_SCREEN, Key::PrintScreen},
-        {GLFW_KEY_PAUSE, Key::Pause},
-        {GLFW_KEY_F1, Key::F1},
-        {GLFW_KEY_F2, Key::F2},
-        {GLFW_KEY_F3, Key::F3},
-        {GLFW_KEY_F4, Key::F4},
-        {GLFW_KEY_F5, Key::F5},
-        {GLFW_KEY_F6, Key::F6},
-        {GLFW_KEY_F7, Key::F7},
-        {GLFW_KEY_F8, Key::F8},
-        {GLFW_KEY_F9, Key::F9},
-        {GLFW_KEY_F10, Key::F10},
-        {GLFW_KEY_F11, Key::F11},
-        {GLFW_KEY_F12, Key::F12},
-        {GLFW_KEY_KP_0, Key::NumPad0},
-        {GLFW_KEY_KP_1, Key::NumPad1},
-        {GLFW_KEY_KP_2, Key::NumPad2},
-        {GLFW_KEY_KP_3, Key::NumPad3},
-        {GLFW_KEY_KP_4, Key::NumPad4},
-        {GLFW_KEY_KP_5, Key::NumPad5},
-        {GLFW_KEY_KP_6, Key::NumPad6},
-        {GLFW_KEY_KP_7, Key::NumPad7},
-        {GLFW_KEY_KP_8, Key::NumPad8},
-        {GLFW_KEY_KP_9, Key::NumPad9},
-        {GLFW_KEY_KP_DECIMAL, Key::KeyPadDecimal},
-        {GLFW_KEY_KP_DIVIDE, Key::KPDivide},
-        {GLFW_KEY_KP_MULTIPLY, Key::KPMultiply},
-        {GLFW_KEY_KP_SUBTRACT, Key::KPSubtract},
-        {GLFW_KEY_KP_ADD, Key::KPAdd},
-        {GLFW_KEY_KP_ENTER, Key::KPEnter},
-        {GLFW_KEY_KP_EQUAL, Key::KPEqual},
-        {GLFW_KEY_LEFT_SHIFT, Key::LeftShift},
-        {GLFW_KEY_LEFT_CONTROL, Key::LeftCtrl},
-        {GLFW_KEY_LEFT_ALT, Key::LeftAlt},
-        {GLFW_KEY_LEFT_SUPER, Key::LeftSuper},
-        {GLFW_KEY_RIGHT_SHIFT, Key::RightShift},
-        {GLFW_KEY_RIGHT_CONTROL, Key::RightCtrl},
-        {GLFW_KEY_RIGHT_ALT, Key::RightAlt},
-        {GLFW_KEY_RIGHT_SUPER, Key::RightSuper},
-    };
+std::unordered_map<int, Key::Enum> s_key_map = {
+    {GLFW_KEY_SPACE, Key::Space},
+    {GLFW_KEY_APOSTROPHE, Key::Apostrophe},
+    {GLFW_KEY_COMMA, Key::Comma},
+    {GLFW_KEY_MINUS, Key::Minus},
+    {GLFW_KEY_PERIOD, Key::Period},
+    {GLFW_KEY_SLASH, Key::Slash},
+    {GLFW_KEY_0, Key::Key0},
+    {GLFW_KEY_1, Key::Key1},
+    {GLFW_KEY_2, Key::Key2},
+    {GLFW_KEY_3, Key::Key3},
+    {GLFW_KEY_4, Key::Key4},
+    {GLFW_KEY_5, Key::Key5},
+    {GLFW_KEY_6, Key::Key6},
+    {GLFW_KEY_7, Key::Key7},
+    {GLFW_KEY_8, Key::Key8},
+    {GLFW_KEY_9, Key::Key9},
+    {GLFW_KEY_SEMICOLON, Key::Semicolon},
+    {GLFW_KEY_EQUAL, Key::Equal},
+    {GLFW_KEY_A, Key::A},
+    {GLFW_KEY_B, Key::B},
+    {GLFW_KEY_C, Key::C},
+    {GLFW_KEY_D, Key::D},
+    {GLFW_KEY_E, Key::E},
+    {GLFW_KEY_F, Key::F},
+    {GLFW_KEY_G, Key::G},
+    {GLFW_KEY_H, Key::H},
+    {GLFW_KEY_I, Key::I},
+    {GLFW_KEY_J, Key::J},
+    {GLFW_KEY_K, Key::K},
+    {GLFW_KEY_L, Key::L},
+    {GLFW_KEY_M, Key::M},
+    {GLFW_KEY_N, Key::N},
+    {GLFW_KEY_O, Key::O},
+    {GLFW_KEY_P, Key::P},
+    {GLFW_KEY_Q, Key::Q},
+    {GLFW_KEY_R, Key::R},
+    {GLFW_KEY_S, Key::S},
+    {GLFW_KEY_T, Key::T},
+    {GLFW_KEY_U, Key::U},
+    {GLFW_KEY_V, Key::V},
+    {GLFW_KEY_W, Key::W},
+    {GLFW_KEY_X, Key::X},
+    {GLFW_KEY_Y, Key::Y},
+    {GLFW_KEY_Z, Key::Z},
+    {GLFW_KEY_LEFT_BRACKET, Key::LeftBracket},
+    {GLFW_KEY_BACKSLASH, Key::Backslash},
+    {GLFW_KEY_RIGHT_BRACKET, Key::RightBracket},
+    {GLFW_KEY_GRAVE_ACCENT, Key::Backtick},
+    {GLFW_KEY_ESCAPE, Key::Escape},
+    {GLFW_KEY_ENTER, Key::Enter},
+    {GLFW_KEY_TAB, Key::Tab},
+    {GLFW_KEY_BACKSPACE, Key::Backspace},
+    {GLFW_KEY_INSERT, Key::Insert},
+    {GLFW_KEY_DELETE, Key::Delete},
+    {GLFW_KEY_RIGHT, Key::Right},
+    {GLFW_KEY_LEFT, Key::Left},
+    {GLFW_KEY_DOWN, Key::Down},
+    {GLFW_KEY_UP, Key::Up},
+    {GLFW_KEY_PAGE_UP, Key::PageUp},
+    {GLFW_KEY_PAGE_DOWN, Key::PageDown},
+    {GLFW_KEY_HOME, Key::Home},
+    {GLFW_KEY_END, Key::End},
+    {GLFW_KEY_CAPS_LOCK, Key::CapsLock},
+    {GLFW_KEY_SCROLL_LOCK, Key::ScrollLock},
+    {GLFW_KEY_NUM_LOCK, Key::NumLock},
+    {GLFW_KEY_PRINT_SCREEN, Key::PrintScreen},
+    {GLFW_KEY_PAUSE, Key::Pause},
+    {GLFW_KEY_F1, Key::F1},
+    {GLFW_KEY_F2, Key::F2},
+    {GLFW_KEY_F3, Key::F3},
+    {GLFW_KEY_F4, Key::F4},
+    {GLFW_KEY_F5, Key::F5},
+    {GLFW_KEY_F6, Key::F6},
+    {GLFW_KEY_F7, Key::F7},
+    {GLFW_KEY_F8, Key::F8},
+    {GLFW_KEY_F9, Key::F9},
+    {GLFW_KEY_F10, Key::F10},
+    {GLFW_KEY_F11, Key::F11},
+    {GLFW_KEY_F12, Key::F12},
+    {GLFW_KEY_KP_0, Key::NumPad0},
+    {GLFW_KEY_KP_1, Key::NumPad1},
+    {GLFW_KEY_KP_2, Key::NumPad2},
+    {GLFW_KEY_KP_3, Key::NumPad3},
+    {GLFW_KEY_KP_4, Key::NumPad4},
+    {GLFW_KEY_KP_5, Key::NumPad5},
+    {GLFW_KEY_KP_6, Key::NumPad6},
+    {GLFW_KEY_KP_7, Key::NumPad7},
+    {GLFW_KEY_KP_8, Key::NumPad8},
+    {GLFW_KEY_KP_9, Key::NumPad9},
+    {GLFW_KEY_KP_DECIMAL, Key::KeyPadDecimal},
+    {GLFW_KEY_KP_DIVIDE, Key::KPDivide},
+    {GLFW_KEY_KP_MULTIPLY, Key::KPMultiply},
+    {GLFW_KEY_KP_SUBTRACT, Key::KPSubtract},
+    {GLFW_KEY_KP_ADD, Key::KPAdd},
+    {GLFW_KEY_KP_ENTER, Key::KPEnter},
+    {GLFW_KEY_KP_EQUAL, Key::KPEqual},
+    {GLFW_KEY_LEFT_SHIFT, Key::LeftShift},
+    {GLFW_KEY_LEFT_CONTROL, Key::LeftCtrl},
+    {GLFW_KEY_LEFT_ALT, Key::LeftAlt},
+    {GLFW_KEY_LEFT_SUPER, Key::LeftSuper},
+    {GLFW_KEY_RIGHT_SHIFT, Key::RightShift},
+    {GLFW_KEY_RIGHT_CONTROL, Key::RightCtrl},
+    {GLFW_KEY_RIGHT_ALT, Key::RightAlt},
+    {GLFW_KEY_RIGHT_SUPER, Key::RightSuper},
+};
 
 // GLFW mouse button map.
-HashMap<int, MouseButton::Enum> s_mouse_button_map = {
-        {GLFW_MOUSE_BUTTON_LEFT, MouseButton::Left},
-        {GLFW_MOUSE_BUTTON_MIDDLE, MouseButton::Middle},
-        {GLFW_MOUSE_BUTTON_RIGHT, MouseButton::Right}
-    };
+std::unordered_map<int, MouseButton::Enum> s_mouse_button_map = {
+    {GLFW_MOUSE_BUTTON_LEFT, MouseButton::Left},
+    {GLFW_MOUSE_BUTTON_MIDDLE, MouseButton::Middle},
+    {GLFW_MOUSE_BUTTON_RIGHT, MouseButton::Right}
+};
 // clang-format on
 static_assert(static_cast<int>(TextureFormat::Count) ==
                   sizeof(s_texture_format) / sizeof(s_texture_format[0]),
               "Texture format mapping mismatch.");
 
 // Uniform binder.
-class UniformBinder : public Object {
+class UniformBinder {
 public:
-    DW_OBJECT(UniformBinder);
-
-    UniformBinder(Context* context) : Object{context}, uniform_location_{0} {
+    UniformBinder() : uniform_location_{0} {
     }
 
     void operator()(const int& value) {
@@ -311,7 +309,7 @@ public:
 
     void updateUniform(GLint location, const UniformData& data) {
         uniform_location_ = location;
-        VariantApplyVisitor(*this, data);
+        visit(*this, data);
     }
 
 private:
@@ -319,31 +317,44 @@ private:
 };
 }  // namespace
 
-GLRenderContext::GLRenderContext(Context* ctx) : RenderContext(ctx) {
+int last_error_code = 0;
+std::string last_error_description;
+
+GLRenderContext::GLRenderContext(Logger& logger) : logger_(logger) {
 }
 
 GLRenderContext::~GLRenderContext() {
     // TODO: detect resource leaks.
 }
 
-void GLRenderContext::createWindow(u16 width, u16 height, const String& title) {
-    log().info("Creating window.");
+tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 height,
+                                                              const std::string& title) {
+    logger_.info("Creating window.");
 
     // Initialise GLFW.
-    log().info("GLFW Version: %s", glfwGetVersionString());
+    logger_.info("GLFW Version: %s", glfwGetVersionString());
 #if DW_PLATFORM == DW_MACOS
     glfwInitHint(GLFW_COCOA_CHDIR_RESOURCES, GLFW_FALSE);
 #endif
     if (!glfwInit()) {
-        // TODO: report error correctly.
-        throw Exception{"Failed to initialise GLFW."};
+        const char* last_error;
+        int error_code = glfwGetError(&last_error);
+        return tl::make_unexpected(fmt::format(
+            "Failed to initialise GLFW. Code: 0x%. Description: %s", error_code, last_error));
     }
+
+    glfwSetErrorCallback([](int error, const char* description) {
+        last_error_code = error;
+        last_error_description = description;
+    });
+
+    // Set window hints.
 #if DW_GL_VERSION == DW_GL_330
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-#elif !defined(DW_EMSCRIPTEN)
+#elif !defined(__EMSCRIPTEN__)
 #error Unsupported: GLES 3.0 on non Web platform.
 #endif
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
@@ -352,7 +363,7 @@ void GLRenderContext::createWindow(u16 width, u16 height, const String& title) {
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
 
     // Get DPI settings.
-#ifndef DW_EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
     glfwGetMonitorContentScale(monitor, &window_scale_.x, &window_scale_.y);
 #else
     // Unsupported in emscripten.
@@ -364,86 +375,88 @@ void GLRenderContext::createWindow(u16 width, u16 height, const String& title) {
                                nullptr, nullptr);
     if (!window_) {
         // Failed to create window.
-        // TODO: Handle error properly.
-        throw Exception{"glfwCreateWindow failed."};
+        return tl::make_unexpected(
+            fmt::format("glfwCreateWindow failed. Code: 0x%x. Description: %s", last_error_code,
+                        last_error_description));
     }
     Vec2i fb_size = backbufferSize();
     backbuffer_width_ = static_cast<u16>(fb_size.x);
     backbuffer_height_ = static_cast<u16>(fb_size.y);
     glfwMakeContextCurrent(window_);
     glfwSwapInterval(0);
-    glfwSetWindowUserPointer(window_, static_cast<void*>(context()));
+    //    glfwSetWindowUserPointer(window_, static_cast<void*>(context()));
 
     // Setup callbacks.
-    glfwSetKeyCallback(window_, [](GLFWwindow* window, int key, int, int action, int) {
-        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
-
-        // Look up key.
-        auto key_it = s_key_map.find(key);
-        if (key_it == s_key_map.end()) {
-            ctx->module<Logger>()->withObjectName("GLFW").warn("Unknown key code %s", key);
-            return;
-        }
-
-        // If we are repeating a key, ignore.
-        if (action == GLFW_REPEAT) {
-            return;
-        }
-
-        if (action == GLFW_PRESS) {
-            ctx->module<Input>()->_notifyKey(key_it->second, Modifier::None, true);
-        } else if (action == GLFW_RELEASE) {
-            ctx->module<Input>()->_notifyKey(key_it->second, Modifier::None, false);
-        }
-    });
-    glfwSetCharCallback(window_, [](GLFWwindow* window, unsigned int c) {
-        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
-#ifdef DW_MSVC
-        std::wstring_convert<std::codecvt_utf8<i32>, i32> conv;
-#else
-        std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> conv;
-#endif
-        ctx->module<Input>()->_notifyCharInput(conv.to_bytes(static_cast<char32_t>(c)));
-    });
-    glfwSetMouseButtonCallback(window_, [](GLFWwindow* window, int button, int action, int) {
-        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
-        auto mouse_button = s_mouse_button_map.find(button);
-        if (mouse_button == s_mouse_button_map.end()) {
-            ctx->module<Logger>()->withObjectName("GLFW").warn("Unknown mouse button %s", button);
-            return;
-        }
-        if (action == GLFW_PRESS) {
-            ctx->module<Input>()->_notifyMouseButtonPress(mouse_button->second, true);
-        } else if (action == GLFW_RELEASE) {
-            ctx->module<Input>()->_notifyMouseButtonPress(mouse_button->second, false);
-        }
-    });
-    glfwSetCursorPosCallback(window_, [](GLFWwindow* window, double x, double y) {
-        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
-        ctx->module<Input>()->_notifyMouseMove({static_cast<int>(x), static_cast<int>(y)});
-    });
-    glfwSetScrollCallback(window_, [](GLFWwindow* window, double xoffset, double yoffset) {
-        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
-        ctx->module<Input>()->_notifyScroll(
-            Vec2(static_cast<float>(xoffset), static_cast<float>(yoffset)));
-    });
+    //    glfwSetKeyCallback(window_, [](GLFWwindow* window, int key, int, int action, int) {
+    //        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
+    //
+    //        // Look up key.
+    //        auto key_it = s_key_map.find(key);
+    //        if (key_it == s_key_map.end()) {
+    //            ctx->module<Logger>()->withObjectName("GLFW").warn("Unknown key code %s", key);
+    //            return;
+    //        }
+    //
+    //        // If we are repeating a key, ignore.
+    //        if (action == GLFW_REPEAT) {
+    //            return;
+    //        }
+    //
+    //        if (action == GLFW_PRESS) {
+    //            ctx->module<Input>()->_notifyKey(key_it->second, Modifier::None, true);
+    //        } else if (action == GLFW_RELEASE) {
+    //            ctx->module<Input>()->_notifyKey(key_it->second, Modifier::None, false);
+    //        }
+    //    });
+    //    glfwSetCharCallback(window_, [](GLFWwindow* window, unsigned int c) {
+    //        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
+    //#ifdef DW_MSVC
+    //        std::wstring_convert<std::codecvt_utf8<i32>, i32> conv;
+    //#else
+    //      std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> conv;
+    //#endif
+    //        ctx->module<Input>()->_notifyCharInput(conv.to_bytes(static_cast<char32_t>(c)));
+    //    });
+    //    glfwSetMouseButtonCallback(window_, [](GLFWwindow* window, int button, int action, int) {
+    //        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
+    //        auto mouse_button = s_mouse_button_map.find(button);
+    //        if (mouse_button == s_mouse_button_map.end()) {
+    //            ctx->module<Logger>()->withObjectName("GLFW").warn("Unknown mouse button %s",
+    //            button); return;
+    //        }
+    //        if (action == GLFW_PRESS) {
+    //            ctx->module<Input>()->_notifyMouseButtonPress(mouse_button->second, true);
+    //        } else if (action == GLFW_RELEASE) {
+    //            ctx->module<Input>()->_notifyMouseButtonPress(mouse_button->second, false);
+    //        }
+    //    });
+    //    glfwSetCursorPosCallback(window_, [](GLFWwindow* window, double x, double y) {
+    //        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
+    //        ctx->module<Input>()->_notifyMouseMove({static_cast<int>(x), static_cast<int>(y)});
+    //    });
+    //    glfwSetScrollCallback(window_, [](GLFWwindow* window, double xoffset, double yoffset) {
+    //        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
+    //        ctx->module<Input>()->_notifyScroll(
+    //            Vec2(static_cast<float>(xoffset), static_cast<float>(yoffset)));
+    //    });
 
     // Note: Emscripten statically links all GL functions.
-#ifndef DW_EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
     // Initialise GL function pointers.
-    if (!gladLoadGLES2Loader((GLADloadproc)glfwGetProcAddress)) {
-        // TODO: Handle error properly.
-        throw Exception{"gladLoadGLES2Loader failed."};
+    if (!gladLoadGL(glfwGetProcAddress)) {
+        return tl::make_unexpected("gladLoadGL failed.");
     }
 #endif
 
     // Print GL information.
-    log().info("OpenGL: %s - GLSL: %s", glGetString(GL_VERSION),
-               glGetString(GL_SHADING_LANGUAGE_VERSION));
-    log().info("OpenGL Renderer: %s", glGetString(GL_RENDERER));
+    logger_.info("OpenGL: %s - GLSL: %s", glGetString(GL_VERSION),
+                 glGetString(GL_SHADING_LANGUAGE_VERSION));
+    logger_.info("OpenGL Renderer: %s", glGetString(GL_RENDERER));
 
     // Hand off context to render thread.
     glfwMakeContextCurrent(nullptr);
+
+    return {};
 }
 
 void GLRenderContext::destroyWindow() {
@@ -494,10 +507,10 @@ void GLRenderContext::stopRendering() {
     GL_CHECK();
 }
 
-void GLRenderContext::processCommandList(Vector<RenderCommand>& command_list) {
+void GLRenderContext::processCommandList(std::vector<RenderCommand>& command_list) {
     assert(window_);
     for (auto& command : command_list) {
-        VariantApplyVisitor(*this, command);
+        visit(*this, command);
     }
 }
 
@@ -627,7 +640,7 @@ bool GLRenderContext::frame(const Frame* frame) {
             }
 
             // Bind uniforms.
-            UniformBinder binder{context_};
+            UniformBinder binder;
             for (auto& uniform_pair : current->uniforms) {
                 auto location = program_data.uniform_location_map.find(uniform_pair.first);
                 GLint uniform_location;
@@ -639,7 +652,7 @@ bool GLRenderContext::frame(const Frame* frame) {
                     GL_CHECK();
                     program_data.uniform_location_map.emplace(uniform_pair.first, uniform_location);
                     if (uniform_location == -1) {
-                        log().warn("[Frame] Unknown uniform '%s', skipping.", uniform_pair.first);
+                        logger_.warn("[Frame] Unknown uniform '%s', skipping.", uniform_pair.first);
                     }
                 }
                 if (uniform_location == -1) {
@@ -813,20 +826,19 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
 #else
 #error "Unsupported DW_GL_VERSION"
 #endif
-    glsl_out.set_options(options);
-    String source = glsl_out.compile();
+    glsl_out.set_common_options(options);
+    std::string source = glsl_out.compile();
 
     // Postprocess the GLSL to remove a GL 4.2 extension, which doesn't exist on macOS.
 #if DW_PLATFORM == DW_MACOS
-    source = str::replace(source, "#extension GL_ARB_shading_language_420pack : require",
+    source = dga::replace(source, "#extension GL_ARB_shading_language_420pack : require",
                           "#extension GL_ARB_shading_language_420pack : disable");
 #endif
-    //log().debug("Decompiled GLSL from SPIR-V: %s", source);
+    // logger_.debug("Decompiled GLSL from SPIR-V: %s", source);
 
     // Compile shader.
-    static HashMap<ShaderStage, GLenum> shader_type_map = {
-        {ShaderStage::Vertex, GL_VERTEX_SHADER},
-        {ShaderStage::Fragment, GL_FRAGMENT_SHADER}};
+    static std::unordered_map<ShaderStage, GLenum> shader_type_map = {
+        {ShaderStage::Vertex, GL_VERTEX_SHADER}, {ShaderStage::Fragment, GL_FRAGMENT_SHADER}};
     GLuint shader = glCreateShader(shader_type_map.at(c.stage));
     if (shader == 0) {
         GL_CHECK();
@@ -843,10 +855,9 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
         int info_log_length;
         glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length);
 
-        char* error_message = new char[info_log_length];
-        glGetShaderInfoLog(shader, info_log_length, NULL, error_message);
-        log().error("[CreateShader] Shader Compile Error: %s", error_message);
-        delete[] error_message;
+        std::string error_message(info_log_length, '\0');
+        glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data());
+        logger_.error("[CreateShader] Shader Compile Error: %s", error_message);
 
         // TODO: Error
     }
@@ -880,10 +891,9 @@ void GLRenderContext::operator()(const cmd::LinkProgram& c) {
     if (result == GL_FALSE) {
         int info_log_length;
         glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_log_length);
-        char* error_message = new char[info_log_length];
-        glGetProgramInfoLog(program, info_log_length, NULL, error_message);
-        log().error("[LinkProgram] Shader Link Error: %s", error_message);
-        delete[] error_message;
+        std::string error_message(info_log_length, '\0');
+        glGetProgramInfoLog(program, info_log_length, nullptr, error_message.data());
+        logger_.error("[CreateShader] Shader Compile Error: %s", error_message);
     }
 }
 
@@ -893,7 +903,7 @@ void GLRenderContext::operator()(const cmd::DeleteProgram& c) {
         glDeleteProgram(it->second.program);
         program_map_.erase(it);
     } else {
-        log().error("[DeleteProgram] Unable to find program with handle %s", c.handle.internal());
+        logger_.error("[DeleteProgram] Unable to find program with handle %s", c.handle.internal());
     }
 }
 
@@ -908,7 +918,7 @@ void GLRenderContext::operator()(const cmd::CreateTexture2D& c) {
 
     // Give image data to OpenGL.
     TextureFormatInfo format = s_texture_format[static_cast<int>(c.format)];
-    log().debug(
+    logger_.debug(
         "[CreateTexture2D] format %s - internal fmt: 0x%.4X - internal fmt srgb: 0x%.4X "
         "- fmt: 0x%.4X - type: 0x%.4X",
         static_cast<u32>(c.format), format.internal_format, format.internal_format_srgb,
@@ -937,7 +947,7 @@ void GLRenderContext::operator()(const cmd::CreateFrameBuffer& c) {
     glBindFramebuffer(GL_FRAMEBUFFER, fb_data.frame_buffer);
 
     // Bind colour buffers.
-    Vector<GLenum> draw_buffers;
+    std::vector<GLenum> draw_buffers;
     u8 attachment = 0;
     for (auto texture : fb_data.textures) {
         auto gl_texture = texture_map_.find(texture);
@@ -958,7 +968,8 @@ void GLRenderContext::operator()(const cmd::CreateFrameBuffer& c) {
     // Check frame buffer status.
     GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
-        log().error("[CreateFrameBuffer] The framebuffer is not complete. Status: 0x%.4X", status);
+        logger_.error("[CreateFrameBuffer] The framebuffer is not complete. Status: 0x%.4X",
+                      status);
     }
 
     // Unbind.
@@ -968,19 +979,19 @@ void GLRenderContext::operator()(const cmd::CreateFrameBuffer& c) {
     frame_buffer_map_.emplace(c.handle, fb_data);
 }
 
-void GLRenderContext::operator()(const cmd::DeleteFrameBuffer& c) {
+void GLRenderContext::operator()(const cmd::DeleteFrameBuffer&) {
     // TODO: unimplemented.
 }
 
 void GLRenderContext::setupVertexArrayAttributes(const VertexDecl& decl, uint vb_offset) {
-    static HashMap<VertexDecl::AttributeType, GLenum> attribute_type_map = {
+    static std::unordered_map<VertexDecl::AttributeType, GLenum> attribute_type_map = {
         {VertexDecl::AttributeType::Float, GL_FLOAT},
         {VertexDecl::AttributeType::Uint8, GL_UNSIGNED_BYTE}};
     u16 attrib_counter = 0;
     for (auto& attrib : decl.attributes_) {
         // Decode attribute.
         VertexDecl::Attribute attribute;
-        uint count;
+        usize count;
         VertexDecl::AttributeType type;
         bool normalised;
         VertexDecl::decodeAttributes(attrib.first, attribute, count, type, normalised);
@@ -988,11 +999,11 @@ void GLRenderContext::setupVertexArrayAttributes(const VertexDecl& decl, uint vb
         // Convert type.
         auto gl_type = attribute_type_map.find(type);
         if (gl_type == attribute_type_map.end()) {
-            log().warn("[SetupVertexArrayAttributes] Unknown attribute type: %i", (uint)type);
+            logger_.warn("[SetupVertexArrayAttributes] Unknown attribute type: %i", (uint)type);
             continue;
         }
 
-        //        log().debug("[SetupVertexArrayAttributes] Attrib %s: Count='%s' Type='%s'
+        //        logger_.debug("[SetupVertexArrayAttributes] Attrib %s: Count='%s' Type='%s'
         //        Stride='%s' Offset='%s'",
         //                    attrib_counter, count, static_cast<int>(gl_type->first), decl.stride_,
         //                    reinterpret_cast<uintptr_t>(attrib.second));
@@ -1007,5 +1018,4 @@ void GLRenderContext::setupVertexArrayAttributes(const VertexDecl& decl, uint vb
         attrib_counter++;
     }
 }
-}  // namespace rhi
 }  // namespace dw

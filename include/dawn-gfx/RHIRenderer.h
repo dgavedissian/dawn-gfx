@@ -1,23 +1,33 @@
 /*
- * Dawn Engine
- * Written by David Avedissian (c) 2012-2019 (git@dga.me.uk)
+ * Dawn Graphics
+ * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
 #pragma once
 
-#include "core/Concurrency.h"
-#include "core/Handle.h"
-#include "core/Memory.h"
-#include "core/math/Colour.h"
-#include "core/math/Vec2i.h"
-#include "core/Collections.h"
+#include "Base.h"
+#include "dawn-gfx/detail/BaseTypes.h"
+#include "dawn-gfx/detail/Handle.h"
+#include "Math.h"
+#include "Colour.h"
+#include "dawn-gfx/detail/Memory.h"
+#include "Logger.h"
 #include "VertexDecl.h"
+
+#include <barrier/barrier.h>
+#include <tl/expected.hpp>
+#include <vector>
+#include <variant>
+#include <unordered_map>
+#include <string>
+#include <array>
+#include <atomic>
+#include <thread>
 
 #define DW_MAX_TEXTURE_SAMPLERS 8
 #define DW_MAX_TRANSIENT_VERTEX_BUFFER_SIZE (1 << 20)
 #define DW_MAX_TRANSIENT_INDEX_BUFFER_SIZE (1 << 20)
 
 namespace dw {
-namespace rhi {
 // Handles.
 namespace detail {
 struct VertexBufferTag {};
@@ -110,7 +120,6 @@ enum class TextureFormat {
     RGBA32I,
     RGBA32U,
     RGBA32F,
-    R5G6B5,
     RGBA4,
     RGB5A1,
     RGB10A2,
@@ -234,7 +243,7 @@ struct CreateFrameBuffer {
     u16 width;
     u16 height;
     // TODO: do we own textures or does the user own textures? add a flag?
-    Vector<TextureHandle> textures;
+    std::vector<TextureHandle> textures;
 };
 
 struct DeleteFrameBuffer {
@@ -244,7 +253,7 @@ struct DeleteFrameBuffer {
 
 // clang-format off
 using RenderCommand =
-    Variant<cmd::CreateVertexBuffer,
+    std::variant<cmd::CreateVertexBuffer,
             cmd::UpdateVertexBuffer,
             cmd::DeleteVertexBuffer,
             cmd::CreateIndexBuffer,
@@ -262,7 +271,7 @@ using RenderCommand =
             cmd::DeleteFrameBuffer>;
 // clang-format on
 
-using UniformData = Variant<int, float, Vec2, Vec3, Vec4, Mat3, Mat4>;
+using UniformData = std::variant<int, float, Vec2, Vec3, Vec4, Mat3, Mat4>;
 
 // Current render state.
 struct RenderItem {
@@ -283,8 +292,8 @@ struct RenderItem {
 
     // Shader program and parameters.
     ProgramHandle program;
-    HashMap<String, UniformData> uniforms;
-    Array<TextureBinding, DW_MAX_TEXTURE_SAMPLERS> textures;
+    std::unordered_map<std::string, UniformData> uniforms;
+    std::array<TextureBinding, DW_MAX_TEXTURE_SAMPLERS> textures;
 
     // Scissor.
     bool scissor_enabled;
@@ -317,7 +326,7 @@ struct View {
 
     Colour clear_colour;
     FrameBufferHandle frame_buffer;
-    Vector<RenderItem> render_items;
+    std::vector<RenderItem> render_items;
 };
 
 // Frame.
@@ -329,36 +338,36 @@ struct Frame {
     View& view(uint view_index);
 
     RenderItem current_item;
-    Vector<View> views;
-    Vector<RenderCommand> commands_pre;
-    Vector<RenderCommand> commands_post;
+    std::vector<View> views;
+    std::vector<RenderCommand> commands_pre;
+    std::vector<RenderCommand> commands_post;
 
     // Transient vertex/index buffer storage.
     struct {
-        UniquePtr<byte[]> data;
+        std::unique_ptr<std::byte[]> data;
         uint size;
         VertexBufferHandle handle;
     } transient_vb_storage;
 
     struct {
-        UniquePtr<byte[]> data;
+        std::unique_ptr<std::byte[]> data;
         uint size;
         IndexBufferHandle handle;
     } transient_ib_storage;
 
     // Transient vertex/index buffer data.
     struct TransientVertexBufferData {
-        byte* data;
+        std::byte* data;
         uint size;
         VertexDecl decl;
     };
-    HashMap<TransientVertexBufferHandle, TransientVertexBufferData> transient_vertex_buffers_;
+    std::unordered_map<TransientVertexBufferHandle, TransientVertexBufferData> transient_vertex_buffers_;
     TransientVertexBufferHandle next_transient_vertex_buffer_handle_;
     struct TransientIndexBufferData {
-        byte* data;
+        std::byte* data;
         uint size;
     };
-    HashMap<TransientIndexBufferHandle, TransientIndexBufferData> transient_index_buffers_;
+    std::unordered_map<TransientIndexBufferHandle, TransientIndexBufferData> transient_index_buffers_;
     TransientIndexBufferHandle next_transient_index_buffer_handle_;
 
 #ifdef DW_DEBUG
@@ -369,16 +378,14 @@ struct Frame {
 };
 
 // Abstract rendering context.
-class DW_API RenderContext : public Object {
+class DW_API RenderContext {
 public:
-    DW_OBJECT(RenderContext);
-
-    RenderContext(Context* context);
+    RenderContext();
     virtual ~RenderContext() = default;
 
     // Window management. Executed on the main thread.
     // TODO: Make this return a Window object instead.
-    virtual Result<void> createWindow(u16 width, u16 height, const String& title) = 0;
+    virtual tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title) = 0;
     virtual void destroyWindow() = 0;
     virtual void processEvents() = 0;
     virtual bool isWindowClosed() const = 0;
@@ -389,21 +396,19 @@ public:
     // Command buffer processing. Executed on the render thread.
     virtual void startRendering() = 0;
     virtual void stopRendering() = 0;
-    virtual void processCommandList(Vector<RenderCommand>& command_list) = 0;
+    virtual void processCommandList(std::vector<RenderCommand>& command_list) = 0;
     virtual bool frame(const Frame* frame) = 0;
 };
 
 // Low level renderer.
 // Based off: https://github.com/bkaradzic/bgfx/blob/master/src/bgfx_p.h#L2297
-class DW_API RHIRenderer : public Module {
+class DW_API RHIRenderer {
 public:
-    DW_OBJECT(RHIRenderer)
-
-    RHIRenderer(Context* context);
+    RHIRenderer(Logger& logger);
     ~RHIRenderer();
 
     /// Initialise.
-    Result<void> init(RendererType type, u16 width, u16 height, const String& title,
+    tl::expected<void, std::string> init(RendererType type, u16 width, u16 height, const std::string& title,
                       bool use_render_thread);
 
     /// Create vertex buffer.
@@ -423,12 +428,12 @@ public:
     /// Transient vertex buffer.
     TransientVertexBufferHandle allocTransientVertexBuffer(uint vertex_count,
                                                            const VertexDecl& decl);
-    byte* getTransientVertexBufferData(TransientVertexBufferHandle handle);
+    std::byte* getTransientVertexBufferData(TransientVertexBufferHandle handle);
     void setVertexBuffer(TransientVertexBufferHandle handle);
 
     /// Transient index buffer.
     TransientIndexBufferHandle allocTransientIndexBuffer(uint index_count);
-    byte* getTransientIndexBufferData(TransientIndexBufferHandle handle);
+    std::byte* getTransientIndexBufferData(TransientIndexBufferHandle handle);
     void setIndexBuffer(TransientIndexBufferHandle handle);
 
     /// Create shader.
@@ -442,14 +447,14 @@ public:
     void deleteProgram(ProgramHandle program);
 
     /// Uniforms.
-    void setUniform(const String& uniform_name, int value);
-    void setUniform(const String& uniform_name, float value);
-    void setUniform(const String& uniform_name, const Vec2& value);
-    void setUniform(const String& uniform_name, const Vec3& value);
-    void setUniform(const String& uniform_name, const Vec4& value);
-    void setUniform(const String& uniform_name, const Mat3& value);
-    void setUniform(const String& uniform_name, const Mat4& value);
-    void setUniform(const String& uniform_name, UniformData data);
+    void setUniform(const std::string& uniform_name, int value);
+    void setUniform(const std::string& uniform_name, float value);
+    void setUniform(const std::string& uniform_name, const Vec2& value);
+    void setUniform(const std::string& uniform_name, const Vec3& value);
+    void setUniform(const std::string& uniform_name, const Vec4& value);
+    void setUniform(const std::string& uniform_name, const Mat3& value);
+    void setUniform(const std::string& uniform_name, const Mat4& value);
+    void setUniform(const std::string& uniform_name, UniformData data);
 
     // Create texture.
     TextureHandle createTexture2D(u16 width, u16 height, TextureFormat format, Memory data);
@@ -459,7 +464,7 @@ public:
 
     // Framebuffer.
     FrameBufferHandle createFrameBuffer(u16 width, u16 height, TextureFormat format);
-    FrameBufferHandle createFrameBuffer(Vector<TextureHandle> textures);
+    FrameBufferHandle createFrameBuffer(std::vector<TextureHandle> textures);
     TextureHandle getFrameBufferTexture(FrameBufferHandle handle, uint index);
     void deleteFrameBuffer(FrameBufferHandle handle);
 
@@ -509,12 +514,14 @@ public:
     uint backbufferView() const;
 
 private:
+    Logger& logger_;
+
     u16 width_, height_;
-    String window_title_;
+    std::string window_title_;
 
     bool use_render_thread_;
     bool is_first_frame_;
-    Thread render_thread_;
+    std::thread render_thread_;
 
     // Handles.
     HandleGenerator<VertexBufferHandle> vertex_buffer_handle_;
@@ -525,8 +532,8 @@ private:
     HandleGenerator<FrameBufferHandle> frame_buffer_handle_;
 
     // Vertex/index buffers.
-    HashMap<VertexBufferHandle, VertexDecl> vertex_buffer_decl_;
-    HashMap<IndexBufferHandle, IndexBufferType> index_buffer_types_;
+    std::unordered_map<VertexBufferHandle, VertexDecl> vertex_buffer_decl_;
+    std::unordered_map<IndexBufferHandle, IndexBufferType> index_buffer_types_;
     VertexBufferHandle transient_vb;
     uint transient_vb_max_size;
     IndexBufferHandle transient_ib;
@@ -538,17 +545,17 @@ private:
         u16 height;
         TextureFormat format;
     };
-    HashMap<TextureHandle, TextureData> texture_data_;
+    std::unordered_map<TextureHandle, TextureData> texture_data_;
 
     // Framebuffers.
-    HashMap<FrameBufferHandle, Vector<TextureHandle>> frame_buffer_textures_;
+    std::unordered_map<FrameBufferHandle, std::vector<TextureHandle>> frame_buffer_textures_;
 
     // Shared.
-    Atomic<bool> shared_rt_should_exit_;
+    std::atomic<bool> shared_rt_should_exit_;
     bool shared_rt_finished_;
-    Barrier shared_frame_barrier_;
-    Mutex swap_mutex_;
-    ConditionVariable swap_cv_;
+    dga::Barrier shared_frame_barrier_;
+    std::mutex swap_mutex_;
+    std::condition_variable swap_cv_;
     bool swapped_frames_;
 
     Frame frames_[2];
@@ -560,11 +567,10 @@ private:
     void submitPostFrameCommand(RenderCommand command);
 
     // Renderer.
-    UniquePtr<RenderContext> shared_render_context_;
+    std::unique_ptr<RenderContext> shared_render_context_;
 
     // Render thread proc.
     void renderThread();
     bool renderFrame(Frame* frame);
 };
-}  // namespace rhi
 }  // namespace dw

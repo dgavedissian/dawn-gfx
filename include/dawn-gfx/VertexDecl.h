@@ -1,11 +1,15 @@
 /*
- * Dawn Engine
- * Written by David Avedissian (c) 2012-2019 (git@dga.me.uk)
+ * Dawn Graphics
+ * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
 #pragma once
 
+#include "dawn-gfx/detail/BaseTypes.h"
+#include <vector>
+#include <utility>
+#include <cstddef>
+
 namespace dw {
-namespace rhi {
 // Vertex Declaration.
 class DW_API VertexDecl {
 public:
@@ -17,17 +21,16 @@ public:
     ~VertexDecl() = default;
 
     VertexDecl& begin();
-    VertexDecl& add(Attribute attribute, uint count, AttributeType type, bool normalised = false);
+    VertexDecl& add(Attribute attribute, usize count, AttributeType type, bool normalised = false);
     VertexDecl& end();
 
     u16 stride() const;
-
     bool empty() const;
 
 private:
-    static u16 encodeAttributes(Attribute attribute, uint count, AttributeType type,
+    static u16 encodeAttributes(Attribute attribute, usize count, AttributeType type,
                                 bool normalised);
-    static void decodeAttributes(u16 encoded_attribute, Attribute& attribute, uint& count,
+    static void decodeAttributes(u16 encoded_attribute, Attribute& attribute, usize& count,
                                  AttributeType& type, bool& normalised);
     static u16 attributeTypeSize(AttributeType type);
 
@@ -35,11 +38,10 @@ private:
     // Count: 3
     // AttributeType: 5
     // Normalised: 1
-    Vector<Pair<u16, byte*>> attributes_;
+    std::vector<std::pair<u16, std::byte*>> attributes_;
     u16 stride_;
 
     friend class RHIRenderer;
     friend class GLRenderContext;
 };
-}  // namespace rhi
 }  // namespace dw

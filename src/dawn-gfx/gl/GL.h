@@ -1,6 +1,6 @@
 /*
- * Dawn Engine
- * Written by David Avedissian (c) 2012-2019 (git@dga.me.uk)
+ * Dawn Graphics
+ * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
 #pragma once
 
@@ -11,13 +11,13 @@
 #pragma warning(push, 0)
 #endif
 
-#ifndef DW_EMSCRIPTEN
-#include <glad/glad.h>
+//#ifndef DW_EMSCRIPTEN
+#include <glad/gl.h>
 #define GLFW_INCLUDE_NONE
-#else
+//#else
 // Tell GLFW to load the OpenGL ES 3 headers.
-#define GLFW_INCLUDE_ES3
-#endif
+//#define GLFW_INCLUDE_ES3
+//#endif
 
 #include <GLFW/glfw3.h>
 

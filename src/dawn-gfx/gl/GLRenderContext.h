@@ -1,23 +1,23 @@
 /*
- * Dawn Engine
- * Written by David Avedissian (c) 2012-2019 (git@dga.me.uk)
+ * Dawn Graphics
+ * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
 #pragma once
 
 #include "RHIRenderer.h"
-#include "renderer/rhi/GL.h"
+#include "Logger.h"
+
+#include <glad/gl.h>
+#include <GLFW/glfw3.h>
 
 namespace dw {
-namespace rhi {
 class DW_API GLRenderContext : public RenderContext {
 public:
-    DW_OBJECT(GLRenderContext);
-
-    GLRenderContext(Context* ctx);
+    GLRenderContext(Logger& logger);
     virtual ~GLRenderContext();
 
     // Window management. Executed on the main thread.
-    Result<void> createWindow(u16 width, u16 height, const String& title) override;
+    tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title) override;
     void destroyWindow() override;
     void processEvents() override;
     bool isWindowClosed() const override;
@@ -28,7 +28,7 @@ public:
     // Command buffer processing. Executed on the render thread.
     void startRendering() override;
     void stopRendering() override;
-    void processCommandList(Vector<RenderCommand>& command_list) override;
+    void processCommandList(std::vector<RenderCommand>& command_list) override;
     bool frame(const Frame* frame) override;
 
     // Variant walker methods. Executed on the render thread.
@@ -53,6 +53,8 @@ public:
     }
 
 private:
+    Logger& logger_;
+
     GLFWwindow* window_;
     u16 backbuffer_width_;
     u16 backbuffer_height_;
@@ -74,19 +76,19 @@ private:
         GLenum usage;
         size_t size;
     };
-    HashMap<VertexBufferHandle, VertexBufferData> vertex_buffer_map_;
-    HashMap<IndexBufferHandle, IndexBufferData> index_buffer_map_;
+    std::unordered_map<VertexBufferHandle, VertexBufferData> vertex_buffer_map_;
+    std::unordered_map<IndexBufferHandle, IndexBufferData> index_buffer_map_;
 
     // Shaders and programs.
     struct ProgramData {
         GLuint program;
-        HashMap<String, GLint> uniform_location_map;
+        std::unordered_map<std::string, GLint> uniform_location_map;
     };
-    HashMap<ShaderHandle, GLuint> shader_map_;
-    HashMap<ProgramHandle, ProgramData> program_map_;
+    std::unordered_map<ShaderHandle, GLuint> shader_map_;
+    std::unordered_map<ProgramHandle, ProgramData> program_map_;
 
     // Textures.
-    HashMap<TextureHandle, GLuint> texture_map_;
+    std::unordered_map<TextureHandle, GLuint> texture_map_;
 
     // Frame buffers.
     struct FrameBufferData {
@@ -94,12 +96,11 @@ private:
         GLuint depth_render_buffer;
         u16 width;
         u16 height;
-        Vector<TextureHandle> textures;
+        std::vector<TextureHandle> textures;
     };
-    HashMap<FrameBufferHandle, FrameBufferData> frame_buffer_map_;
+    std::unordered_map<FrameBufferHandle, FrameBufferData> frame_buffer_map_;
 
     // Helper functions.
     void setupVertexArrayAttributes(const VertexDecl& decl, uint vb_offset);
 };
-}  // namespace rhi
 }  // namespace dw
