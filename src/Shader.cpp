@@ -114,7 +114,8 @@ void initResourcesGLSL(TBuiltInResource& resources) {
 }  // namespace
 
 namespace dw {
-tl::expected<std::vector<u32>, ShaderCompileError> compileGLSL(const std::string& glsl_source, ShaderStage stage) {
+tl::expected<std::vector<u32>, ShaderCompileError> compileGLSL(const std::string& glsl_source,
+                                                               ShaderStage stage) {
     // Parse GLSL code.
     EShLanguage esh_stage = EShLangVertex;
     switch (stage) {
@@ -138,12 +139,14 @@ tl::expected<std::vector<u32>, ShaderCompileError> compileGLSL(const std::string
     TBuiltInResource resources{};
     initResourcesGLSL(resources);
     if (!shader.parse(&resources, 330, false, EShMsgDefault)) {
-        return tl::make_unexpected(ShaderCompileError{shader.getInfoLog(), shader.getInfoDebugLog()});
+        return tl::make_unexpected(
+            ShaderCompileError{shader.getInfoLog(), shader.getInfoDebugLog()});
     }
     glslang::TProgram program;
     program.addShader(&shader);
     if (!program.link(EShMsgDefault)) {
-        return tl::make_unexpected(ShaderCompileError{program.getInfoLog(), program.getInfoDebugLog()});
+        return tl::make_unexpected(
+            ShaderCompileError{program.getInfoLog(), program.getInfoDebugLog()});
     }
 
     // Convert to SPIR-V and hand to renderer.

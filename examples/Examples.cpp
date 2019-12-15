@@ -128,7 +128,6 @@ TEST_BODY(RHIBasicVertexBuffer);
     }
 };
 
-/*
 TEST_CLASS(RHIBasicIndexBuffer) {
 TEST_BODY(RHIBasicIndexBuffer);
 
@@ -137,11 +136,9 @@ TEST_BODY(RHIBasicIndexBuffer);
     ProgramHandle program_;
 
     void start() override {
-        module<FileSystem>()->setWorkingDir("../media/examples");
-
         // Load shaders.
-        auto vs = util::loadShader(context(), ShaderStage::Vertex, "shaders/test.vs");
-        auto fs = util::loadShader(context(), ShaderStage::Fragment, "shaders/test.fs");
+        auto vs = util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/test.vs");
+        auto fs = util::loadShader(r, ShaderStage::Fragment, "../../examples/media/shaders/test.fs");
         program_ = r.createProgram();
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
@@ -182,11 +179,9 @@ TEST_BODY(RHITransientIndexBuffer);
     ProgramHandle program_;
 
     void start() override {
-        module<FileSystem>()->setWorkingDir("../examples");
-
         // Load shaders.
-        auto vs = util::loadShader(context(), ShaderStage::Vertex, "shaders/test.vs");
-        auto fs = util::loadShader(context(), ShaderStage::Fragment, "shaders/test.fs");
+        auto vs = util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/test.vs");
+        auto fs = util::loadShader(r, ShaderStage::Fragment, "../../examples/media/shaders/test.fs");
         program_ = r.createProgram();
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
@@ -229,6 +224,7 @@ TEST_BODY(RHITransientIndexBuffer);
     }
 };
 
+/*
 TEST_CLASS(RHITextured3DCube) {
 TEST_BODY(RHITextured3DCube);
 
@@ -567,7 +563,7 @@ TEST_BODY(RHIDeferredShading);
 */
 
 int main() {
-    RHIBasicVertexBuffer example;
+    RHITransientIndexBuffer example;
     example.start();
     while(true) {
         example.render(0.1f);

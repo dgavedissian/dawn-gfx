@@ -29,13 +29,13 @@
 #endif
 
 #define GL_CHECK() __CHECK(__FILE__, __LINE__)
-#define __CHECK(FILE, LINE)                                                             \
-    {                                                                                   \
-        GLuint err = glGetError();                                                      \
-        if (err != 0) {                                                                 \
-            throw std::runtime_error(                                                   \
-                fmt::format("glGetError() returned 0x%.4X at %s:%s", err, FILE, LINE)); \
-        }                                                                               \
+#define __CHECK(FILE, LINE)                                                            \
+    {                                                                                  \
+        GLuint err = glGetError();                                                     \
+        if (err != 0) {                                                                \
+            throw std::runtime_error(                                                  \
+                fmt::format("glGetError() returned {:#x} at {}:{}", err, FILE, LINE)); \
+        }                                                                              \
     }
 
 namespace dw {
@@ -332,7 +332,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
     logger_.info("Creating window.");
 
     // Initialise GLFW.
-    logger_.info("GLFW Version: %s", glfwGetVersionString());
+    logger_.info("GLFW Version: {}", glfwGetVersionString());
 #if DW_PLATFORM == DW_MACOS
     glfwInitHint(GLFW_COCOA_CHDIR_RESOURCES, GLFW_FALSE);
 #endif
@@ -340,7 +340,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
         const char* last_error;
         int error_code = glfwGetError(&last_error);
         return tl::make_unexpected(fmt::format(
-            "Failed to initialise GLFW. Code: 0x%. Description: %s", error_code, last_error));
+            "Failed to initialise GLFW. Code: {:#x}. Description: {}", error_code, last_error));
     }
 
     glfwSetErrorCallback([](int error, const char* description) {
@@ -376,7 +376,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
     if (!window_) {
         // Failed to create window.
         return tl::make_unexpected(
-            fmt::format("glfwCreateWindow failed. Code: 0x%x. Description: %s", last_error_code,
+            fmt::format("glfwCreateWindow failed. Code: {:#x}. Description: {}", last_error_code,
                         last_error_description));
     }
     Vec2i fb_size = backbufferSize();
@@ -393,7 +393,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
     //        // Look up key.
     //        auto key_it = s_key_map.find(key);
     //        if (key_it == s_key_map.end()) {
-    //            ctx->module<Logger>()->withObjectName("GLFW").warn("Unknown key code %s", key);
+    //            ctx->module<Logger>()->withObjectName("GLFW").warn("Unknown key code {}", key);
     //            return;
     //        }
     //
@@ -421,7 +421,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
     //        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
     //        auto mouse_button = s_mouse_button_map.find(button);
     //        if (mouse_button == s_mouse_button_map.end()) {
-    //            ctx->module<Logger>()->withObjectName("GLFW").warn("Unknown mouse button %s",
+    //            ctx->module<Logger>()->withObjectName("GLFW").warn("Unknown mouse button {}",
     //            button); return;
     //        }
     //        if (action == GLFW_PRESS) {
@@ -449,9 +449,9 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
 #endif
 
     // Print GL information.
-    logger_.info("OpenGL: %s - GLSL: %s", glGetString(GL_VERSION),
+    logger_.info("OpenGL: {} - GLSL: {}", glGetString(GL_VERSION),
                  glGetString(GL_SHADING_LANGUAGE_VERSION));
-    logger_.info("OpenGL Renderer: %s", glGetString(GL_RENDERER));
+    logger_.info("OpenGL Renderer: {}", glGetString(GL_RENDERER));
 
     // Hand off context to render thread.
     glfwMakeContextCurrent(nullptr);
@@ -652,7 +652,7 @@ bool GLRenderContext::frame(const Frame* frame) {
                     GL_CHECK();
                     program_data.uniform_location_map.emplace(uniform_pair.first, uniform_location);
                     if (uniform_location == -1) {
-                        logger_.warn("[Frame] Unknown uniform '%s', skipping.", uniform_pair.first);
+                        logger_.warn("[Frame] Unknown uniform '{}', skipping.", uniform_pair.first);
                     }
                 }
                 if (uniform_location == -1) {
@@ -834,7 +834,7 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
     source = dga::replace(source, "#extension GL_ARB_shading_language_420pack : require",
                           "#extension GL_ARB_shading_language_420pack : disable");
 #endif
-    // logger_.debug("Decompiled GLSL from SPIR-V: %s", source);
+    // logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
 
     // Compile shader.
     static std::unordered_map<ShaderStage, GLenum> shader_type_map = {
@@ -857,7 +857,7 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
 
         std::string error_message(info_log_length, '\0');
         glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data());
-        logger_.error("[CreateShader] Shader Compile Error: %s", error_message);
+        logger_.error("[CreateShader] Shader Compile Error: {}", error_message);
 
         // TODO: Error
     }
@@ -893,7 +893,7 @@ void GLRenderContext::operator()(const cmd::LinkProgram& c) {
         glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_log_length);
         std::string error_message(info_log_length, '\0');
         glGetProgramInfoLog(program, info_log_length, nullptr, error_message.data());
-        logger_.error("[CreateShader] Shader Compile Error: %s", error_message);
+        logger_.error("[CreateShader] Shader Compile Error: {}", error_message);
     }
 }
 
@@ -903,7 +903,7 @@ void GLRenderContext::operator()(const cmd::DeleteProgram& c) {
         glDeleteProgram(it->second.program);
         program_map_.erase(it);
     } else {
-        logger_.error("[DeleteProgram] Unable to find program with handle %s", c.handle.internal());
+        logger_.error("[DeleteProgram] Unable to find program with handle {}", c.handle.internal());
     }
 }
 
@@ -919,7 +919,7 @@ void GLRenderContext::operator()(const cmd::CreateTexture2D& c) {
     // Give image data to OpenGL.
     TextureFormatInfo format = s_texture_format[static_cast<int>(c.format)];
     logger_.debug(
-        "[CreateTexture2D] format %s - internal fmt: 0x%.4X - internal fmt srgb: 0x%.4X "
+        "[CreateTexture2D] format {} - internal fmt: 0x%.4X - internal fmt srgb: 0x%.4X "
         "- fmt: 0x%.4X - type: 0x%.4X",
         static_cast<u32>(c.format), format.internal_format, format.internal_format_srgb,
         format.format, format.type);
@@ -1003,8 +1003,8 @@ void GLRenderContext::setupVertexArrayAttributes(const VertexDecl& decl, uint vb
             continue;
         }
 
-        //        logger_.debug("[SetupVertexArrayAttributes] Attrib %s: Count='%s' Type='%s'
-        //        Stride='%s' Offset='%s'",
+        //        logger_.debug("[SetupVertexArrayAttributes] Attrib {}: Count='{}' Type='{}'
+        //        Stride='{}' Offset='{}'",
         //                    attrib_counter, count, static_cast<int>(gl_type->first), decl.stride_,
         //                    reinterpret_cast<uintptr_t>(attrib.second));
 

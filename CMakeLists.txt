@@ -3,8 +3,6 @@
 cmake_minimum_required(VERSION 3.14)
 project(dawn-gfx)
 
-set(CMAKE_CXX_STANDARD 17)
-
 include(FetchContent)
 include(ExternalProject)
 
@@ -49,12 +47,18 @@ FetchContent_declare(
 FetchContent_MakeAvailable(fmt)
 
 if(EMSCRIPTEN)
-    add_library(glad INTERFACE)
-    target_include_directories(glad INTERFACE src/dawn-gfx/gl/glad/include)
+    add_library(glad INTERFACE EXCLUDE_FROM_ALL
+        src/glad/include/glad/gl.h
+        src/glad/include/KHR/khrplatform.h
+    )
+    target_include_directories(glad INTERFACE src/glad/include)
 else()
     add_library(glad EXCLUDE_FROM_ALL
-        src/dawn-gfx/gl/glad/src/gl.c)
-    target_include_directories(glad PUBLIC src/dawn-gfx/gl/glad/include)
+        src/glad/src/gl.c
+        src/glad/include/glad/gl.h
+        src/glad/include/KHR/khrplatform.h
+    )
+    target_include_directories(glad PUBLIC src/glad/include)
 endif()
 
 FetchContent_Declare(
@@ -88,9 +92,9 @@ set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)
 set(ENABLE_HLSL OFF CACHE BOOL "" FORCE)
 mark_as_advanced(
-        BUILD_TESTING
-        ENABLE_GLSLANG_BINARIES
-        ENABLE_HLSL
+    BUILD_TESTING
+    ENABLE_GLSLANG_BINARIES
+    ENABLE_HLSL
 )
 FetchContent_MakeAvailable(glslang)
 
@@ -138,20 +142,22 @@ add_library(dawn-gfx
     include/dawn-gfx/RHIRenderer.h
     include/dawn-gfx/Shader.h
     include/dawn-gfx/VertexDecl.h
-    src/dawn-gfx/gl/GL.h
-    src/dawn-gfx/gl/GLRenderContext.cpp
-    src/dawn-gfx/gl/GLRenderContext.h
-    src/dawn-gfx/null/NullRenderContext.cpp
-    src/dawn-gfx/null/NullRenderContext.h
-    src/dawn-gfx/Colour.cpp
-    src/dawn-gfx/Glslang.h
-    src/dawn-gfx/Memory.cpp
-    src/dawn-gfx/RHIRenderer.cpp
-    src/dawn-gfx/Shader.cpp
-    src/dawn-gfx/SPIRV.h
-    src/dawn-gfx/VertexDecl.cpp)
+    src/gl/GL.h
+    src/gl/GLRenderContext.cpp
+    src/gl/GLRenderContext.h
+    src/null/NullRenderContext.cpp
+    src/null/NullRenderContext.h
+    src/Colour.cpp
+    src/Glslang.h
+    src/Memory.cpp
+    src/RHIRenderer.cpp
+    src/Shader.cpp
+    src/SPIRV.h
+    src/VertexDecl.cpp)
 target_include_directories(dawn-gfx PUBLIC include)
-target_include_directories(dawn-gfx PRIVATE include/dawn-gfx src/dawn-gfx)
+target_include_directories(dawn-gfx PRIVATE include/dawn-gfx src)
 target_link_libraries(dawn-gfx barrier expected fmt glad glfw glslang SPIRV MathGeoLib spirv-cross-glsl spirv-cross-hlsl)
+target_compile_features(dawn-gfx PUBLIC cxx_std_17)
+set_target_properties(dawn-gfx PROPERTIES CXX_EXTENSIONS OFF)
 
 add_subdirectory(examples)
