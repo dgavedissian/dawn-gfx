@@ -3,7 +3,7 @@
  * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
 #include "Base.h"
-#include "RHIRenderer.h"
+#include "Renderer.h"
 #include "gl/GLRenderContext.h"
 #include "null/NullRenderContext.h"
 //#include "renderer/GLSL.h"
@@ -81,7 +81,7 @@ View& Frame::view(uint view_index) {
     return views[view_index];
 }
 
-RHIRenderer::RHIRenderer(Logger& logger)
+Renderer::Renderer(Logger& logger)
     : logger_(logger),
       use_render_thread_(false),
       is_first_frame_(true),
@@ -92,7 +92,7 @@ RHIRenderer::RHIRenderer(Logger& logger)
       render_(&frames_[1]) {
 }
 
-RHIRenderer::~RHIRenderer() {
+Renderer::~Renderer() {
     // Wait for render thread if multithreaded.
     if (use_render_thread_) {
         if (!shared_rt_finished_) {
@@ -108,7 +108,7 @@ RHIRenderer::~RHIRenderer() {
     }
 }
 
-tl::expected<void, std::string> RHIRenderer::init(RendererType type, u16 width, u16 height,
+tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16 height,
                                                   const std::string& title,
                                                   bool use_render_thread) {
     if (type == RendererType::Null) {
@@ -163,7 +163,7 @@ tl::expected<void, std::string> RHIRenderer::init(RendererType type, u16 width, 
     return {};
 }
 
-VertexBufferHandle RHIRenderer::createVertexBuffer(Memory data, const VertexDecl& decl,
+VertexBufferHandle Renderer::createVertexBuffer(Memory data, const VertexDecl& decl,
                                                    BufferUsage usage) {
     // TODO: Validate data.
     auto handle = vertex_buffer_handle_.next();
@@ -173,13 +173,13 @@ VertexBufferHandle RHIRenderer::createVertexBuffer(Memory data, const VertexDecl
     return handle;
 }
 
-void RHIRenderer::setVertexBuffer(VertexBufferHandle handle) {
+void Renderer::setVertexBuffer(VertexBufferHandle handle) {
     submit_->current_item.vb = handle;
     submit_->current_item.vb_offset = 0;
     submit_->current_item.vertex_decl_override = VertexDecl{};
 }
 
-void RHIRenderer::updateVertexBuffer(VertexBufferHandle handle, Memory data, uint offset) {
+void Renderer::updateVertexBuffer(VertexBufferHandle handle, Memory data, uint offset) {
     // TODO: Validate data.
     submitPreFrameCommand(cmd::UpdateVertexBuffer{handle, std::move(data), offset});
 
@@ -194,11 +194,11 @@ void RHIRenderer::updateVertexBuffer(VertexBufferHandle handle, Memory data, uin
 #endif
 }
 
-void RHIRenderer::deleteVertexBuffer(VertexBufferHandle handle) {
+void Renderer::deleteVertexBuffer(VertexBufferHandle handle) {
     submitPostFrameCommand(cmd::DeleteVertexBuffer{handle});
 }
 
-IndexBufferHandle RHIRenderer::createIndexBuffer(Memory data, IndexBufferType type,
+IndexBufferHandle Renderer::createIndexBuffer(Memory data, IndexBufferType type,
                                                  BufferUsage usage) {
     auto handle = index_buffer_handle_.next();
     uint data_size = data.size();
@@ -207,12 +207,12 @@ IndexBufferHandle RHIRenderer::createIndexBuffer(Memory data, IndexBufferType ty
     return handle;
 }
 
-void RHIRenderer::setIndexBuffer(IndexBufferHandle handle) {
+void Renderer::setIndexBuffer(IndexBufferHandle handle) {
     submit_->current_item.ib = handle;
     submit_->current_item.ib_offset = 0;
 }
 
-void RHIRenderer::updateIndexBuffer(IndexBufferHandle handle, Memory data, uint offset) {
+void Renderer::updateIndexBuffer(IndexBufferHandle handle, Memory data, uint offset) {
     // TODO: Validate data.
     submitPreFrameCommand(cmd::UpdateIndexBuffer{handle, std::move(data), offset});
 
@@ -226,11 +226,11 @@ void RHIRenderer::updateIndexBuffer(IndexBufferHandle handle, Memory data, uint 
 #endif
 }
 
-void RHIRenderer::deleteIndexBuffer(IndexBufferHandle handle) {
+void Renderer::deleteIndexBuffer(IndexBufferHandle handle) {
     submitPostFrameCommand(cmd::DeleteIndexBuffer{handle});
 }
 
-TransientVertexBufferHandle RHIRenderer::allocTransientVertexBuffer(uint vertex_count,
+TransientVertexBufferHandle Renderer::allocTransientVertexBuffer(uint vertex_count,
                                                                     const VertexDecl& decl) {
     // Check that we have enough space.
     uint size = vertex_count * decl.stride();
@@ -246,7 +246,7 @@ TransientVertexBufferHandle RHIRenderer::allocTransientVertexBuffer(uint vertex_
     return handle;
 }
 
-std::byte* RHIRenderer::getTransientVertexBufferData(TransientVertexBufferHandle handle) {
+std::byte* Renderer::getTransientVertexBufferData(TransientVertexBufferHandle handle) {
     auto it = submit_->transient_vertex_buffers_.find(handle);
     if (it != submit_->transient_vertex_buffers_.end()) {
         return it->second.data;
@@ -254,14 +254,14 @@ std::byte* RHIRenderer::getTransientVertexBufferData(TransientVertexBufferHandle
     return nullptr;
 }
 
-void RHIRenderer::setVertexBuffer(TransientVertexBufferHandle handle) {
+void Renderer::setVertexBuffer(TransientVertexBufferHandle handle) {
     Frame::TransientVertexBufferData& tvb = submit_->transient_vertex_buffers_.at(handle);
     submit_->current_item.vb = transient_vb;
     submit_->current_item.vb_offset = (uint)(tvb.data - submit_->transient_vb_storage.data.get());
     submit_->current_item.vertex_decl_override = tvb.decl;
 }
 
-TransientIndexBufferHandle RHIRenderer::allocTransientIndexBuffer(uint index_count) {
+TransientIndexBufferHandle Renderer::allocTransientIndexBuffer(uint index_count) {
     // Check that we have enough space.
     uint size = index_count * sizeof(u16);
     if (size > transient_ib_max_size - submit_->transient_ib_storage.size) {
@@ -276,7 +276,7 @@ TransientIndexBufferHandle RHIRenderer::allocTransientIndexBuffer(uint index_cou
     return handle;
 }
 
-std::byte* RHIRenderer::getTransientIndexBufferData(TransientIndexBufferHandle handle) {
+std::byte* Renderer::getTransientIndexBufferData(TransientIndexBufferHandle handle) {
     auto it = submit_->transient_index_buffers_.find(handle);
     if (it != submit_->transient_index_buffers_.end()) {
         return it->second.data;
@@ -284,73 +284,73 @@ std::byte* RHIRenderer::getTransientIndexBufferData(TransientIndexBufferHandle h
     return nullptr;
 }
 
-void RHIRenderer::setIndexBuffer(TransientIndexBufferHandle handle) {
+void Renderer::setIndexBuffer(TransientIndexBufferHandle handle) {
     Frame::TransientIndexBufferData& tib = submit_->transient_index_buffers_.at(handle);
     submit_->current_item.ib = transient_ib;
     submit_->current_item.ib_offset = (uint)(tib.data - submit_->transient_ib_storage.data.get());
 }
 
-ShaderHandle RHIRenderer::createShader(ShaderStage stage, Memory data) {
+ShaderHandle Renderer::createShader(ShaderStage stage, Memory data) {
     auto handle = shader_handle_.next();
     submitPreFrameCommand(cmd::CreateShader{handle, stage, std::move(data)});
     return handle;
 }
 
-void RHIRenderer::deleteShader(ShaderHandle handle) {
+void Renderer::deleteShader(ShaderHandle handle) {
     submitPostFrameCommand(cmd::DeleteShader{handle});
 }
 
-ProgramHandle RHIRenderer::createProgram() {
+ProgramHandle Renderer::createProgram() {
     auto handle = program_handle_.next();
     submitPreFrameCommand(cmd::CreateProgram{handle});
     return handle;
 }
 
-void RHIRenderer::attachShader(ProgramHandle program, ShaderHandle shader) {
+void Renderer::attachShader(ProgramHandle program, ShaderHandle shader) {
     submitPreFrameCommand(cmd::AttachShader{program, shader});
 }
 
-void RHIRenderer::linkProgram(ProgramHandle program) {
+void Renderer::linkProgram(ProgramHandle program) {
     submitPreFrameCommand(cmd::LinkProgram{program});
 }
 
-void RHIRenderer::deleteProgram(ProgramHandle program) {
+void Renderer::deleteProgram(ProgramHandle program) {
     submitPostFrameCommand(cmd::DeleteProgram{program});
 }
 
-void RHIRenderer::setUniform(const std::string& uniform_name, int value) {
+void Renderer::setUniform(const std::string& uniform_name, int value) {
     setUniform(uniform_name, UniformData{value});
 }
 
-void RHIRenderer::setUniform(const std::string& uniform_name, float value) {
+void Renderer::setUniform(const std::string& uniform_name, float value) {
     setUniform(uniform_name, UniformData{value});
 }
 
-void RHIRenderer::setUniform(const std::string& uniform_name, const Vec2& value) {
+void Renderer::setUniform(const std::string& uniform_name, const Vec2& value) {
     setUniform(uniform_name, UniformData{value});
 }
 
-void RHIRenderer::setUniform(const std::string& uniform_name, const Vec3& value) {
+void Renderer::setUniform(const std::string& uniform_name, const Vec3& value) {
     setUniform(uniform_name, UniformData{value});
 }
 
-void RHIRenderer::setUniform(const std::string& uniform_name, const Vec4& value) {
+void Renderer::setUniform(const std::string& uniform_name, const Vec4& value) {
     setUniform(uniform_name, UniformData{value});
 }
 
-void RHIRenderer::setUniform(const std::string& uniform_name, const Mat3& value) {
+void Renderer::setUniform(const std::string& uniform_name, const Mat3& value) {
     setUniform(uniform_name, UniformData{value});
 }
 
-void RHIRenderer::setUniform(const std::string& uniform_name, const Mat4& value) {
+void Renderer::setUniform(const std::string& uniform_name, const Mat4& value) {
     setUniform(uniform_name, UniformData{value});
 }
 
-void RHIRenderer::setUniform(const std::string& uniform_name, UniformData data) {
+void Renderer::setUniform(const std::string& uniform_name, UniformData data) {
     submit_->current_item.uniforms[uniform_name] = data;
 }
 
-TextureHandle RHIRenderer::createTexture2D(u16 width, u16 height, TextureFormat format,
+TextureHandle Renderer::createTexture2D(u16 width, u16 height, TextureFormat format,
                                            Memory data) {
     auto handle = texture_handle_.next();
     texture_data_[handle] = {width, height, format};
@@ -358,17 +358,17 @@ TextureHandle RHIRenderer::createTexture2D(u16 width, u16 height, TextureFormat 
     return handle;
 }
 
-void RHIRenderer::setTexture(TextureHandle handle, uint sampler_unit) {
+void Renderer::setTexture(TextureHandle handle, uint sampler_unit) {
     // TODO: check precondition: texture_unit < MAX_TEXTURE_UNITS
     submit_->current_item.textures[sampler_unit].handle = handle;
 }
 
-void RHIRenderer::deleteTexture(TextureHandle handle) {
+void Renderer::deleteTexture(TextureHandle handle) {
     texture_data_.erase(handle);
     submitPostFrameCommand(cmd::DeleteTexture{handle});
 }
 
-FrameBufferHandle RHIRenderer::createFrameBuffer(u16 width, u16 height, TextureFormat format) {
+FrameBufferHandle Renderer::createFrameBuffer(u16 width, u16 height, TextureFormat format) {
     auto handle = frame_buffer_handle_.next();
     auto texture_handle = createTexture2D(width, height, format, Memory());
     frame_buffer_textures_[handle] = {texture_handle};
@@ -376,7 +376,7 @@ FrameBufferHandle RHIRenderer::createFrameBuffer(u16 width, u16 height, TextureF
     return handle;
 }
 
-FrameBufferHandle RHIRenderer::createFrameBuffer(std::vector<TextureHandle> textures) {
+FrameBufferHandle Renderer::createFrameBuffer(std::vector<TextureHandle> textures) {
     auto handle = frame_buffer_handle_.next();
     u16 width = texture_data_.at(textures[0]).width, height = texture_data_.at(textures[0]).height;
     for (size_t i = 1; i < textures.size(); ++i) {
@@ -392,25 +392,25 @@ FrameBufferHandle RHIRenderer::createFrameBuffer(std::vector<TextureHandle> text
     return handle;
 }
 
-TextureHandle RHIRenderer::getFrameBufferTexture(FrameBufferHandle handle, uint index) {
+TextureHandle Renderer::getFrameBufferTexture(FrameBufferHandle handle, uint index) {
     auto& textures = frame_buffer_textures_.at(handle);
     return textures[index];
 }
 
-void RHIRenderer::deleteFrameBuffer(FrameBufferHandle handle) {
+void Renderer::deleteFrameBuffer(FrameBufferHandle handle) {
     frame_buffer_textures_.erase(handle);
     submitPostFrameCommand(cmd::DeleteFrameBuffer{handle});
 }
 
-void RHIRenderer::setViewClear(uint view, const Colour& colour) {
+void Renderer::setViewClear(uint view, const Colour& colour) {
     submit_->view(view).clear_colour = colour;
 }
 
-void RHIRenderer::setViewFrameBuffer(uint view, FrameBufferHandle handle) {
+void Renderer::setViewFrameBuffer(uint view, FrameBufferHandle handle) {
     submit_->view(view).frame_buffer = handle;
 }
 
-void RHIRenderer::setStateEnable(RenderState state) {
+void Renderer::setStateEnable(RenderState state) {
     switch (state) {
         case RenderState::CullFace:
             submit_->current_item.cull_face_enabled = true;
@@ -424,7 +424,7 @@ void RHIRenderer::setStateEnable(RenderState state) {
     }
 }
 
-void RHIRenderer::setStateDisable(RenderState state) {
+void Renderer::setStateDisable(RenderState state) {
     switch (state) {
         case RenderState::CullFace:
             submit_->current_item.cull_face_enabled = false;
@@ -438,19 +438,19 @@ void RHIRenderer::setStateDisable(RenderState state) {
     }
 }
 
-void RHIRenderer::setStateCullFrontFace(CullFrontFace front_face) {
+void Renderer::setStateCullFrontFace(CullFrontFace front_face) {
     submit_->current_item.cull_front_face = front_face;
 }
 
-void RHIRenderer::setStatePolygonMode(PolygonMode polygon_mode) {
+void Renderer::setStatePolygonMode(PolygonMode polygon_mode) {
     submit_->current_item.polygon_mode = polygon_mode;
 }
 
-void RHIRenderer::setStateBlendEquation(BlendEquation equation, BlendFunc src, BlendFunc dest) {
+void Renderer::setStateBlendEquation(BlendEquation equation, BlendFunc src, BlendFunc dest) {
     setStateBlendEquation(equation, src, dest, equation, src, dest);
 }
 
-void RHIRenderer::setStateBlendEquation(BlendEquation equation_rgb, BlendFunc src_rgb,
+void Renderer::setStateBlendEquation(BlendEquation equation_rgb, BlendFunc src_rgb,
                                         BlendFunc dest_rgb, BlendEquation equation_a,
                                         BlendFunc src_a, BlendFunc dest_a) {
     submit_->current_item.blend_equation_rgb = equation_rgb;
@@ -461,15 +461,15 @@ void RHIRenderer::setStateBlendEquation(BlendEquation equation_rgb, BlendFunc sr
     submit_->current_item.blend_dest_a = dest_a;
 }
 
-void RHIRenderer::setColourWrite(bool write_enabled) {
+void Renderer::setColourWrite(bool write_enabled) {
     submit_->current_item.colour_write = write_enabled;
 }
 
-void RHIRenderer::setDepthWrite(bool write_enabled) {
+void Renderer::setDepthWrite(bool write_enabled) {
     submit_->current_item.depth_write = write_enabled;
 }
 
-void RHIRenderer::setScissor(u16 x, u16 y, u16 width, u16 height) {
+void Renderer::setScissor(u16 x, u16 y, u16 width, u16 height) {
     submit_->current_item.scissor_enabled = true;
     submit_->current_item.scissor_x = x;
     submit_->current_item.scissor_y = y;
@@ -477,15 +477,15 @@ void RHIRenderer::setScissor(u16 x, u16 y, u16 width, u16 height) {
     submit_->current_item.scissor_height = height;
 }
 
-void RHIRenderer::submit(uint view, ProgramHandle program) {
+void Renderer::submit(uint view, ProgramHandle program) {
     submit(view, program, 0);
 }
 
-void RHIRenderer::submit(uint view, ProgramHandle program, uint vertex_count) {
+void Renderer::submit(uint view, ProgramHandle program, uint vertex_count) {
     submit(view, program, vertex_count, 0);
 }
 
-void RHIRenderer::submit(uint view, ProgramHandle program, uint vertex_count, uint offset) {
+void Renderer::submit(uint view, ProgramHandle program, uint vertex_count, uint offset) {
     auto& item = submit_->current_item;
     item.program = program;
     item.primitive_count = vertex_count / 3;
@@ -502,7 +502,7 @@ void RHIRenderer::submit(uint view, ProgramHandle program, uint vertex_count, ui
     item.clear();
 }
 
-bool RHIRenderer::frame() {
+bool Renderer::frame() {
     // If we are rendering in multithreaded mode, wait for the render thread.
     if (use_render_thread_) {
         // If the rendering thread is doing nothing, print a warning and give up.
@@ -541,27 +541,27 @@ bool RHIRenderer::frame() {
     return true;
 }
 
-Vec2i RHIRenderer::windowSize() const {
+Vec2i Renderer::windowSize() const {
     return shared_render_context_->windowSize();
 }
 
-Vec2 RHIRenderer::windowScale() const {
+Vec2 Renderer::windowScale() const {
     return shared_render_context_->windowScale();
 }
 
-Vec2i RHIRenderer::backbufferSize() const {
+Vec2i Renderer::backbufferSize() const {
     return shared_render_context_->backbufferSize();
 }
 
-void RHIRenderer::submitPreFrameCommand(RenderCommand command) {
+void Renderer::submitPreFrameCommand(RenderCommand command) {
     submit_->commands_pre.emplace_back(std::move(command));
 }
 
-void RHIRenderer::submitPostFrameCommand(RenderCommand command) {
+void Renderer::submitPostFrameCommand(RenderCommand command) {
     submit_->commands_post.emplace_back(std::move(command));
 }
 
-void RHIRenderer::renderThread() {
+void Renderer::renderThread() {
     shared_render_context_->startRendering();
 
     while (!shared_rt_should_exit_) {
@@ -595,7 +595,7 @@ void RHIRenderer::renderThread() {
     shared_render_context_->stopRendering();
 }
 
-bool RHIRenderer::renderFrame(Frame* frame) {
+bool Renderer::renderFrame(Frame* frame) {
     // Hand off commands to the render context.
     shared_render_context_->processCommandList(frame->commands_pre);
     if (!shared_render_context_->frame(frame)) {
@@ -625,7 +625,7 @@ bool RHIRenderer::renderFrame(Frame* frame) {
     return true;
 }
 
-uint RHIRenderer::backbufferView() const {
+uint Renderer::backbufferView() const {
     for (uint view_index = 0; view_index < submit_->views.size(); ++view_index) {
         if (submit_->views[view_index].frame_buffer.internal() == 0) {
             return view_index;

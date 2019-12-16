@@ -17,6 +17,7 @@ using dga::i16;
 using dga::i32;
 using dga::i64;
 using dga::usize;
+using dga::uint;
 }
 
 #define DW_API DGA_API

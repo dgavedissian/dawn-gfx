@@ -47,19 +47,19 @@ FetchContent_declare(
 FetchContent_MakeAvailable(fmt)
 
 if(EMSCRIPTEN)
-    add_library(glad INTERFACE EXCLUDE_FROM_ALL
+    add_library(glad EXCLUDE_FROM_ALL
         src/glad/include/glad/gl.h
         src/glad/include/KHR/khrplatform.h
     )
-    target_include_directories(glad INTERFACE src/glad/include)
 else()
     add_library(glad EXCLUDE_FROM_ALL
         src/glad/src/gl.c
         src/glad/include/glad/gl.h
         src/glad/include/KHR/khrplatform.h
     )
-    target_include_directories(glad PUBLIC src/glad/include)
 endif()
+target_include_directories(glad PUBLIC src/glad/include)
+set_target_properties(glad PROPERTIES LINKER_LANGUAGE CXX)
 
 FetchContent_Declare(
     glfw
@@ -139,7 +139,7 @@ add_library(dawn-gfx
     include/dawn-gfx/Input.h
     include/dawn-gfx/Logger.h
     include/dawn-gfx/Math.h
-    include/dawn-gfx/RHIRenderer.h
+    include/dawn-gfx/Renderer.h
     include/dawn-gfx/Shader.h
     include/dawn-gfx/VertexDecl.h
     src/gl/GL.h
@@ -150,7 +150,7 @@ add_library(dawn-gfx
     src/Colour.cpp
     src/Glslang.h
     src/Memory.cpp
-    src/RHIRenderer.cpp
+    src/Renderer.cpp
     src/Shader.cpp
     src/SPIRV.h
     src/VertexDecl.cpp)

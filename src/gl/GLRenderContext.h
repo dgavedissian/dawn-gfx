@@ -4,7 +4,7 @@
  */
 #pragma once
 
-#include "RHIRenderer.h"
+#include "Renderer.h"
 #include "Logger.h"
 
 #include <glad/gl.h>

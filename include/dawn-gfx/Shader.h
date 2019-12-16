@@ -4,7 +4,7 @@
  */
 #pragma once
 
-#include "RHIRenderer.h"
+#include "Renderer.h"
 #include <tl/expected.hpp>
 
 namespace dw {

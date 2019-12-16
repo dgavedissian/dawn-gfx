@@ -41,7 +41,7 @@ private:
     std::vector<std::pair<u16, std::byte*>> attributes_;
     u16 stride_;
 
-    friend class RHIRenderer;
+    friend class Renderer;
     friend class GLRenderContext;
 };
 }  // namespace dw

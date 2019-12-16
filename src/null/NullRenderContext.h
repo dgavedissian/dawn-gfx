@@ -4,7 +4,7 @@
  */
 #pragma once
 
-#include "RHIRenderer.h"
+#include "Renderer.h"
 
 namespace dw {
 class DW_API NullRenderContext : public RenderContext {

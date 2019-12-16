@@ -329,7 +329,7 @@ struct View {
 };
 
 // Frame.
-class RHIRenderer;
+class Renderer;
 struct Frame {
     Frame();
     ~Frame();
@@ -400,11 +400,10 @@ public:
 };
 
 // Low level renderer.
-// Based off: https://github.com/bkaradzic/bgfx/blob/master/src/bgfx_p.h#L2297
-class DW_API RHIRenderer {
+class DW_API Renderer {
 public:
-    RHIRenderer(Logger& logger);
-    ~RHIRenderer();
+    Renderer(Logger& logger);
+    ~Renderer();
 
     /// Initialise.
     tl::expected<void, std::string> init(RendererType type, u16 width, u16 height, const std::string& title,

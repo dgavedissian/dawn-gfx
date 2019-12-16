@@ -2,7 +2,7 @@
  * Dawn Engine
  * Written by David Avedissian (c) 2012-2019 (git@dga.dev)
  */
-#include <dawn-gfx/RHIRenderer.h>
+#include <dawn-gfx/Renderer.h>
 #include <dawn-gfx/Shader.h>
 #include <iostream>
 #include <fstream>
@@ -38,7 +38,7 @@ public:
     }
 
     StdoutLogger logger_;
-    RHIRenderer r;
+    Renderer r;
 };
 
 #define TEST_CLASS(test_name) class test_name : public Example
@@ -56,7 +56,7 @@ Mat4 createProjMatrix(float n, float f, float fov_y, float aspect) {
     return Mat4::OpenGLPerspProjRH(n, f, h, v);
 }
 
-uint createFullscreenQuad(RHIRenderer& r, VertexBufferHandle& vb) {
+uint createFullscreenQuad(Renderer& r, VertexBufferHandle& vb) {
     // clang-format off
     float vertices[] = {
         // Position   | UV
@@ -73,7 +73,7 @@ uint createFullscreenQuad(RHIRenderer& r, VertexBufferHandle& vb) {
     return 3;
 }
 
-ShaderHandle loadShader(RHIRenderer& r, ShaderStage type, const std::string& source_file) {
+ShaderHandle loadShader(Renderer& r, ShaderStage type, const std::string& source_file) {
     std::ifstream shader(source_file);
     std::string shader_source((std::istreambuf_iterator<char>(shader)),
                     std::istreambuf_iterator<char>());
@@ -436,7 +436,7 @@ TEST_BODY(RHIDeferredShading);
         }
 
     private:
-        RHIRenderer* r;
+        Renderer* r;
         SharedPtr<CustomMeshRenderable> sphere_;
         ProgramHandle program_;
 
