@@ -139,8 +139,10 @@ add_library(dawn-gfx
     include/dawn-gfx/Input.h
     include/dawn-gfx/Logger.h
     include/dawn-gfx/Math.h
+    include/dawn-gfx/MeshBuilder.h
     include/dawn-gfx/Renderer.h
     include/dawn-gfx/Shader.h
+    include/dawn-gfx/TriangleBuffer.h
     include/dawn-gfx/VertexDecl.h
     src/gl/GL.h
     src/gl/GLRenderContext.cpp
@@ -150,9 +152,11 @@ add_library(dawn-gfx
     src/Colour.cpp
     src/Glslang.h
     src/Memory.cpp
+    src/MeshBuilder.cpp
     src/Renderer.cpp
     src/Shader.cpp
     src/SPIRV.h
+    src/TriangleBuffer.cpp
     src/VertexDecl.cpp)
 target_include_directories(dawn-gfx PUBLIC include)
 target_include_directories(dawn-gfx PRIVATE include/dawn-gfx src)

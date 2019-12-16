@@ -4,8 +4,11 @@
  */
 #include <dawn-gfx/Renderer.h>
 #include <dawn-gfx/Shader.h>
+#include <dawn-gfx/MeshBuilder.h>
+
 #include <iostream>
 #include <fstream>
+#include <chrono>
 
 using namespace dw;
 
@@ -30,22 +33,15 @@ public:
         return r.backbufferSize().y;
     }
 
-    virtual void start() {
-    }
-    virtual void render(float dt) {
-    }
-    virtual void stop() {
-    }
+    virtual void start() = 0;
+    virtual void render(float dt) = 0;
+    virtual void stop() = 0;
 
     StdoutLogger logger_;
     Renderer r;
 };
 
 #define TEST_CLASS(test_name) class test_name : public Example
-#define TEST_BODY(test_name)                                                      \
-public:                                                                           \
-    test_name() : Example() { \
-    }
 
 // Utils
 namespace util {
@@ -59,7 +55,7 @@ Mat4 createProjMatrix(float n, float f, float fov_y, float aspect) {
 uint createFullscreenQuad(Renderer& r, VertexBufferHandle& vb) {
     // clang-format off
     float vertices[] = {
-        // Position   | UV
+        // Position       | UV
         -1.0f, -1.0f, 0.0f, 0.0f,
         3.0f,  -1.0f, 2.0f, 0.0f,
         -1.0f,  3.0f, 0.0f, 2.0f};
@@ -83,8 +79,7 @@ ShaderHandle loadShader(Renderer& r, ShaderStage type, const std::string& source
 }  // namespace util
 
 TEST_CLASS(RHIBasicVertexBuffer) {
-TEST_BODY(RHIBasicVertexBuffer);
-
+public:
     VertexBufferHandle vb_;
     ProgramHandle program_;
 
@@ -129,8 +124,7 @@ TEST_BODY(RHIBasicVertexBuffer);
 };
 
 TEST_CLASS(RHIBasicIndexBuffer) {
-TEST_BODY(RHIBasicIndexBuffer);
-
+public:
     VertexBufferHandle vb_;
     IndexBufferHandle ib_;
     ProgramHandle program_;
@@ -174,8 +168,7 @@ TEST_BODY(RHIBasicIndexBuffer);
 };
 
 TEST_CLASS(RHITransientIndexBuffer) {
-TEST_BODY(RHITransientIndexBuffer);
-
+public:
     ProgramHandle program_;
 
     void start() override {
@@ -206,12 +199,12 @@ TEST_BODY(RHITransientIndexBuffer);
             .add(VertexDecl::Attribute::Colour, 3, VertexDecl::AttributeType::Float)
             .end();
         auto tvb = r.allocTransientVertexBuffer(sizeof(vertices) / decl.stride(), decl);
-        float* vertex_data = (float*)r.getTransientVertexBufferData(tvb);
+        auto* vertex_data = reinterpret_cast<float*>(r.getTransientVertexBufferData(tvb));
         memcpy(vertex_data, vertices, sizeof(vertices));
 
         u16 elements[] = {0, 2, 1, 2, 0, 3};
         auto tib = r.allocTransientIndexBuffer(sizeof(elements) / sizeof(elements[0]));
-        u16* index_data = (u16*)r.getTransientIndexBufferData(tib);
+        auto* index_data = reinterpret_cast<u16*>(r.getTransientIndexBufferData(tib));
         memcpy(index_data, elements, sizeof(elements));
 
         r.setVertexBuffer(tvb);
@@ -224,23 +217,19 @@ TEST_BODY(RHITransientIndexBuffer);
     }
 };
 
-/*
 TEST_CLASS(RHITextured3DCube) {
-TEST_BODY(RHITextured3DCube);
-
-    SharedPtr<CustomMeshRenderable> box_;
+public:
+    Mesh box_;
     ProgramHandle program_;
 
     // Uses the higher level wrapper which provides loading from files.
-    UniquePtr<Texture> texture_resource_;
+    //UniquePtr<Texture> texture_resource_;
 
     void start() override {
-        module<FileSystem>()->setWorkingDir("../media/examples");
-
         // Load shaders.
-        auto vs = util::loadShader(context(), ShaderStage::Vertex, "shaders/cube_textured.vs");
+        auto vs = util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/cube_textured.vs");
         auto fs =
-            util::loadShader(context(), ShaderStage::Fragment, "shaders/cube_textured.fs");
+            util::loadShader(r, ShaderStage::Fragment, "../../examples/media/shaders/cube_textured.fs");
         program_ = r.createProgram();
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
@@ -249,13 +238,15 @@ TEST_BODY(RHITextured3DCube);
         r.submit(0, program_);
 
         // Load texture.
+        /*
         File texture_file{context(), "wall.jpg"};
         texture_resource_ = makeUnique<Texture>(context());
         texture_resource_->beginLoad("wall.jpg", texture_file);
         texture_resource_->endLoad();
+         */
 
         // Create box.
-        box_ = MeshBuilder{context()}.normals(true).texcoords(true).createBox(10.0f);
+        box_ = MeshBuilder{r}.normals(true).texcoords(true).createBox(10.0f);
     }
 
     void render(float dt) override {
@@ -272,10 +263,12 @@ TEST_BODY(RHITextured3DCube);
 
         // Set vertex buffer and submit.
         r.setViewClear(0, {0.0f, 0.0f, 0.2f, 1.0f});
+        /*
         r.setTexture(texture_resource_->internalHandle(), 0);
-        r.setVertexBuffer(box_->vertexBuffer()->internalHandle());
-        r.setIndexBuffer(box_->indexBuffer()->internalHandle());
-        r.submit(0, program_, box_->indexBuffer()->indexCount());
+         */
+        r.setVertexBuffer(box_.vb);
+        r.setIndexBuffer(box_.ib);
+        r.submit(0, program_, box_.index_count);
     }
 
     void stop() override {
@@ -284,9 +277,8 @@ TEST_BODY(RHITextured3DCube);
 };
 
 TEST_CLASS(RHIPostProcessing) {
-TEST_BODY(RHIPostProcessing);
-
-    SharedPtr<CustomMeshRenderable> box_;
+public:
+    Mesh box_;
     ProgramHandle box_program_;
 
     VertexBufferHandle fsq_vb_;
@@ -294,30 +286,28 @@ TEST_BODY(RHIPostProcessing);
     FrameBufferHandle fb_handle_;
 
     void start() override {
-        module<FileSystem>()->setWorkingDir("../media/examples");
-
         // Load shaders.
-        auto vs = util::loadShader(context(), ShaderStage::Vertex, "shaders/cube_solid.vs");
-        auto fs = util::loadShader(context(), ShaderStage::Fragment, "shaders/cube_solid.fs");
+        auto vs = util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/cube_solid.vs");
+        auto fs = util::loadShader(r, ShaderStage::Fragment, "../../examples/media/shaders/cube_solid.fs");
         box_program_ = r.createProgram();
         r.attachShader(box_program_, vs);
         r.attachShader(box_program_, fs);
         r.linkProgram(box_program_);
 
         // Create box.
-        box_ = MeshBuilder{context()}.normals(true).texcoords(true).createBox(10.0f);
+        box_ = MeshBuilder{r}.normals(true).texcoords(true).createBox(10.0f);
 
         // Create full screen quad.
         util::createFullscreenQuad(r, fsq_vb_);
 
         // Set up frame buffer.
-        fb_handle_ = r.createFrameBuffer(1280, 800, TextureFormat::RGB8);
+        fb_handle_ = r.createFrameBuffer(width(), height(), TextureFormat::RGB8);
 
         // Load post process shader.
         auto pp_vs =
-            util::loadShader(context(), ShaderStage::Vertex, "shaders/post_process.vs");
+            util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/post_process.vs");
         auto pp_fs =
-            util::loadShader(context(), ShaderStage::Fragment, "shaders/post_process.fs");
+            util::loadShader(r, ShaderStage::Fragment, "../../examples/media/shaders/post_process.fs");
         post_process_ = r.createProgram();
         r.attachShader(post_process_, pp_vs);
         r.attachShader(post_process_, pp_fs);
@@ -345,9 +335,9 @@ TEST_BODY(RHIPostProcessing);
         r.setViewFrameBuffer(1, FrameBufferHandle{0});
 
         // Set vertex buffer and submit.
-        r.setVertexBuffer(box_->vertexBuffer()->internalHandle());
-        r.setIndexBuffer(box_->indexBuffer()->internalHandle());
-        r.submit(0, box_program_, box_->indexBuffer()->indexCount());
+        r.setVertexBuffer(box_.vb);
+        r.setIndexBuffer(box_.ib);
+        r.submit(0, box_program_, box_.index_count);
 
         // Draw fb.
         r.setTexture(r.getFrameBufferTexture(fb_handle_, 0), 0);
@@ -363,32 +353,29 @@ TEST_BODY(RHIPostProcessing);
 };
 
 TEST_CLASS(RHIDeferredShading) {
-TEST_BODY(RHIDeferredShading);
-
-    SharedPtr<CustomMeshRenderable> ground_;
+public:
+    Mesh ground_;
     ProgramHandle cube_program_;
 
     // Uses the higher level wrapper which provides loading from files.
-    UniquePtr<Texture> texture_resource_;
+    //UniquePtr<Texture> texture_resource_;
 
     ProgramHandle post_process_;
 
     VertexBufferHandle fsq_vb_;
     FrameBufferHandle gbuffer_;
 
-    class PointLight : public Object {
+    class PointLight {
     public:
-        DW_OBJECT(PointLight);
-
-        PointLight(Context* ctx, float radius, const Vec2& screen_size)
-            : Object{ctx}, r{module<Renderer>()->rhi()}, light_sphere_radius_{radius * 4} {
+        PointLight(Renderer& r, float radius, const Vec2& screen_size)
+            : r(r), light_sphere_radius_(radius * 4) {
             setPosition(Vec3::zero);
 
             // Load shaders.
             auto vs =
-                util::loadShader(context(), ShaderStage::Vertex, "shaders/light_pass.vs");
-            auto fs = util::loadShader(context(), ShaderStage::Fragment,
-                                       "shaders/point_light_pass.fs");
+                util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/light_pass.vs");
+            auto fs = util::loadShader(r, ShaderStage::Fragment,
+                                       "../../examples/media/shaders/point_light_pass.fs");
             program_ = r.createProgram();
             r.attachShader(program_, vs);
             r.attachShader(program_, fs);
@@ -399,7 +386,7 @@ TEST_BODY(RHIDeferredShading);
             r.setUniform("gb2", 2);
             r.setUniform("radius", radius);
             r.submit(0, program_);
-            sphere_ = MeshBuilder{context_}.normals(false).texcoords(false).createSphere(
+            sphere_ = MeshBuilder{r}.normals(false).texcoords(false).createSphere(
                 light_sphere_radius_, 8, 8);
         }
 
@@ -428,16 +415,16 @@ TEST_BODY(RHIDeferredShading);
                                      BlendFunc::One);
 
             // Draw sphere.
-            r.setVertexBuffer(sphere_->vertexBuffer()->internalHandle());
-            r.setIndexBuffer(sphere_->indexBuffer()->internalHandle());
+            r.setVertexBuffer(sphere_.vb);
+            r.setIndexBuffer(sphere_.ib);
             r.setUniform("mvp_matrix", mvp);
             r.setUniform("light_position", position_);
-            r.submit(view, program_, sphere_->indexBuffer()->indexCount());
+            r.submit(view, program_, sphere_.index_count);
         }
 
     private:
-        Renderer* r;
-        SharedPtr<CustomMeshRenderable> sphere_;
+        Renderer& r;
+        Mesh sphere_;
         ProgramHandle program_;
 
         Vec3 position_;
@@ -446,16 +433,14 @@ TEST_BODY(RHIDeferredShading);
         float light_sphere_radius_;
     };
 
-    Vector<UniquePtr<PointLight>> point_lights;
+    std::vector<std::unique_ptr<PointLight>> point_lights;
 
     void start() override {
-        module<FileSystem>()->setWorkingDir("../media/examples");
-
         // Load shaders.
         auto vs =
-            util::loadShader(context(), ShaderStage::Vertex, "shaders/object_gbuffer.vs");
+            util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/object_gbuffer.vs");
         auto fs =
-            util::loadShader(context(), ShaderStage::Fragment, "shaders/object_gbuffer.fs");
+            util::loadShader(r, ShaderStage::Fragment, "../../examples/media/shaders/object_gbuffer.fs");
         cube_program_ = r.createProgram();
         r.attachShader(cube_program_, vs);
         r.attachShader(cube_program_, fs);
@@ -465,13 +450,15 @@ TEST_BODY(RHIDeferredShading);
         r.submit(0, cube_program_);
 
         // Create ground.
-        ground_ = MeshBuilder{context_}.normals(true).texcoords(true).createPlane(250.0f, 250.0f);
+        ground_ = MeshBuilder{r}.normals(true).texcoords(true).createPlane(250.0f, 250.0f);
 
         // Load texture.
-        File texture_file{context(), "wall.jpg"};
-        texture_resource_ = makeUnique<Texture>(context());
+        /*
+        File texture_file{r, "wall.jpg"};
+        texture_resource_ = makeUnique<Texture>(r);
         texture_resource_->beginLoad("wall.jpg", texture_file);
         texture_resource_->endLoad();
+         */
 
         // Create full screen quad.
         util::createFullscreenQuad(r, fsq_vb_);
@@ -484,9 +471,9 @@ TEST_BODY(RHIDeferredShading);
 
         // Load post process shader.
         auto pp_vs =
-            util::loadShader(context(), ShaderStage::Vertex, "shaders/post_process.vs");
-        auto pp_fs = util::loadShader(context(), ShaderStage::Fragment,
-                                      "shaders/deferred_ambient_light_pass.fs");
+            util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/post_process.vs");
+        auto pp_fs = util::loadShader(r, ShaderStage::Fragment,
+                                      "../../examples/media/shaders/deferred_ambient_light_pass.fs");
         post_process_ = r.createProgram();
         r.attachShader(post_process_, pp_vs);
         r.attachShader(post_process_, pp_fs);
@@ -500,8 +487,8 @@ TEST_BODY(RHIDeferredShading);
         // Lights.
         for (int x = -3; x <= 3; x++) {
             for (int z = -3; z <= 3; z++) {
-                point_lights.emplace_back(makeUnique<PointLight>(
-                    context(), 10.0f,
+                point_lights.emplace_back(std::make_unique<PointLight>(
+                    r, 10.0f,
                     Vec2{static_cast<float>(width()), static_cast<float>(height())}));
                 point_lights.back()->setPosition(Vec3(x * 30.0f, -9.0f, z * 30.0f - 40.0f));
             }
@@ -525,10 +512,10 @@ TEST_BODY(RHIDeferredShading);
         r.setUniform("mvp_matrix", proj * view * model);
 
         // Set vertex buffer and submit.
-        r.setVertexBuffer(ground_->vertexBuffer()->internalHandle());
-        r.setIndexBuffer(ground_->indexBuffer()->internalHandle());
-        r.setTexture(texture_resource_->internalHandle(), 0);
-        r.submit(0, cube_program_, ground_->indexBuffer()->indexCount());
+        r.setVertexBuffer(ground_.vb);
+        r.setIndexBuffer(ground_.ib);
+        //r.setTexture(texture_resource_->internalHandle(), 0);
+        r.submit(0, cube_program_, ground_.index_count);
 
         // Draw fb.
         r.setTexture(r.getFrameBufferTexture(gbuffer_, 0), 0);
@@ -560,16 +547,22 @@ TEST_BODY(RHIDeferredShading);
         r.deleteProgram(cube_program_);
     }
 };
-*/
 
 int main() {
-    RHITransientIndexBuffer example;
+    RHIDeferredShading example;
     example.start();
+    float dt = 1.0f / 60.0f;
+    auto start = std::chrono::steady_clock::now();
     while(true) {
-        example.render(0.1f);
+        example.render(dt);
         if(!example.r.frame()) {
             break;
         }
+
+        // Update delta time.
+        auto now = std::chrono::steady_clock::now();
+        dt = std::chrono::duration_cast<std::chrono::duration<float>>(now - start).count();
+        start = now;
     }
     example.stop();
 }
