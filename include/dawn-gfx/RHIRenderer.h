@@ -5,7 +5,6 @@
 #pragma once
 
 #include "Base.h"
-#include "dawn-gfx/detail/BaseTypes.h"
 #include "dawn-gfx/detail/Handle.h"
 #include "Math.h"
 #include "Colour.h"
@@ -13,7 +12,7 @@
 #include "Logger.h"
 #include "VertexDecl.h"
 
-#include <barrier/barrier.h>
+#include <dga/barrier.h>
 #include <tl/expected.hpp>
 #include <vector>
 #include <variant>

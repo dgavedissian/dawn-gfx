@@ -4,12 +4,12 @@
  */
 #pragma once
 
-#include "BaseTypes.h"
+#include "../Base.h"
 
 // Mark this header as a system header
-#if defined(DW_GCC) || defined(DW_CLANG)
+#if defined(DGA_GCC) || defined(DGA_CLANG)
 #pragma GCC system_header
-#elif defined(DW_MSVC)
+#elif defined(DGA_MSVC)
 #pragma warning(push, 0)
 #endif
 
@@ -44,6 +44,6 @@
 #undef s64
 
 // Re-enable warnings
-#if defined(DW_MSVC)
+#if defined(DGA_MSVC)
 #pragma warning(pop)
 #endif

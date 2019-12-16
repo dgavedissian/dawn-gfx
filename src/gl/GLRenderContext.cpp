@@ -7,7 +7,7 @@
 #include "gl/GLRenderContext.h"
 #include "Input.h"
 
-#include <str_algorithms/str_algorithms.h>
+#include <dga/string_algorithms.h>
 #include <fmt/format.h>
 #include <locale>
 #include <codecvt>
@@ -22,7 +22,7 @@
 #define DW_GL_330 1
 #define DW_GLES_300 2
 
-#ifndef __EMSCRIPTEN__
+#ifndef DGA_EMSCRIPTEN
 #define DW_GL_VERSION DW_GL_330
 #else
 #define DW_GL_VERSION DW_GLES_300
@@ -830,9 +830,9 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
     std::string source = glsl_out.compile();
 
     // Postprocess the GLSL to remove a GL 4.2 extension, which doesn't exist on macOS.
-#if DW_PLATFORM == DW_MACOS
-    source = dga::replace(source, "#extension GL_ARB_shading_language_420pack : require",
-                          "#extension GL_ARB_shading_language_420pack : disable");
+#if DGA_PLATFORM == DGA_MACOS
+    source = dga::strReplaceAll(source, "#extension GL_ARB_shading_language_420pack : require",
+                                "#extension GL_ARB_shading_language_420pack : disable");
 #endif
     // logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
 
@@ -919,8 +919,8 @@ void GLRenderContext::operator()(const cmd::CreateTexture2D& c) {
     // Give image data to OpenGL.
     TextureFormatInfo format = s_texture_format[static_cast<int>(c.format)];
     logger_.debug(
-        "[CreateTexture2D] format {} - internal fmt: 0x%.4X - internal fmt srgb: 0x%.4X "
-        "- fmt: 0x%.4X - type: 0x%.4X",
+        "[CreateTexture2D] format {} - internal fmt: {:#x} - internal fmt srgb: {:#x} - fmt: {:#x} "
+        "- type: {:#x}",
         static_cast<u32>(c.format), format.internal_format, format.internal_format_srgb,
         format.format, format.type);
     glTexImage2D(GL_TEXTURE_2D, 0, format.internal_format, c.width, c.height, 0, format.format,
@@ -968,8 +968,7 @@ void GLRenderContext::operator()(const cmd::CreateFrameBuffer& c) {
     // Check frame buffer status.
     GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
-        logger_.error("[CreateFrameBuffer] The framebuffer is not complete. Status: 0x%.4X",
-                      status);
+        logger_.error("[CreateFrameBuffer] The framebuffer is not complete. Status: {:#x}", status);
     }
 
     // Unbind.
@@ -999,7 +998,7 @@ void GLRenderContext::setupVertexArrayAttributes(const VertexDecl& decl, uint vb
         // Convert type.
         auto gl_type = attribute_type_map.find(type);
         if (gl_type == attribute_type_map.end()) {
-            logger_.warn("[SetupVertexArrayAttributes] Unknown attribute type: %i", (uint)type);
+            logger_.warn("[SetupVertexArrayAttributes] Unknown attribute type: {}", (uint)type);
             continue;
         }
 

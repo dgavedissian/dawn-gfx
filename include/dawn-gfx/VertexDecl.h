@@ -4,7 +4,7 @@
  */
 #pragma once
 
-#include "dawn-gfx/detail/BaseTypes.h"
+#include "Base.h"
 #include <vector>
 #include <utility>
 #include <cstddef>

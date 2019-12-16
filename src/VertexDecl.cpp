@@ -2,13 +2,11 @@
  * Dawn Graphics
  * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
-#include "Base.h"
 #include "VertexDecl.h"
-#include "dawn-gfx/detail/BaseTypes.h"
 #include <cassert>
 
 namespace dw {
-VertexDecl::VertexDecl() : stride_{0} {
+VertexDecl::VertexDecl() : stride_(0) {
 }
 
 VertexDecl& VertexDecl::begin() {

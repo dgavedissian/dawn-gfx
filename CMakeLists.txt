@@ -23,10 +23,10 @@ endif()
 find_package(OpenGL REQUIRED)
 
 FetchContent_Declare(
-    cpp-utils
-    URL https://github.com/dgavedissian/cpputils/archive/4aebbf03195cd922eb6a72204beeb2e1ba37dce8.zip
+    base
+    URL https://github.com/dgavedissian/base/archive/fe9f4a9dd4b2b605e405654177a87609171842cf.zip
 )
-FetchContent_MakeAvailable(cpp-utils)
+FetchContent_MakeAvailable(base)
 
 FetchContent_Declare(
     expected
@@ -131,8 +131,8 @@ if(NOT spirv-cross_POPULATED)
 endif()
 
 add_library(dawn-gfx
-    include/dawn-gfx/detail/BaseTypes.h
     include/dawn-gfx/detail/Handle.h
+    include/dawn-gfx/detail/MathGeoLib.h
     include/dawn-gfx/detail/Memory.h
     include/dawn-gfx/Base.h
     include/dawn-gfx/Colour.h
@@ -156,7 +156,7 @@ add_library(dawn-gfx
     src/VertexDecl.cpp)
 target_include_directories(dawn-gfx PUBLIC include)
 target_include_directories(dawn-gfx PRIVATE include/dawn-gfx src)
-target_link_libraries(dawn-gfx barrier expected fmt glad glfw glslang SPIRV MathGeoLib spirv-cross-glsl spirv-cross-hlsl)
+target_link_libraries(dawn-gfx dga-base expected fmt glad glfw glslang SPIRV MathGeoLib spirv-cross-glsl spirv-cross-hlsl)
 target_compile_features(dawn-gfx PUBLIC cxx_std_17)
 set_target_properties(dawn-gfx PROPERTIES CXX_EXTENSIONS OFF)
 
