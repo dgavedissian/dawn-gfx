@@ -5,8 +5,7 @@
 #include "TriangleBuffer.h"
 
 namespace dw {
-TriangleBuffer::TriangleBuffer()
-    : contains_normals_(false), contains_texcoords_(false) {
+TriangleBuffer::TriangleBuffer() : contains_normals_(false), contains_texcoords_(false) {
 }
 
 void TriangleBuffer::estimateVertexCount(uint count) {
@@ -40,12 +39,10 @@ Mesh TriangleBuffer::end(Renderer& r) {
         decl.begin();
         decl.add(VertexDecl::Attribute::Position, 3, VertexDecl::AttributeType::Float);
         if (contains_normals_) {
-            decl.add(VertexDecl::Attribute::Normal, 3, VertexDecl::AttributeType::Float,
-                     true);
+            decl.add(VertexDecl::Attribute::Normal, 3, VertexDecl::AttributeType::Float, true);
         }
         if (contains_texcoords_) {
-            decl.add(VertexDecl::Attribute::TexCoord0, 2,
-                     VertexDecl::AttributeType::Float);
+            decl.add(VertexDecl::Attribute::TexCoord0, 2, VertexDecl::AttributeType::Float);
         }
         decl.end();
 

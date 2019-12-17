@@ -9,6 +9,15 @@
 #include <iostream>
 #include <fstream>
 #include <chrono>
+#include <random>
+#include <cmath>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
+#ifdef DGA_EMSCRIPTEN
+#include <emscripten/emscripten.h>
+#endif
 
 using namespace dw;
 
@@ -21,8 +30,24 @@ public:
 
 class Example {
 public:
-    Example() : r(logger_) {
+    Example() : r(logger_), frame_start_time_(std::chrono::steady_clock::now()) {
         r.init(RendererType::OpenGL, 1024, 768, "Example", true);
+    }
+
+    void tick() {
+        render(dt_);
+        if(!r.frame()) {
+            running_ = false;
+        }
+
+        // Update delta time.
+        auto now = std::chrono::steady_clock::now();
+        dt_ = std::chrono::duration_cast<std::chrono::duration<float>>(now - frame_start_time_).count();
+        frame_start_time_ = now;
+    }
+
+    bool running() const {
+        return running_;
     }
 
     u16 width() const {
@@ -33,12 +58,21 @@ public:
         return r.backbufferSize().y;
     }
 
+    float aspect() const {
+        return static_cast<float>(r.backbufferSize().x) / static_cast<float>(r.backbufferSize().y);
+    }
+
     virtual void start() = 0;
     virtual void render(float dt) = 0;
     virtual void stop() = 0;
 
-    StdoutLogger logger_;
     Renderer r;
+
+private:
+    StdoutLogger logger_;
+    float dt_ = 1.0f / 60.0f;
+    std::chrono::steady_clock::time_point frame_start_time_;
+    bool running_ = true;
 };
 
 #define TEST_CLASS(test_name) class test_name : public Example
@@ -74,7 +108,28 @@ ShaderHandle loadShader(Renderer& r, ShaderStage type, const std::string& source
     std::string shader_source((std::istreambuf_iterator<char>(shader)),
                     std::istreambuf_iterator<char>());
     auto spv_result = compileGLSL(shader_source, type);
+    if (!spv_result) {
+        throw std::runtime_error("Compile error: " + spv_result.error().compile_error);
+    }
     return r.createShader(type, Memory(std::move(spv_result.value())));
+}
+
+TextureHandle loadTexture(Renderer& r, const std::string& texture) {
+    int width, height, bpp;
+    stbi_uc* buffer = stbi_load(texture.c_str(), &width, &height, &bpp, 4);
+    Memory data(buffer, static_cast<u32>(width * height * 4),
+                [](std::byte* buffer) { stbi_image_free(buffer); });
+    return r.createTexture2D(
+        static_cast<u16>(width), static_cast<u16>(height), TextureFormat::RGBA8,
+        std::move(data));
+}
+
+std::string media(const std::string& media_name) {
+#ifdef DGA_EMSCRIPTEN
+    return "/media/" + media_name;
+#else
+    return "../../examples/media" + media_name;
+#endif
 }
 }  // namespace util
 
@@ -85,8 +140,8 @@ public:
 
     void start() override {
         // Load shaders.
-        auto vs = util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/test.vs");
-        auto fs = util::loadShader(r, ShaderStage::Fragment, "../../examples/media/shaders/test.fs");
+        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/test.vs"));
+        auto fs = util::loadShader(r, ShaderStage::Fragment, util::media("/shaders/test.fs"));
         program_ = r.createProgram();
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
@@ -131,8 +186,8 @@ public:
 
     void start() override {
         // Load shaders.
-        auto vs = util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/test.vs");
-        auto fs = util::loadShader(r, ShaderStage::Fragment, "../../examples/media/shaders/test.fs");
+        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/test.vs"));
+        auto fs = util::loadShader(r, ShaderStage::Fragment, util::media("/shaders/test.fs"));
         program_ = r.createProgram();
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
@@ -173,8 +228,8 @@ public:
 
     void start() override {
         // Load shaders.
-        auto vs = util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/test.vs");
-        auto fs = util::loadShader(r, ShaderStage::Fragment, "../../examples/media/shaders/test.fs");
+        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/test.vs"));
+        auto fs = util::loadShader(r, ShaderStage::Fragment, util::media("/shaders/test.fs"));
         program_ = r.createProgram();
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
@@ -221,15 +276,13 @@ TEST_CLASS(RHITextured3DCube) {
 public:
     Mesh box_;
     ProgramHandle program_;
-
-    // Uses the higher level wrapper which provides loading from files.
-    //UniquePtr<Texture> texture_resource_;
+    TextureHandle texture_;
 
     void start() override {
         // Load shaders.
-        auto vs = util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/cube_textured.vs");
+        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/cube_textured.vs"));
         auto fs =
-            util::loadShader(r, ShaderStage::Fragment, "../../examples/media/shaders/cube_textured.fs");
+            util::loadShader(r, ShaderStage::Fragment, util::media("/shaders/cube_textured.fs"));
         program_ = r.createProgram();
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
@@ -238,12 +291,7 @@ public:
         r.submit(0, program_);
 
         // Load texture.
-        /*
-        File texture_file{context(), "wall.jpg"};
-        texture_resource_ = makeUnique<Texture>(context());
-        texture_resource_->beginLoad("wall.jpg", texture_file);
-        texture_resource_->endLoad();
-         */
+        texture_ = util::loadTexture(r, util::media("/wall.jpg"));
 
         // Create box.
         box_ = MeshBuilder{r}.normals(true).texcoords(true).createBox(10.0f);
@@ -256,16 +304,14 @@ public:
         Mat4 model = Mat4::Translate(Vec3{0.0f, 0.0f, -50.0f}).ToFloat4x4() * Mat4::RotateY(angle);
         static Mat4 view = Mat4::identity;
         static Mat4 proj =
-            util::createProjMatrix(0.1f, 1000.0f, 60.0f, static_cast<float>(width()) / height());
+            util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
         r.setUniform("model_matrix", model);
         r.setUniform("mvp_matrix", proj * view * model);
         r.setUniform("light_direction", Vec3{1.0f, 1.0f, 1.0f}.Normalized());
 
         // Set vertex buffer and submit.
         r.setViewClear(0, {0.0f, 0.0f, 0.2f, 1.0f});
-        /*
-        r.setTexture(texture_resource_->internalHandle(), 0);
-         */
+        r.setTexture(texture_, 0);
         r.setVertexBuffer(box_.vb);
         r.setIndexBuffer(box_.ib);
         r.submit(0, program_, box_.index_count);
@@ -287,8 +333,8 @@ public:
 
     void start() override {
         // Load shaders.
-        auto vs = util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/cube_solid.vs");
-        auto fs = util::loadShader(r, ShaderStage::Fragment, "../../examples/media/shaders/cube_solid.fs");
+        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/cube_solid.vs"));
+        auto fs = util::loadShader(r, ShaderStage::Fragment, util::media("/shaders/cube_solid.fs"));
         box_program_ = r.createProgram();
         r.attachShader(box_program_, vs);
         r.attachShader(box_program_, fs);
@@ -305,9 +351,9 @@ public:
 
         // Load post process shader.
         auto pp_vs =
-            util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/post_process.vs");
+            util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/post_process.vs"));
         auto pp_fs =
-            util::loadShader(r, ShaderStage::Fragment, "../../examples/media/shaders/post_process.fs");
+            util::loadShader(r, ShaderStage::Fragment, util::media("/shaders/post_process.fs"));
         post_process_ = r.createProgram();
         r.attachShader(post_process_, pp_vs);
         r.attachShader(post_process_, pp_fs);
@@ -323,7 +369,7 @@ public:
         Mat4 model = Mat4::Translate(Vec3{0.0f, 0.0f, -50.0f}).ToFloat4x4() * Mat4::RotateY(angle);
         static Mat4 view = Mat4::identity;
         static Mat4 proj =
-            util::createProjMatrix(0.1f, 1000.0f, 60.0f, static_cast<float>(width()) / height());
+            util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
         r.setUniform("model_matrix", model);
         r.setUniform("mvp_matrix", proj * view * model);
         r.setUniform("light_direction", Vec3{1.0f, 1.0f, 1.0f}.Normalized());
@@ -355,10 +401,11 @@ public:
 TEST_CLASS(RHIDeferredShading) {
 public:
     Mesh ground_;
-    ProgramHandle cube_program_;
+    Mesh sphere_;
+    ProgramHandle ground_program_;
+    ProgramHandle sphere_program_;
 
-    // Uses the higher level wrapper which provides loading from files.
-    //UniquePtr<Texture> texture_resource_;
+    TextureHandle  texture_;
 
     ProgramHandle post_process_;
 
@@ -367,24 +414,33 @@ public:
 
     class PointLight {
     public:
-        PointLight(Renderer& r, float radius, const Vec2& screen_size)
-            : r(r), light_sphere_radius_(radius * 4) {
+        PointLight(Renderer& r, Colour colour, float linear_term, float quadratic_term, const Vec2& screen_size)
+            : r(r) {
+            // Calculate radius.
+            float light_max = std::fmaxf(std::fmaxf(colour.r(), colour.g()), colour.b());
+            float min_light_level = 256.0f / 4.0f;
+            light_sphere_radius_    =
+                (-linear_term +  std::sqrt(linear_term * linear_term - 4.0f * quadratic_term * (1.0f - min_light_level * light_max)))
+                / (2.0f * quadratic_term);
+
             setPosition(Vec3::zero);
 
             // Load shaders.
             auto vs =
-                util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/light_pass.vs");
+                util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/light_pass.vs"));
             auto fs = util::loadShader(r, ShaderStage::Fragment,
-                                       "../../examples/media/shaders/point_light_pass.fs");
+                                       util::media("/shaders/point_light_pass.fs"));
             program_ = r.createProgram();
             r.attachShader(program_, vs);
             r.attachShader(program_, fs);
             r.linkProgram(program_);
             r.setUniform("screen_size", screen_size);
-            r.setUniform("gb0", 0);
-            r.setUniform("gb1", 1);
-            r.setUniform("gb2", 2);
-            r.setUniform("radius", radius);
+            r.setUniform("gb0_sampler", 0);
+            r.setUniform("gb1_sampler", 1);
+            r.setUniform("gb2_sampler", 2);
+            r.setUniform("light_colour", colour.rgb());
+            r.setUniform("linear_term", linear_term);
+            r.setUniform("quadratic_term", quadratic_term);
             r.submit(0, program_);
             sphere_ = MeshBuilder{r}.normals(false).texcoords(false).createSphere(
                 light_sphere_radius_, 8, 8);
@@ -433,32 +489,54 @@ public:
         float light_sphere_radius_;
     };
 
-    std::vector<std::unique_ptr<PointLight>> point_lights;
+    struct PointLightInfo {
+        std::unique_ptr<PointLight> light;
+        float angle_offset;
+        Vec3 origin;
+    };
+    std::vector<PointLightInfo> point_lights;
+
+    struct SphereInfo {
+        Vec3 position;
+    };
+    std::vector<SphereInfo> spheres;
+
+    std::mt19937 random_engine_{1}; // start with the same seed each time, for determinism.
+
+    static constexpr auto kLightCount = 25;
+    static constexpr auto kSphereCount = 50;
+    static constexpr auto kGroundSize = 30.0f;
 
     void start() override {
         // Load shaders.
         auto vs =
-            util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/object_gbuffer.vs");
+            util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/object_gbuffer.vs"));
         auto fs =
-            util::loadShader(r, ShaderStage::Fragment, "../../examples/media/shaders/object_gbuffer.fs");
-        cube_program_ = r.createProgram();
-        r.attachShader(cube_program_, vs);
-        r.attachShader(cube_program_, fs);
-        r.linkProgram(cube_program_);
+            util::loadShader(r, ShaderStage::Fragment, util::media("/shaders/object_gbuffer.fs"));
+        ground_program_ = r.createProgram();
+        r.attachShader(ground_program_, vs);
+        r.attachShader(ground_program_, fs);
+        r.linkProgram(ground_program_);
         r.setUniform("wall_sampler", 0);
-        r.setUniform("texcoord_scale", Vec2{10.0f, 10.0f});
-        r.submit(0, cube_program_);
+        r.setUniform("texcoord_scale", Vec2{kGroundSize / 5.0f, kGroundSize / 5.0f});
+        r.submit(0, ground_program_);
+
+        sphere_program_ = r.createProgram();
+        r.attachShader(sphere_program_, vs);
+        r.attachShader(sphere_program_, fs);
+        r.linkProgram(sphere_program_);
+        r.setUniform("wall_sampler", 0);
+        r.setUniform("texcoord_scale", Vec2{1.0f, 1.0f});
+        r.submit(0, sphere_program_);
 
         // Create ground.
-        ground_ = MeshBuilder{r}.normals(true).texcoords(true).createPlane(250.0f, 250.0f);
+        ground_ = MeshBuilder{r}.normals(true).texcoords(true).createPlane(kGroundSize * 2.0f, kGroundSize * 2.0f);
+
+        // Create ground.
+        sphere_ = MeshBuilder{r}.normals(true).texcoords(true).createSphere(3.0f);
 
         // Load texture.
-        /*
-        File texture_file{r, "wall.jpg"};
-        texture_resource_ = makeUnique<Texture>(r);
-        texture_resource_->beginLoad("wall.jpg", texture_file);
-        texture_resource_->endLoad();
-         */
+        texture_ = util::loadTexture(r, util::media("/wall.jpg"));
 
         // Create full screen quad.
         util::createFullscreenQuad(r, fsq_vb_);
@@ -471,9 +549,9 @@ public:
 
         // Load post process shader.
         auto pp_vs =
-            util::loadShader(r, ShaderStage::Vertex, "../../examples/media/shaders/post_process.vs");
+            util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/post_process.vs"));
         auto pp_fs = util::loadShader(r, ShaderStage::Fragment,
-                                      "../../examples/media/shaders/deferred_ambient_light_pass.fs");
+                                      util::media("/shaders/deferred_ambient_light_pass.fs"));
         post_process_ = r.createProgram();
         r.attachShader(post_process_, pp_vs);
         r.attachShader(post_process_, pp_fs);
@@ -481,17 +559,38 @@ public:
         r.setUniform("gb0_sampler", 0);
         r.setUniform("gb1_sampler", 1);
         r.setUniform("gb2_sampler", 2);
-        r.setUniform("ambient_light", Vec3{0.02f, 0.02f, 0.02f});
+        r.setUniform("ambient_light", Vec3{0.05f, 0.05f, 0.05f});
         r.submit(0, post_process_);
 
         // Lights.
-        for (int x = -3; x <= 3; x++) {
-            for (int z = -3; z <= 3; z++) {
-                point_lights.emplace_back(std::make_unique<PointLight>(
-                    r, 10.0f,
-                    Vec2{static_cast<float>(width()), static_cast<float>(height())}));
-                point_lights.back()->setPosition(Vec3(x * 30.0f, -9.0f, z * 30.0f - 40.0f));
-            }
+        std::array<float, 2> intervals = {0.5f, 1.0f};
+        std::array<float, 2> weights = {0.0f, 1.0f};
+        std::piecewise_linear_distribution<float> colour_channel_distribution(intervals.begin(), intervals.end(), weights.begin());
+        std::normal_distribution<float> radius_distribution(/* mean radius */ 5.0f);
+        std::uniform_real_distribution<float> angle_offset_distribution(-math::pi, math::pi);
+        std::uniform_real_distribution<float> position_axis_distribution(-kGroundSize, kGroundSize);
+        std::uniform_real_distribution<float> position_height_distribution(3.0f, 5.0f);
+        for (int i = 0; i < kLightCount; ++i) {
+            PointLightInfo light;
+            light.light = std::make_unique<PointLight>(
+                r,
+                Colour{colour_channel_distribution(random_engine_), colour_channel_distribution(random_engine_), colour_channel_distribution(random_engine_)},
+                0.18f, 0.11f,
+                Vec2{static_cast<float>(width()), static_cast<float>(height())});
+            light.angle_offset = angle_offset_distribution(random_engine_);
+            light.origin.x = position_axis_distribution(random_engine_);
+            light.origin.y = position_height_distribution(random_engine_);
+            light.origin.z = position_axis_distribution(random_engine_);
+            point_lights.emplace_back(std::move(light));
+        }
+
+        // Spheres.
+        for (int i = 0; i < kSphereCount; ++i) {
+            spheres.emplace_back(SphereInfo{Vec3{
+             position_axis_distribution(random_engine_),
+             0.0f,
+             position_axis_distribution(random_engine_)
+            }});
         }
     }
 
@@ -503,19 +602,28 @@ public:
         r.setViewFrameBuffer(1, FrameBufferHandle{0});
 
         // Calculate matrices.
-        Mat4 model = Mat4::Translate(Vec3{0.0f, -10.0f, 0.0f}).ToFloat4x4() *
-                     Mat4::RotateX(math::pi * -0.5f);
-        static Mat4 view = Mat4::Translate(Vec3{0.0f, 0.0f, 50.0f}).ToFloat4x4().Inverted();
-        static Mat4 proj =
-            util::createProjMatrix(0.1f, 1000.0f, 60.0f, static_cast<float>(width()) / height());
+        Mat4 model = Mat4::RotateX(math::pi * -0.5f);
+        static Mat4 view = (Mat4::Translate(Vec3{0.0f, 30.0f, 40.0f}).ToFloat4x4() * Mat4::RotateX(math::pi * -0.25f)).Inverted();
+        static Mat4 proj = util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
         r.setUniform("model_matrix", model);
         r.setUniform("mvp_matrix", proj * view * model);
 
-        // Set vertex buffer and submit.
+        // Draw ground.
         r.setVertexBuffer(ground_.vb);
         r.setIndexBuffer(ground_.ib);
-        //r.setTexture(texture_resource_->internalHandle(), 0);
-        r.submit(0, cube_program_, ground_.index_count);
+        r.setTexture(texture_, 0);
+        r.submit(0, ground_program_, ground_.index_count);
+
+        // Draw sphere.
+        for (const auto& sphere_info : spheres) {
+            Mat4 model = Mat4::Translate(sphere_info.position);
+            r.setUniform("model_matrix", model);
+            r.setUniform("mvp_matrix", proj * view * model);
+            r.setVertexBuffer(sphere_.vb);
+            r.setIndexBuffer(sphere_.ib);
+            r.setTexture(texture_, 0);
+            r.submit(0, sphere_program_, sphere_.index_count);
+        }
 
         // Draw fb.
         r.setTexture(r.getFrameBufferTexture(gbuffer_, 0), 0);
@@ -527,42 +635,40 @@ public:
         // Update and draw point lights.
         static float angle = 0.0f;
         angle += dt;
-        int light_counter = 0;
-        for (int x = -3; x <= 3; x++) {
-            for (int z = -3; z <= 3; z++) {
-                point_lights[light_counter]->setPosition(Vec3(
-                    x * 20.0f + sin(angle) * 10.0f, -8.0f, z * 20.0f - 30.0f + cos(angle) * 10.0f));
-                r.setTexture(r.getFrameBufferTexture(gbuffer_, 0), 0);
-                r.setTexture(r.getFrameBufferTexture(gbuffer_, 1), 1);
-                r.setTexture(r.getFrameBufferTexture(gbuffer_, 2), 2);
-                point_lights[light_counter]->draw(1, view, proj);
-                light_counter++;
-            }
+        for (auto& light_info : point_lights) {
+            light_info.light->setPosition(Vec3(
+                light_info.origin.x + sin(angle + light_info.angle_offset) * 5.0f - cos(angle - light_info.angle_offset) * 4.0f,
+                light_info.origin.y,
+                light_info.origin.z - sin(angle + light_info.angle_offset * 0.5f) * 5.5f + cos(angle + light_info.angle_offset * 0.8f) * 6.0f
+                ));
+            r.setTexture(r.getFrameBufferTexture(gbuffer_, 0), 0);
+            r.setTexture(r.getFrameBufferTexture(gbuffer_, 1), 1);
+            r.setTexture(r.getFrameBufferTexture(gbuffer_, 2), 2);
+            light_info.light->draw(1, view, proj);
         }
     }
 
     void stop() override {
         r.deleteProgram(post_process_);
         r.deleteVertexBuffer(fsq_vb_);
-        r.deleteProgram(cube_program_);
+        r.deleteTexture(texture_);
+        r.deleteProgram(ground_program_);
     }
 };
 
 int main() {
-    RHIDeferredShading example;
-    example.start();
-    float dt = 1.0f / 60.0f;
-    auto start = std::chrono::steady_clock::now();
-    while(true) {
-        example.render(dt);
-        if(!example.r.frame()) {
-            break;
-        }
-
-        // Update delta time.
-        auto now = std::chrono::steady_clock::now();
-        dt = std::chrono::duration_cast<std::chrono::duration<float>>(now - start).count();
-        start = now;
+    auto example = std::make_unique<RHIDeferredShading>();
+    example->start();
+#ifdef DGA_EMSCRIPTEN
+    // void emscripten_set_main_loop(em_callback_func func, int fps, int simulate_infinite_loop);
+    emscripten_set_main_loop_arg(
+        [](void* arg) { reinterpret_cast<Example*>(arg)->tick(); },
+        reinterpret_cast<void*>(example.get()), 0, 1);
+    std::cout << "After loop." << std::endl;
+#else
+    while(example->running()) {
+        example->tick();
     }
-    example.stop();
+#endif
+    example->stop();
 }

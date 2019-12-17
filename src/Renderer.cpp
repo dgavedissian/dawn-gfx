@@ -109,8 +109,10 @@ Renderer::~Renderer() {
 }
 
 tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16 height,
-                                                  const std::string& title,
-                                                  bool use_render_thread) {
+                                               const std::string& title, bool use_render_thread) {
+#ifdef DGA_EMSCRIPTEN
+    use_render_thread = false;
+#endif
     if (type == RendererType::Null) {
         use_render_thread = false;
     }
@@ -164,7 +166,7 @@ tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16
 }
 
 VertexBufferHandle Renderer::createVertexBuffer(Memory data, const VertexDecl& decl,
-                                                   BufferUsage usage) {
+                                                BufferUsage usage) {
     // TODO: Validate data.
     auto handle = vertex_buffer_handle_.next();
     uint data_size = data.size();
@@ -199,7 +201,7 @@ void Renderer::deleteVertexBuffer(VertexBufferHandle handle) {
 }
 
 IndexBufferHandle Renderer::createIndexBuffer(Memory data, IndexBufferType type,
-                                                 BufferUsage usage) {
+                                              BufferUsage usage) {
     auto handle = index_buffer_handle_.next();
     uint data_size = data.size();
     submitPreFrameCommand(cmd::CreateIndexBuffer{handle, std::move(data), data_size, type, usage});
@@ -231,7 +233,7 @@ void Renderer::deleteIndexBuffer(IndexBufferHandle handle) {
 }
 
 TransientVertexBufferHandle Renderer::allocTransientVertexBuffer(uint vertex_count,
-                                                                    const VertexDecl& decl) {
+                                                                 const VertexDecl& decl) {
     // Check that we have enough space.
     uint size = vertex_count * decl.stride();
     if (size > transient_vb_max_size - submit_->transient_vb_storage.size) {
@@ -350,8 +352,7 @@ void Renderer::setUniform(const std::string& uniform_name, UniformData data) {
     submit_->current_item.uniforms[uniform_name] = data;
 }
 
-TextureHandle Renderer::createTexture2D(u16 width, u16 height, TextureFormat format,
-                                           Memory data) {
+TextureHandle Renderer::createTexture2D(u16 width, u16 height, TextureFormat format, Memory data) {
     auto handle = texture_handle_.next();
     texture_data_[handle] = {width, height, format};
     submitPreFrameCommand(cmd::CreateTexture2D{handle, width, height, format, std::move(data)});
@@ -451,8 +452,8 @@ void Renderer::setStateBlendEquation(BlendEquation equation, BlendFunc src, Blen
 }
 
 void Renderer::setStateBlendEquation(BlendEquation equation_rgb, BlendFunc src_rgb,
-                                        BlendFunc dest_rgb, BlendEquation equation_a,
-                                        BlendFunc src_a, BlendFunc dest_a) {
+                                     BlendFunc dest_rgb, BlendEquation equation_a, BlendFunc src_a,
+                                     BlendFunc dest_a) {
     submit_->current_item.blend_equation_rgb = equation_rgb;
     submit_->current_item.blend_src_rgb = src_rgb;
     submit_->current_item.blend_dest_rgb = dest_rgb;

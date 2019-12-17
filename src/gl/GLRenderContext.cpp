@@ -14,16 +14,15 @@
 #include <exception>
 
 /**
- * GLRenderContext. A render context implementation which targets GL 3.3 on desktop platforms,
- * GLES 3.0 on mobile platforms (Apple A7 and above (iPhone 5s and above), Android 4.3 and above),
+ * GLRenderContext. A render context implementation which targets GL 4.0 on desktop platforms,
  * and WebGL 2 on HTML5.
  */
 
-#define DW_GL_330 1
+#define DW_GL_410 1
 #define DW_GLES_300 2
 
 #ifndef DGA_EMSCRIPTEN
-#define DW_GL_VERSION DW_GL_330
+#define DW_GL_VERSION DW_GL_410
 #else
 #define DW_GL_VERSION DW_GLES_300
 #endif
@@ -333,28 +332,34 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
 
     // Initialise GLFW.
     logger_.info("GLFW Version: {}", glfwGetVersionString());
-#if DW_PLATFORM == DW_MACOS
+#if DGA_PLATFORM == DGA_MACOS
     glfwInitHint(GLFW_COCOA_CHDIR_RESOURCES, GLFW_FALSE);
 #endif
     if (!glfwInit()) {
+#ifdef DGA_EMSCRIPTEN
+        return tl::make_unexpected("Failed to initialise GLFW.");
+#else
         const char* last_error;
         int error_code = glfwGetError(&last_error);
         return tl::make_unexpected(fmt::format(
             "Failed to initialise GLFW. Code: {:#x}. Description: {}", error_code, last_error));
+#endif
     }
 
+#ifndef DGA_EMSCRIPTEN
     glfwSetErrorCallback([](int error, const char* description) {
         last_error_code = error;
         last_error_description = description;
     });
+#endif
 
     // Set window hints.
-#if DW_GL_VERSION == DW_GL_330
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+#if DW_GL_VERSION == DW_GL_410
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-#elif !defined(__EMSCRIPTEN__)
+#elif !defined(DGA_EMSCRIPTEN)
 #error Unsupported: GLES 3.0 on non Web platform.
 #endif
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
@@ -363,7 +368,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
 
     // Get DPI settings.
-#ifndef __EMSCRIPTEN__
+#ifndef DGA_EMSCRIPTEN
     glfwGetMonitorContentScale(monitor, &window_scale_.x, &window_scale_.y);
 #else
     // Unsupported in emscripten.
@@ -383,7 +388,9 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
     backbuffer_width_ = static_cast<u16>(fb_size.x);
     backbuffer_height_ = static_cast<u16>(fb_size.y);
     glfwMakeContextCurrent(window_);
+#ifndef DGA_EMSCRIPTEN
     glfwSwapInterval(0);
+#endif
     //    glfwSetWindowUserPointer(window_, static_cast<void*>(context()));
 
     // Setup callbacks.
@@ -440,13 +447,10 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
     //            Vec2(static_cast<float>(xoffset), static_cast<float>(yoffset)));
     //    });
 
-    // Note: Emscripten statically links all GL functions.
-#ifndef __EMSCRIPTEN__
     // Initialise GL function pointers.
     if (!gladLoadGL(glfwGetProcAddress)) {
         return tl::make_unexpected("gladLoadGL failed.");
     }
-#endif
 
     // Print GL information.
     logger_.info("OpenGL: {} - GLSL: {}", glGetString(GL_VERSION),
@@ -518,6 +522,7 @@ bool GLRenderContext::frame(const Frame* frame) {
     assert(window_);
 
     // Upload transient vertex/element buffer data.
+    /*
     auto& tvb = frame->transient_vb_storage;
     glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_map_.at(tvb.handle).vertex_buffer);
     GL_CHECK();
@@ -528,6 +533,7 @@ bool GLRenderContext::frame(const Frame* frame) {
     GL_CHECK();
     glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, tib.size, tib.data.get());
     GL_CHECK();
+     */
 
     // Process views.
     for (auto& v : frame->views) {
@@ -810,33 +816,6 @@ void GLRenderContext::operator()(const cmd::DeleteIndexBuffer& c) {
 }
 
 void GLRenderContext::operator()(const cmd::CreateShader& c) {
-    // Convert SPIR-V into GLSL.
-    spirv_cross::CompilerGLSL glsl_out{reinterpret_cast<const u32*>(c.data.data()),
-                                       c.data.size() / sizeof(u32)};
-    spirv_cross::ShaderResources resources = glsl_out.get_shader_resources();
-
-    // Compile to GLSL, ready to give to GL driver.
-    spirv_cross::CompilerGLSL::Options options;
-#if DW_GL_VERSION == DW_GL_330
-    options.version = 330;
-    options.es = false;
-#elif DW_GL_VERSION == DW_GLES_300
-    options.version = 300;
-    options.es = true;
-#else
-#error "Unsupported DW_GL_VERSION"
-#endif
-    glsl_out.set_common_options(options);
-    std::string source = glsl_out.compile();
-
-    // Postprocess the GLSL to remove a GL 4.2 extension, which doesn't exist on macOS.
-#if DGA_PLATFORM == DGA_MACOS
-    source = dga::strReplaceAll(source, "#extension GL_ARB_shading_language_420pack : require",
-                                "#extension GL_ARB_shading_language_420pack : disable");
-#endif
-    // logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
-
-    // Compile shader.
     static std::unordered_map<ShaderStage, GLenum> shader_type_map = {
         {ShaderStage::Vertex, GL_VERTEX_SHADER}, {ShaderStage::Fragment, GL_FRAGMENT_SHADER}};
     GLuint shader = glCreateShader(shader_type_map.at(c.stage));
@@ -844,22 +823,61 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
         GL_CHECK();
         // TODO: an error occurred.
     }
-    const char* sources[] = {source.c_str()};
-    glShaderSource(shader, 1, sources, nullptr);
-    glCompileShader(shader);
 
-    // Check compilation result.
-    GLint result;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &result);
-    if (result == GL_FALSE) {
-        int info_log_length;
-        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length);
+    if (GLAD_GL_ARB_gl_spirv) {
+        glShaderBinary(1, &shader, GL_SPIR_V_BINARY, c.data.data(), c.data.size());
+        auto error = glGetError();
+        if (error == GL_INVALID_VALUE) {
+            int info_log_length;
+            glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length);
+            std::string error_message(info_log_length, '\0');
+            glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data());
+            logger_.error("[CreateShader] Shader Load Error: {}", error_message);
+        }
+    } else {
+        // Convert SPIR-V into GLSL.
+        spirv_cross::CompilerGLSL glsl_out{reinterpret_cast<const u32*>(c.data.data()),
+                                           c.data.size() / sizeof(u32)};
+        spirv_cross::ShaderResources resources = glsl_out.get_shader_resources();
 
-        std::string error_message(info_log_length, '\0');
-        glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data());
-        logger_.error("[CreateShader] Shader Compile Error: {}", error_message);
+        // Compile to GLSL, ready to give to GL driver.
+        spirv_cross::CompilerGLSL::Options options;
+#if DW_GL_VERSION == DW_GL_410
+        options.version = 410;
+        options.es = false;
+#elif DW_GL_VERSION == DW_GLES_300
+        options.version = 300;
+        options.es = true;
+#else
+#error "Unsupported DW_GL_VERSION"
+#endif
+        glsl_out.set_common_options(options);
+        std::string source = glsl_out.compile();
 
-        // TODO: Error
+        // Postprocess the GLSL to remove a GL 4.2 extension, which doesn't exist on macOS.
+#if DGA_PLATFORM == DGA_MACOS
+        source = dga::strReplaceAll(source, "#extension GL_ARB_shading_language_420pack : require",
+                                    "#extension GL_ARB_shading_language_420pack : disable");
+#endif
+        // logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
+
+        // Compile shader.
+        const char* sources[] = {source.c_str()};
+        glShaderSource(shader, 1, sources, nullptr);
+        glCompileShader(shader);
+
+        // Check compilation result.
+        GLint result;
+        glGetShaderiv(shader, GL_COMPILE_STATUS, &result);
+        if (result == GL_FALSE) {
+            int info_log_length;
+            glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length);
+            std::string error_message(info_log_length, '\0');
+            glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data());
+            logger_.error("[CreateShader] Shader Compile Error: {}", error_message);
+
+            // TODO: Error
+        }
     }
 
     shader_map_.emplace(c.handle, shader);

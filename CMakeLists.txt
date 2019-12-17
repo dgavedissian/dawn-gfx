@@ -46,25 +46,17 @@ FetchContent_declare(
 )
 FetchContent_MakeAvailable(fmt)
 
-if(EMSCRIPTEN)
-    add_library(glad EXCLUDE_FROM_ALL
-        src/glad/include/glad/gl.h
-        src/glad/include/KHR/khrplatform.h
-    )
-else()
-    add_library(glad EXCLUDE_FROM_ALL
-        src/glad/src/gl.c
-        src/glad/include/glad/gl.h
-        src/glad/include/KHR/khrplatform.h
-    )
-endif()
+add_library(glad EXCLUDE_FROM_ALL
+    src/glad/src/gl.c
+    src/glad/include/glad/gl.h
+    src/glad/include/KHR/khrplatform.h
+)
 target_include_directories(glad PUBLIC src/glad/include)
 set_target_properties(glad PROPERTIES LINKER_LANGUAGE CXX)
 
 FetchContent_Declare(
     glfw
-    URL https://github.com/glfw/glfw/archive/c90c7b97109db909577e3bf540b5f884422b7e14.tar.gz
-    URL_MD5 326ceda8f5184e3e79625c6d2268a3c5
+    URL https://github.com/glfw/glfw/archive/3.3.tar.gz
 )
 FetchContent_GetProperties(glfw)
 if(NOT glfw_POPULATED)
@@ -160,7 +152,7 @@ add_library(dawn-gfx
     src/VertexDecl.cpp)
 target_include_directories(dawn-gfx PUBLIC include)
 target_include_directories(dawn-gfx PRIVATE include/dawn-gfx src)
-target_link_libraries(dawn-gfx dga-base expected fmt glad glfw glslang SPIRV MathGeoLib spirv-cross-glsl spirv-cross-hlsl)
+target_link_libraries(dawn-gfx dga-base expected fmt glad glfw glslang SPIRV MathGeoLib spirv-cross-glsl)
 target_compile_features(dawn-gfx PUBLIC cxx_std_17)
 set_target_properties(dawn-gfx PROPERTIES CXX_EXTENSIONS OFF)
 

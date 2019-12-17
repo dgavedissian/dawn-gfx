@@ -14,8 +14,9 @@ uniform sampler2D gb2_sampler;
 uniform vec2 screen_size;
 
 uniform vec3 light_position;
-
-uniform float radius;
+uniform vec3 light_colour;
+uniform float linear_term;
+uniform float quadratic_term;
 
 void main()
 {
@@ -25,16 +26,16 @@ void main()
     vec3 pixel_position = texture(gb1_sampler, screen_coord).rgb;
     vec3 pixel_normal = normalize(texture(gb2_sampler, screen_coord).rgb);
 
-    // Calculate shading. Source: https://imdoingitwrong.wordpress.com/2011/01/31/light-attenuation/
-    vec3 light_direction = light_position - pixel_position;
-    float distance = length(light_direction);
-    light_direction /= distance;
+    vec3 lighting = vec3(0.0);
 
-    // Calculate attenuation.
-    float denom = distance / radius + 1.0f;
-    float attenuation = 1.0f / (denom * denom);
-    float dot = max(dot(light_direction, pixel_normal), 0.0);
+    // Diffuse.
+    vec3 light_dir = normalize(light_position - pixel_position);
+    vec3 diffuse = max(dot(pixel_normal, light_dir), 0.0) * diffuse_colour * light_colour;
+    // Attenuation.
+    float distance = length(light_position - pixel_position);
+    float attenuation = 1.0 / (1.0 + linear_term * distance + quadratic_term * distance * distance);
+    diffuse *= attenuation;
+    lighting += diffuse;
 
-    vec3 shaded_result = diffuse_colour * dot * attenuation;
-    out_colour = vec4(shaded_result, 1.0);
+    out_colour = vec4(lighting, 1.0);
 }

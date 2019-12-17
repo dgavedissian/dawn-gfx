@@ -18,7 +18,7 @@ MeshBuilder& MeshBuilder::texcoords(bool texcoords) {
     return *this;
 }
 
- Mesh MeshBuilder::createPlane(float width, float height) {
+Mesh MeshBuilder::createPlane(float width, float height) {
     TriangleBuffer buffer;
     buffer.begin();
     buffer.estimateVertexCount(4);
@@ -61,7 +61,7 @@ MeshBuilder& MeshBuilder::texcoords(bool texcoords) {
     return buffer.end(r_);
 }
 
- Mesh MeshBuilder::createBox(float half_size) {
+Mesh MeshBuilder::createBox(float half_size) {
     // clang-format off
     float vertices[] = {
         // Position                       | Normals            | UVs
@@ -130,8 +130,7 @@ MeshBuilder& MeshBuilder::texcoords(bool texcoords) {
     return buffer.end(r_);
 }
 
- Mesh MeshBuilder::createSphere(float radius, uint num_rings,
-                                                          uint num_segments) {
+Mesh MeshBuilder::createSphere(float radius, uint num_rings, uint num_segments) {
     TriangleBuffer buffer;
 
     buffer.begin();
