@@ -9,46 +9,6 @@
 //#include "renderer/GLSL.h"
 
 namespace dw {
-RenderContext::RenderContext() {
-}
-
-RenderItem::RenderItem() {
-    clear();
-}
-
-void RenderItem::clear() {
-    vb = VertexBufferHandle::invalid;
-    vb_offset = 0;
-    vertex_decl_override = VertexDecl();
-    ib = IndexBufferHandle::invalid;
-    ib_offset = 0;
-    primitive_count = 0;
-    program = ProgramHandle::invalid;
-    uniforms.clear();
-    for (auto& texture : textures) {
-        texture.handle = TextureHandle::invalid;
-    }
-
-    // Default scissor.
-    scissor_enabled = false;
-    scissor_x = 0;
-    scissor_y = 0;
-    scissor_width = 0;
-    scissor_height = 0;
-
-    // Default render state.
-    cull_face_enabled = true;
-    cull_front_face = CullFrontFace::CCW;
-    polygon_mode = PolygonMode::Fill;
-    depth_enabled = true;
-    blend_enabled = false;
-    blend_equation_rgb = blend_equation_a = BlendEquation::Add;
-    blend_src_rgb = blend_src_a = BlendFunc::One;
-    blend_dest_rgb = blend_dest_a = BlendFunc::Zero;
-    colour_write = true;
-    depth_write = true;
-}
-
 View::View() : clear_colour{0.0f, 0.0f, 0.0f, 1.0f}, frame_buffer{FrameBufferHandle::invalid} {
 }
 
@@ -59,7 +19,7 @@ void View::clear() {
 }
 
 Frame::Frame() {
-    current_item.clear();
+    current_item = RenderItem();
     transient_vb_storage.data.reset(new std::byte[DW_MAX_TRANSIENT_VERTEX_BUFFER_SIZE]);
     transient_vb_storage.size = 0;
     transient_ib_storage.data.reset(new std::byte[DW_MAX_TRANSIENT_INDEX_BUFFER_SIZE]);
@@ -69,9 +29,6 @@ Frame::Frame() {
 
     // By default, view 0 will point to the backbuffer.
     view(0).frame_buffer = FrameBufferHandle{0};
-}
-
-Frame::~Frame() {
 }
 
 View& Frame::view(uint view_index) {
@@ -500,7 +457,7 @@ void Renderer::submit(uint view, ProgramHandle program, uint vertex_count, uint 
         }
     }
     submit_->view(view).render_items.emplace_back(std::move(item));
-    item.clear();
+    item = RenderItem();
 }
 
 bool Renderer::frame() {
@@ -605,7 +562,7 @@ bool Renderer::renderFrame(Frame* frame) {
     shared_render_context_->processCommandList(frame->commands_post);
 
     // Clear the frame state.
-    frame->current_item.clear();
+    frame->current_item = RenderItem();
     for (auto& view : frame->views) {
         view.clear();
     }

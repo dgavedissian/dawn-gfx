@@ -5,12 +5,13 @@
 #pragma once
 
 #include "Renderer.h"
+#include "RenderContext.h"
 
 namespace dw {
 class DW_API NullRenderContext : public RenderContext {
 public:
     NullRenderContext();
-    virtual ~NullRenderContext();
+    ~NullRenderContext() override;
 
     // Window management. Executed on the main thread.
     tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title) override;

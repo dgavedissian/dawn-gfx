@@ -5,6 +5,7 @@
 #pragma once
 
 #include "Renderer.h"
+#include "RenderContext.h"
 #include "Logger.h"
 
 #include <glad/gl.h>
@@ -13,8 +14,8 @@
 namespace dw {
 class DW_API GLRenderContext : public RenderContext {
 public:
-    GLRenderContext(Logger& logger);
-    virtual ~GLRenderContext();
+    explicit GLRenderContext(Logger& logger);
+    ~GLRenderContext() override;
 
     // Window management. Executed on the main thread.
     tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title) override;

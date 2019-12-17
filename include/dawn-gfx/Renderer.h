@@ -275,20 +275,17 @@ using UniformData = std::variant<int, float, Vec2, Vec3, Vec4, Mat3, Mat4>;
 
 // Current render state.
 struct RenderItem {
-    RenderItem();
-    void clear();
-
     struct TextureBinding {
         TextureHandle handle;
     };
 
     // Vertices and indices.
     VertexBufferHandle vb;
-    uint vb_offset;  // Offset in bytes.
+    uint vb_offset = 0;  // Offset in bytes.
     VertexDecl vertex_decl_override;
     IndexBufferHandle ib;  // Offset in bytes.
-    uint ib_offset;
-    uint primitive_count;
+    uint ib_offset = 0;
+    uint primitive_count = 0;
 
     // Shader program and parameters.
     ProgramHandle program;
@@ -296,26 +293,26 @@ struct RenderItem {
     std::array<TextureBinding, DW_MAX_TEXTURE_SAMPLERS> textures;
 
     // Scissor.
-    bool scissor_enabled;
-    u16 scissor_x;
-    u16 scissor_y;
-    u16 scissor_width;
-    u16 scissor_height;
+    bool scissor_enabled = false;
+    u16 scissor_x = 0;
+    u16 scissor_y = 0;
+    u16 scissor_width = 0;
+    u16 scissor_height = 0;
 
     // Render state.
-    bool depth_enabled;
-    bool cull_face_enabled;
-    CullFrontFace cull_front_face;
-    PolygonMode polygon_mode;
-    bool blend_enabled;
-    BlendEquation blend_equation_rgb;
-    BlendFunc blend_src_rgb;
-    BlendFunc blend_dest_rgb;
-    BlendEquation blend_equation_a;
-    BlendFunc blend_src_a;
-    BlendFunc blend_dest_a;
-    bool colour_write;  // TODO: make component-wise
-    bool depth_write;
+    bool depth_enabled = true;
+    bool cull_face_enabled = true;
+    CullFrontFace cull_front_face = CullFrontFace::CCW;
+    PolygonMode polygon_mode = PolygonMode::Fill;
+    bool blend_enabled = false;
+    BlendEquation blend_equation_rgb = BlendEquation::Add;
+    BlendFunc blend_src_rgb = BlendFunc::One;
+    BlendFunc blend_dest_rgb = BlendFunc::Zero;
+    BlendEquation blend_equation_a = BlendEquation::Add;
+    BlendFunc blend_src_a = BlendFunc::One;
+    BlendFunc blend_dest_a = BlendFunc::Zero;
+    bool colour_write = true;  // TODO: make component-wise
+    bool depth_write = true;
     // TODO: Stencil write.
 };
 
@@ -333,7 +330,7 @@ struct View {
 class Renderer;
 struct Frame {
     Frame();
-    ~Frame();
+    ~Frame() = default;
 
     View& view(uint view_index);
 
@@ -377,33 +374,11 @@ struct Frame {
 #endif
 };
 
-// Abstract rendering context.
-class DW_API RenderContext {
-public:
-    RenderContext();
-    virtual ~RenderContext() = default;
-
-    // Window management. Executed on the main thread.
-    // TODO: Make this return a Window object instead.
-    virtual tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title) = 0;
-    virtual void destroyWindow() = 0;
-    virtual void processEvents() = 0;
-    virtual bool isWindowClosed() const = 0;
-    virtual Vec2i windowSize() const = 0;
-    virtual Vec2 windowScale() const = 0;
-    virtual Vec2i backbufferSize() const = 0;
-
-    // Command buffer processing. Executed on the render thread.
-    virtual void startRendering() = 0;
-    virtual void stopRendering() = 0;
-    virtual void processCommandList(std::vector<RenderCommand>& command_list) = 0;
-    virtual bool frame(const Frame* frame) = 0;
-};
-
 // Low level renderer.
+class RenderContext;
 class DW_API Renderer {
 public:
-    Renderer(Logger& logger);
+    explicit Renderer(Logger& logger);
     ~Renderer();
 
     /// Initialise.

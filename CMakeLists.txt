@@ -145,6 +145,7 @@ add_library(dawn-gfx
     src/Glslang.h
     src/Memory.cpp
     src/MeshBuilder.cpp
+    src/RenderContext.h
     src/Renderer.cpp
     src/Shader.cpp
     src/SPIRV.h
