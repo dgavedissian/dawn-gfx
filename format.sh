@@ -16,5 +16,6 @@ fi
 PATHS=(
     include
     src
+    examples
 )
 find "${PATHS[@]}" -name "*.h" -o -name "*.cpp" -not -path "./src/dawn-gfx/gl/glad/*" -exec $CLANG_FORMAT -i {} \;

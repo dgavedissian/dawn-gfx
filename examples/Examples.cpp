@@ -36,13 +36,14 @@ public:
 
     void tick() {
         render(dt_);
-        if(!r.frame()) {
+        if (!r.frame()) {
             running_ = false;
         }
 
         // Update delta time.
         auto now = std::chrono::steady_clock::now();
-        dt_ = std::chrono::duration_cast<std::chrono::duration<float>>(now - frame_start_time_).count();
+        dt_ = std::chrono::duration_cast<std::chrono::duration<float>>(now - frame_start_time_)
+                  .count();
         frame_start_time_ = now;
     }
 
@@ -106,12 +107,13 @@ uint createFullscreenQuad(Renderer& r, VertexBufferHandle& vb) {
 ShaderHandle loadShader(Renderer& r, ShaderStage type, const std::string& source_file) {
     std::ifstream shader(source_file);
     std::string shader_source((std::istreambuf_iterator<char>(shader)),
-                    std::istreambuf_iterator<char>());
+                              std::istreambuf_iterator<char>());
     auto spv_result = compileGLSL(shader_source, type);
     if (!spv_result) {
         throw std::runtime_error("Compile error: " + spv_result.error().compile_error);
     }
-    return r.createShader(type, spv_result.value().entry_point, Memory(std::move(spv_result.value().spirv)));
+    return r.createShader(type, spv_result.value().entry_point,
+                          Memory(std::move(spv_result.value().spirv)));
 }
 
 TextureHandle loadTexture(Renderer& r, const std::string& texture) {
@@ -119,9 +121,8 @@ TextureHandle loadTexture(Renderer& r, const std::string& texture) {
     stbi_uc* buffer = stbi_load(texture.c_str(), &width, &height, &bpp, 4);
     Memory data(buffer, static_cast<u32>(width * height * 4),
                 [](std::byte* buffer) { stbi_image_free(buffer); });
-    return r.createTexture2D(
-        static_cast<u16>(width), static_cast<u16>(height), TextureFormat::RGBA8,
-        std::move(data));
+    return r.createTexture2D(static_cast<u16>(width), static_cast<u16>(height),
+                             TextureFormat::RGBA8, std::move(data));
 }
 
 std::string media(const std::string& media_name) {
@@ -133,7 +134,7 @@ std::string media(const std::string& media_name) {
 }
 }  // namespace util
 
-TEST_CLASS(RHIBasicVertexBuffer) {
+TEST_CLASS(BasicVertexBuffer) {
 public:
     VertexBufferHandle vb_;
     ProgramHandle program_;
@@ -178,7 +179,7 @@ public:
     }
 };
 
-TEST_CLASS(RHIBasicIndexBuffer) {
+TEST_CLASS(BasicIndexBuffer) {
 public:
     VertexBufferHandle vb_;
     IndexBufferHandle ib_;
@@ -222,7 +223,7 @@ public:
     }
 };
 
-TEST_CLASS(RHITransientIndexBuffer) {
+TEST_CLASS(TransientIndexBuffer) {
 public:
     ProgramHandle program_;
 
@@ -272,7 +273,7 @@ public:
     }
 };
 
-TEST_CLASS(RHITextured3DCube) {
+TEST_CLASS(Textured3DCube) {
 public:
     Mesh box_;
     ProgramHandle program_;
@@ -280,7 +281,8 @@ public:
 
     void start() override {
         // Load shaders.
-        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/cube_textured.vs"));
+        auto vs =
+            util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/cube_textured.vs"));
         auto fs =
             util::loadShader(r, ShaderStage::Fragment, util::media("/shaders/cube_textured.fs"));
         program_ = r.createProgram();
@@ -303,8 +305,7 @@ public:
         angle += M_PI / 3.0f * dt;  // 60 degrees per second.
         Mat4 model = Mat4::Translate(Vec3{0.0f, 0.0f, -50.0f}).ToFloat4x4() * Mat4::RotateY(angle);
         static Mat4 view = Mat4::identity;
-        static Mat4 proj =
-            util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
+        static Mat4 proj = util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
         r.setUniform("model_matrix", model);
         r.setUniform("mvp_matrix", proj * view * model);
         r.setUniform("light_direction", Vec3{1.0f, 1.0f, 1.0f}.Normalized());
@@ -322,7 +323,7 @@ public:
     }
 };
 
-TEST_CLASS(RHIPostProcessing) {
+TEST_CLASS(PostProcessing) {
 public:
     Mesh box_;
     ProgramHandle box_program_;
@@ -368,8 +369,7 @@ public:
         angle += M_PI / 3.0f * dt;  // 60 degrees per second.
         Mat4 model = Mat4::Translate(Vec3{0.0f, 0.0f, -50.0f}).ToFloat4x4() * Mat4::RotateY(angle);
         static Mat4 view = Mat4::identity;
-        static Mat4 proj =
-            util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
+        static Mat4 proj = util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
         r.setUniform("model_matrix", model);
         r.setUniform("mvp_matrix", proj * view * model);
         r.setUniform("light_direction", Vec3{1.0f, 1.0f, 1.0f}.Normalized());
@@ -398,14 +398,14 @@ public:
     }
 };
 
-TEST_CLASS(RHIDeferredShading) {
+TEST_CLASS(DeferredShading) {
 public:
     Mesh ground_;
     Mesh sphere_;
     ProgramHandle ground_program_;
     ProgramHandle sphere_program_;
 
-    TextureHandle  texture_;
+    TextureHandle texture_;
 
     ProgramHandle post_process_;
 
@@ -414,14 +414,17 @@ public:
 
     class PointLight {
     public:
-        PointLight(Renderer& r, Colour colour, float linear_term, float quadratic_term, const Vec2& screen_size)
+        PointLight(Renderer& r, Colour colour, float linear_term, float quadratic_term,
+                   const Vec2& screen_size)
             : r(r) {
             // Calculate radius.
             float light_max = std::fmaxf(std::fmaxf(colour.r(), colour.g()), colour.b());
             float min_light_level = 256.0f / 4.0f;
-            light_sphere_radius_    =
-                (-linear_term +  std::sqrt(linear_term * linear_term - 4.0f * quadratic_term * (1.0f - min_light_level * light_max)))
-                / (2.0f * quadratic_term);
+            light_sphere_radius_ =
+                (-linear_term +
+                 std::sqrt(linear_term * linear_term -
+                           4.0f * quadratic_term * (1.0f - min_light_level * light_max))) /
+                (2.0f * quadratic_term);
 
             setPosition(Vec3::zero);
 
@@ -467,8 +470,7 @@ public:
             // Disable depth, and enable blending.
             r.setStateDisable(RenderState::Depth);
             r.setStateEnable(RenderState::Blending);
-            r.setStateBlendEquation(BlendEquation::Add, BlendFunc::One,
-                                     BlendFunc::One);
+            r.setStateBlendEquation(BlendEquation::Add, BlendFunc::One, BlendFunc::One);
 
             // Draw sphere.
             r.setVertexBuffer(sphere_.vb);
@@ -501,7 +503,7 @@ public:
     };
     std::vector<SphereInfo> spheres;
 
-    std::mt19937 random_engine_{1}; // start with the same seed each time, for determinism.
+    std::mt19937 random_engine_{1};  // start with the same seed each time, for determinism.
 
     static constexpr auto kLightCount = 30;
     static constexpr auto kSphereCount = 50;
@@ -530,7 +532,8 @@ public:
         r.submit(0, sphere_program_);
 
         // Create ground.
-        ground_ = MeshBuilder{r}.normals(true).texcoords(true).createPlane(kGroundSize * 2.0f, kGroundSize * 2.0f);
+        ground_ = MeshBuilder{r}.normals(true).texcoords(true).createPlane(kGroundSize * 2.0f,
+                                                                           kGroundSize * 2.0f);
 
         // Create ground.
         sphere_ = MeshBuilder{r}.normals(true).texcoords(true).createSphere(3.0f);
@@ -544,8 +547,8 @@ public:
         // Set up frame buffer.
         auto format = TextureFormat::RGBA32F;
         gbuffer_ = r.createFrameBuffer({r.createTexture2D(width(), height(), format, Memory()),
-                                         r.createTexture2D(width(), height(), format, Memory()),
-                                         r.createTexture2D(width(), height(), format, Memory())});
+                                        r.createTexture2D(width(), height(), format, Memory()),
+                                        r.createTexture2D(width(), height(), format, Memory())});
 
         // Load post process shader.
         auto pp_vs =
@@ -565,7 +568,8 @@ public:
         // Lights.
         std::array<float, 2> intervals = {0.5f, 1.0f};
         std::array<float, 2> weights = {0.0f, 1.0f};
-        std::piecewise_linear_distribution<float> colour_channel_distribution(intervals.begin(), intervals.end(), weights.begin());
+        std::piecewise_linear_distribution<float> colour_channel_distribution(
+            intervals.begin(), intervals.end(), weights.begin());
         std::normal_distribution<float> radius_distribution(/* mean radius */ 5.0f);
         std::uniform_real_distribution<float> angle_offset_distribution(-math::pi, math::pi);
         std::uniform_real_distribution<float> position_axis_distribution(-kGroundSize, kGroundSize);
@@ -574,9 +578,10 @@ public:
             PointLightInfo light;
             light.light = std::make_unique<PointLight>(
                 r,
-                Colour{colour_channel_distribution(random_engine_), colour_channel_distribution(random_engine_), colour_channel_distribution(random_engine_)},
-                0.18f, 0.11f,
-                Vec2{static_cast<float>(width()), static_cast<float>(height())});
+                Colour{colour_channel_distribution(random_engine_),
+                       colour_channel_distribution(random_engine_),
+                       colour_channel_distribution(random_engine_)},
+                0.18f, 0.11f, Vec2{static_cast<float>(width()), static_cast<float>(height())});
             light.angle_offset = angle_offset_distribution(random_engine_);
             light.origin.x = position_axis_distribution(random_engine_);
             light.origin.y = position_height_distribution(random_engine_);
@@ -586,11 +591,8 @@ public:
 
         // Spheres.
         for (int i = 0; i < kSphereCount; ++i) {
-            spheres.emplace_back(SphereInfo{Vec3{
-             position_axis_distribution(random_engine_),
-             0.0f,
-             position_axis_distribution(random_engine_)
-            }});
+            spheres.emplace_back(SphereInfo{Vec3{position_axis_distribution(random_engine_), 0.0f,
+                                                 position_axis_distribution(random_engine_)}});
         }
     }
 
@@ -603,7 +605,9 @@ public:
 
         // Calculate matrices.
         Mat4 model = Mat4::RotateX(math::pi * -0.5f);
-        static Mat4 view = (Mat4::Translate(Vec3{0.0f, 30.0f, 40.0f}).ToFloat4x4() * Mat4::RotateX(math::pi * -0.25f)).Inverted();
+        static Mat4 view = (Mat4::Translate(Vec3{0.0f, 30.0f, 40.0f}).ToFloat4x4() *
+                            Mat4::RotateX(math::pi * -0.25f))
+                               .Inverted();
         static Mat4 proj = util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
         r.setUniform("model_matrix", model);
         r.setUniform("mvp_matrix", proj * view * model);
@@ -636,11 +640,12 @@ public:
         static float angle = 0.0f;
         angle += dt;
         for (auto& light_info : point_lights) {
-            light_info.light->setPosition(Vec3(
-                light_info.origin.x + sin(angle + light_info.angle_offset) * 5.0f - cos(angle - light_info.angle_offset) * 4.0f,
-                light_info.origin.y,
-                light_info.origin.z - sin(angle + light_info.angle_offset * 0.5f) * 5.5f + cos(angle + light_info.angle_offset * 0.8f) * 6.0f
-                ));
+            light_info.light->setPosition(
+                Vec3(light_info.origin.x + sin(angle + light_info.angle_offset) * 5.0f -
+                         cos(angle - light_info.angle_offset) * 4.0f,
+                     light_info.origin.y,
+                     light_info.origin.z - sin(angle + light_info.angle_offset * 0.5f) * 5.5f +
+                         cos(angle + light_info.angle_offset * 0.8f) * 6.0f));
             r.setTexture(r.getFrameBufferTexture(gbuffer_, 0), 0);
             r.setTexture(r.getFrameBufferTexture(gbuffer_, 1), 1);
             r.setTexture(r.getFrameBufferTexture(gbuffer_, 2), 2);
@@ -657,16 +662,15 @@ public:
 };
 
 int main() {
-    auto example = std::make_unique<RHIDeferredShading>();
+    auto example = std::make_unique<DeferredShading>();
     example->start();
 #ifdef DGA_EMSCRIPTEN
     // void emscripten_set_main_loop(em_callback_func func, int fps, int simulate_infinite_loop);
-    emscripten_set_main_loop_arg(
-        [](void* arg) { reinterpret_cast<Example*>(arg)->tick(); },
-        reinterpret_cast<void*>(example.get()), 0, 1);
+    emscripten_set_main_loop_arg([](void* arg) { reinterpret_cast<Example*>(arg)->tick(); },
+                                 reinterpret_cast<void*>(example.get()), 0, 1);
     std::cout << "After loop." << std::endl;
 #else
-    while(example->running()) {
+    while (example->running()) {
         example->tick();
     }
 #endif

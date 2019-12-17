@@ -836,7 +836,7 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
         }
 
         // Specialize the shader.
-        std::string vsEntrypoint = "main"; // Get VS entry point name.
+        std::string vsEntrypoint = "main";  // Get VS entry point name.
         glSpecializeShader(shader, (const GLchar*)vsEntrypoint.c_str(), 0, nullptr, nullptr);
     } else {
         // Convert SPIR-V into GLSL.

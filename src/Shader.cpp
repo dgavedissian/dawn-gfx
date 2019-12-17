@@ -111,17 +111,18 @@ constexpr TBuiltInResource kDefaultTBuiltInResource = {
     /* .maxTaskWorkGroupSizeZ_NV = */ 1,
     /* .maxMeshViewCountNV = */ 4,
 
-    /* .limits = */ {
-                           /* .nonInductiveForLoops = */ 1,
-                           /* .whileLoops = */ 1,
-                           /* .doWhileLoops = */ 1,
-                           /* .generalUniformIndexing = */ 1,
-                           /* .generalAttributeMatrixVectorIndexing = */ 1,
-                           /* .generalVaryingIndexing = */ 1,
-                           /* .generalSamplerIndexing = */ 1,
-                           /* .generalVariableIndexing = */ 1,
-                           /* .generalConstantMatrixVectorIndexing = */ 1,
-                       }};
+    /* .limits = */
+    {
+        /* .nonInductiveForLoops = */ 1,
+        /* .whileLoops = */ 1,
+        /* .doWhileLoops = */ 1,
+        /* .generalUniformIndexing = */ 1,
+        /* .generalAttributeMatrixVectorIndexing = */ 1,
+        /* .generalVaryingIndexing = */ 1,
+        /* .generalSamplerIndexing = */ 1,
+        /* .generalVariableIndexing = */ 1,
+        /* .generalConstantMatrixVectorIndexing = */ 1,
+    }};
 }  // namespace
 
 namespace dw {
@@ -139,7 +140,8 @@ tl::expected<CompiledShader, ShaderCompileError> compileGLSL(const std::string& 
             esh_stage = EShLangFragment;
             break;
         default:
-            return tl::make_unexpected(ShaderCompileError{fmt::format("Unexpected shader stage {}", esh_stage), ""});
+            return tl::make_unexpected(
+                ShaderCompileError{fmt::format("Unexpected shader stage {}", esh_stage), ""});
     }
 
     // Parse GLSL code.
