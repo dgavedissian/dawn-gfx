@@ -8,10 +8,16 @@
 #include <tl/expected.hpp>
 
 namespace dw {
+struct CompiledShader {
+    std::vector<u32> spirv;
+    std::string entry_point;
+};
+
 struct ShaderCompileError {
     std::string compile_error;
     std::string debug_log;
 };
+
 // Compiles an in-memory GLSL shader into SPIR-V.
-tl::expected<std::vector<u32>, ShaderCompileError> compileGLSL(const std::string& glsl_source, ShaderStage stage);
+tl::expected<CompiledShader, ShaderCompileError> compileGLSL(const std::string& glsl_source, ShaderStage stage);
 }

@@ -825,7 +825,7 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
     }
 
     if (GLAD_GL_ARB_gl_spirv) {
-        glShaderBinary(1, &shader, GL_SPIR_V_BINARY, c.data.data(), c.data.size());
+        glShaderBinary(1, &shader, GL_SHADER_BINARY_FORMAT_SPIR_V, c.data.data(), c.data.size());
         auto error = glGetError();
         if (error == GL_INVALID_VALUE) {
             int info_log_length;
@@ -834,6 +834,10 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
             glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data());
             logger_.error("[CreateShader] Shader Load Error: {}", error_message);
         }
+
+        // Specialize the shader.
+        std::string vsEntrypoint = "main"; // Get VS entry point name.
+        glSpecializeShader(shader, (const GLchar*)vsEntrypoint.c_str(), 0, nullptr, nullptr);
     } else {
         // Convert SPIR-V into GLSL.
         spirv_cross::CompilerGLSL glsl_out{reinterpret_cast<const u32*>(c.data.data()),
@@ -859,25 +863,25 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
         source = dga::strReplaceAll(source, "#extension GL_ARB_shading_language_420pack : require",
                                     "#extension GL_ARB_shading_language_420pack : disable");
 #endif
-        // logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
+        logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
 
-        // Compile shader.
+        // Compile the shader.
         const char* sources[] = {source.c_str()};
         glShaderSource(shader, 1, sources, nullptr);
         glCompileShader(shader);
+    }
 
-        // Check compilation result.
-        GLint result;
-        glGetShaderiv(shader, GL_COMPILE_STATUS, &result);
-        if (result == GL_FALSE) {
-            int info_log_length;
-            glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length);
-            std::string error_message(info_log_length, '\0');
-            glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data());
-            logger_.error("[CreateShader] Shader Compile Error: {}", error_message);
+    // Check compilation result.
+    GLint result;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &result);
+    if (result == GL_FALSE) {
+        int info_log_length;
+        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length);
+        std::string error_message(info_log_length, '\0');
+        glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data());
+        logger_.error("[CreateShader] Shader Compile Error: {}", error_message);
 
-            // TODO: Error
-        }
+        // TODO: Error
     }
 
     shader_map_.emplace(c.handle, shader);

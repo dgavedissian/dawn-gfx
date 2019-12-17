@@ -292,9 +292,9 @@ void Renderer::setIndexBuffer(TransientIndexBufferHandle handle) {
     submit_->current_item.ib_offset = (uint)(tib.data - submit_->transient_ib_storage.data.get());
 }
 
-ShaderHandle Renderer::createShader(ShaderStage stage, Memory data) {
+ShaderHandle Renderer::createShader(ShaderStage stage, const std::string& entry_point, Memory data) {
     auto handle = shader_handle_.next();
-    submitPreFrameCommand(cmd::CreateShader{handle, stage, std::move(data)});
+    submitPreFrameCommand(cmd::CreateShader{handle, stage, entry_point, std::move(data)});
     return handle;
 }
 

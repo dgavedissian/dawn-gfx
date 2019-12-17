@@ -111,7 +111,7 @@ ShaderHandle loadShader(Renderer& r, ShaderStage type, const std::string& source
     if (!spv_result) {
         throw std::runtime_error("Compile error: " + spv_result.error().compile_error);
     }
-    return r.createShader(type, Memory(std::move(spv_result.value())));
+    return r.createShader(type, spv_result.value().entry_point, Memory(std::move(spv_result.value().spirv)));
 }
 
 TextureHandle loadTexture(Renderer& r, const std::string& texture) {
@@ -503,7 +503,7 @@ public:
 
     std::mt19937 random_engine_{1}; // start with the same seed each time, for determinism.
 
-    static constexpr auto kLightCount = 25;
+    static constexpr auto kLightCount = 30;
     static constexpr auto kSphereCount = 50;
     static constexpr auto kGroundSize = 30.0f;
 
@@ -559,7 +559,7 @@ public:
         r.setUniform("gb0_sampler", 0);
         r.setUniform("gb1_sampler", 1);
         r.setUniform("gb2_sampler", 2);
-        r.setUniform("ambient_light", Vec3{0.05f, 0.05f, 0.05f});
+        r.setUniform("ambient_light", Vec3{0.1f, 0.1f, 0.1f});
         r.submit(0, post_process_);
 
         // Lights.
@@ -614,7 +614,7 @@ public:
         r.setTexture(texture_, 0);
         r.submit(0, ground_program_, ground_.index_count);
 
-        // Draw sphere.
+        // Draw spheres.
         for (const auto& sphere_info : spheres) {
             Mat4 model = Mat4::Translate(sphere_info.position);
             r.setUniform("model_matrix", model);

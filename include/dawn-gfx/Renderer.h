@@ -199,6 +199,7 @@ struct DeleteIndexBuffer {
 struct CreateShader {
     ShaderHandle handle;
     ShaderStage stage;
+    std::string entry_point;
     Memory data;
 };
 
@@ -435,7 +436,7 @@ public:
     void setIndexBuffer(TransientIndexBufferHandle handle);
 
     /// Create shader.
-    ShaderHandle createShader(ShaderStage type, Memory data);
+    ShaderHandle createShader(ShaderStage type, const std::string& entry_point, Memory data);
     void deleteShader(ShaderHandle handle);
 
     /// Create program.
