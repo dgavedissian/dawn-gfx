@@ -5,6 +5,7 @@
 #include "MeshBuilder.h"
 
 namespace dw {
+namespace gfx {
 MeshBuilder::MeshBuilder(Renderer& r) : r_(r), with_normals_(false), with_texcoords_(false) {
 }
 
@@ -180,4 +181,5 @@ Mesh MeshBuilder::createSphere(float radius, uint num_rings, uint num_segments) 
     // Generate the mesh.
     return buffer.end(r_);
 }
+}  // namespace gfx
 }  // namespace dw

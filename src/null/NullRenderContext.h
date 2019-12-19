@@ -8,13 +8,15 @@
 #include "RenderContext.h"
 
 namespace dw {
-class DW_API NullRenderContext : public RenderContext {
+namespace gfx {
+class NullRenderContext : public RenderContext {
 public:
     NullRenderContext();
     ~NullRenderContext() override;
 
     // Window management. Executed on the main thread.
-    tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title) override;
+    tl::expected<void, std::string> createWindow(u16 width, u16 height,
+                                                 const std::string& title) override;
     void destroyWindow() override;
     void processEvents() override;
     bool isWindowClosed() const override;
@@ -28,4 +30,5 @@ public:
     void processCommandList(std::vector<RenderCommand>& command_list) override;
     bool frame(const Frame* frame) override;
 };
+}
 }  // namespace dw

@@ -9,6 +9,7 @@
 #include <utility>
 
 namespace dw {
+namespace gfx {
 struct Mesh {
     VertexBufferHandle vb;
     IndexBufferHandle ib;
@@ -51,3 +52,4 @@ private:
     std::vector<u32> indices_;
 };
 }  // namespace dw
+}

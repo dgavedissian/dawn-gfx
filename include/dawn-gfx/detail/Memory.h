@@ -10,6 +10,7 @@
 #include <memory>
 
 namespace dw {
+namespace gfx {
 using MemoryDeleter = void (*)(std::byte*);
 
 // A blob of memory.
@@ -73,11 +74,12 @@ Memory::Memory(const std::vector<T>& data) : Memory(data.data(), data.size() * s
 }
 
 template <typename T> Memory::Memory(std::vector<T>&& data) {
-    std::shared_ptr<std::vector<T>> vector_holder = std::make_shared<std::vector<T>>(std::move(data));
+    std::shared_ptr<std::vector<T>> vector_holder =
+        std::make_shared<std::vector<T>>(std::move(data));
     // shared_ptr shouldn't own any memory, the memory is owned by vector_holder. As a result, we
     // pass a no-op deleter.
-    data_ = std::shared_ptr<std::byte>(static_cast<std::byte*>(static_cast<void*>(vector_holder->data())),
-                            [](std::byte*) {});
+    data_ = std::shared_ptr<std::byte>(
+        static_cast<std::byte*>(static_cast<void*>(vector_holder->data())), [](std::byte*) {});
     size_ = vector_holder->size() * sizeof(T);
     holder_ = vector_holder;
 }
@@ -85,5 +87,6 @@ template <typename T> Memory::Memory(std::vector<T>&& data) {
 template <typename T, typename Deleter>
 Memory::Memory(T* data, usize size, Deleter deleter) : size_{size} {
     data_.reset(static_cast<std::byte*>(static_cast<void*>(data)), deleter);
+}
 }
 }  // namespace dw

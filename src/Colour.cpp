@@ -5,6 +5,7 @@
 #include "Colour.h"
 
 namespace dw {
+namespace gfx {
 Colour::Colour() : components_{0.0f, 0.0f, 0.0f, 1.0f} {
 }
 
@@ -54,4 +55,5 @@ float& Colour::a() {
 Vec4& Colour::rgba() {
     return components_;
 }
+}  // namespace gfx
 }  // namespace dw

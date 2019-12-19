@@ -7,17 +7,18 @@
 #include <fmt/format.h>
 
 namespace dw {
+namespace gfx {
 enum class LogLevel { Debug, Info, Warning, Error };
 
 class DW_API Logger {
 public:
-virtual ~Logger() = default;
+    virtual ~Logger() = default;
 
-virtual void log(LogLevel level, const std::string& value) = 0;
-template <typename... Args> void debug(const std::string& format, const Args&... args);
-template <typename... Args> void info(const std::string& format, const Args&... args);
-template <typename... Args> void warn(const std::string& format, const Args&... args);
-template <typename... Args> void error(const std::string& format, const Args&... args);
+    virtual void log(LogLevel level, const std::string& value) = 0;
+    template <typename... Args> void debug(const std::string& format, const Args&... args);
+    template <typename... Args> void info(const std::string& format, const Args&... args);
+    template <typename... Args> void warn(const std::string& format, const Args&... args);
+    template <typename... Args> void error(const std::string& format, const Args&... args);
 };
 
 template <typename... Args> void Logger::debug(const std::string& format, const Args&... args) {
@@ -34,5 +35,6 @@ template <typename... Args> void Logger::warn(const std::string& format, const A
 
 template <typename... Args> void Logger::error(const std::string& format, const Args&... args) {
     log(LogLevel::Error, fmt::format(format, args...));
+}
 }
 }  // namespace dw

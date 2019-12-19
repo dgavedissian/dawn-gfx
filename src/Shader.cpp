@@ -126,6 +126,7 @@ constexpr TBuiltInResource kDefaultTBuiltInResource = {
 }  // namespace
 
 namespace dw {
+namespace gfx {
 tl::expected<CompiledShader, ShaderCompileError> compileGLSL(const std::string& glsl_source,
                                                              ShaderStage stage) {
     EShLanguage esh_stage;
@@ -171,4 +172,5 @@ tl::expected<CompiledShader, ShaderCompileError> compileGLSL(const std::string& 
     glslang::GlslangToSpv(*program.getIntermediate(esh_stage), spirv_out);
     return CompiledShader{std::move(spirv_out), intermediate.getEntryPointName()};
 }
+}  // namespace gfx
 }  // namespace dw

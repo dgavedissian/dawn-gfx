@@ -9,6 +9,7 @@
 #include "TriangleBuffer.h"
 
 namespace dw {
+namespace gfx {
 class DW_API MeshBuilder {
 public:
     explicit MeshBuilder(Renderer& r);
@@ -26,4 +27,5 @@ private:
     bool with_normals_;
     bool with_texcoords_;
 };
+}
 }  // namespace dw

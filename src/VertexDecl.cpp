@@ -6,6 +6,7 @@
 #include <cassert>
 
 namespace dw {
+namespace gfx {
 VertexDecl::VertexDecl() : stride_(0) {
 }
 
@@ -68,4 +69,5 @@ u16 VertexDecl::attributeTypeSize(AttributeType type) {
             return 0;
     }
 }
+}  // namespace gfx
 }  // namespace dw

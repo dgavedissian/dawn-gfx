@@ -8,6 +8,7 @@
 #include <functional>
 
 namespace dw {
+namespace gfx {
 // Type safe handles.
 template <typename Tag, int Invalid> class Handle {
 public:
@@ -83,14 +84,15 @@ public:
 private:
     Handle next_;
 };
+}
 }  // namespace dw
 
 namespace std {
-template <typename Tag, int Invalid> struct hash<dw::Handle<Tag, Invalid>> {
-    typedef dw::Handle<Tag, Invalid> argument_type;
+template <typename Tag, int Invalid> struct hash<dw::gfx::Handle<Tag, Invalid>> {
+    typedef dw::gfx::Handle<Tag, Invalid> argument_type;
     typedef std::size_t result_type;
     result_type operator()(const argument_type& k) const {
-        std::hash<typename dw::Handle<Tag, Invalid>::base_type> base_hash;
+        std::hash<typename dw::gfx::Handle<Tag, Invalid>::base_type> base_hash;
         return base_hash(k.internal());
     }
 };

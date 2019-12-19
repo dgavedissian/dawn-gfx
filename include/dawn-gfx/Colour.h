@@ -7,6 +7,7 @@
 #include "Math.h"
 
 namespace dw {
+namespace gfx {
 class Colour {
 public:
     Colour();
@@ -30,4 +31,5 @@ public:
 private:
     Vec4 components_;
 };
+}
 }  // namespace dw

@@ -5,6 +5,7 @@
 #include "TriangleBuffer.h"
 
 namespace dw {
+namespace gfx {
 TriangleBuffer::TriangleBuffer() : contains_normals_(false), contains_texcoords_(false) {
 }
 
@@ -101,4 +102,5 @@ void TriangleBuffer::triangle(u32 v0, u32 v1, u32 v2) {
     indices_.emplace_back(v1);
     indices_.emplace_back(v2);
 }
+}  // namespace gfx
 }  // namespace dw

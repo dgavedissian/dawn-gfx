@@ -19,7 +19,7 @@
 #include <emscripten/emscripten.h>
 #endif
 
-using namespace dw;
+using namespace dw::gfx;
 
 class StdoutLogger : public Logger {
 public:
@@ -81,9 +81,9 @@ private:
 // Utils
 namespace util {
 Mat4 createProjMatrix(float n, float f, float fov_y, float aspect) {
-    auto tangent = static_cast<float>(tan(fov_y * dw::M_DEGTORAD_OVER_2));  // tangent of half fovY
-    float v = n * tangent * 2;  // half height of near plane
-    float h = v * aspect;       // half width of near plane
+    auto tangent = static_cast<float>(tan(fov_y * M_DEGTORAD_OVER_2));  // tangent of half fovY
+    float v = n * tangent * 2;                                          // half height of near plane
+    float h = v * aspect;                                               // half width of near plane
     return Mat4::OpenGLPerspProjRH(n, f, h, v);
 }
 

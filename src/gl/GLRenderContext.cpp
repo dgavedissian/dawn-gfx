@@ -38,6 +38,7 @@
     }
 
 namespace dw {
+namespace gfx {
 namespace {
 // Buffer usage.
 GLenum mapBufferUsage(BufferUsage usage) {
@@ -863,7 +864,7 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
         source = dga::strReplaceAll(source, "#extension GL_ARB_shading_language_420pack : require",
                                     "#extension GL_ARB_shading_language_420pack : disable");
 #endif
-        logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
+        // logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
 
         // Compile the shader.
         const char* sources[] = {source.c_str()};
@@ -1039,4 +1040,5 @@ void GLRenderContext::setupVertexArrayAttributes(const VertexDecl& decl, uint vb
         attrib_counter++;
     }
 }
+}  // namespace gfx
 }  // namespace dw

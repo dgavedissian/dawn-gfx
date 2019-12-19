@@ -6,9 +6,9 @@
 #include "Renderer.h"
 #include "gl/GLRenderContext.h"
 #include "null/NullRenderContext.h"
-//#include "renderer/GLSL.h"
 
 namespace dw {
+namespace gfx {
 View::View() : clear_colour{0.0f, 0.0f, 0.0f, 1.0f}, frame_buffer{FrameBufferHandle::invalid} {
 }
 
@@ -593,4 +593,5 @@ uint Renderer::backbufferView() const {
     logger_.error("No views are bound to the backbuffer.");
     return static_cast<uint>(-1);
 }
+}  // namespace gfx
 }  // namespace dw

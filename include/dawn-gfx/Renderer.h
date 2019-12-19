@@ -27,6 +27,7 @@
 #define DW_MAX_TRANSIENT_INDEX_BUFFER_SIZE (1 << 20)
 
 namespace dw {
+namespace gfx {
 // Handles.
 namespace detail {
 struct VertexBufferTag {};
@@ -358,13 +359,15 @@ struct Frame {
         uint size;
         VertexDecl decl;
     };
-    std::unordered_map<TransientVertexBufferHandle, TransientVertexBufferData> transient_vertex_buffers_;
+    std::unordered_map<TransientVertexBufferHandle, TransientVertexBufferData>
+        transient_vertex_buffers_;
     TransientVertexBufferHandle next_transient_vertex_buffer_handle_;
     struct TransientIndexBufferData {
         std::byte* data;
         uint size;
     };
-    std::unordered_map<TransientIndexBufferHandle, TransientIndexBufferData> transient_index_buffers_;
+    std::unordered_map<TransientIndexBufferHandle, TransientIndexBufferData>
+        transient_index_buffers_;
     TransientIndexBufferHandle next_transient_index_buffer_handle_;
 
 #ifdef DW_DEBUG
@@ -382,8 +385,8 @@ public:
     ~Renderer();
 
     /// Initialise.
-    tl::expected<void, std::string> init(RendererType type, u16 width, u16 height, const std::string& title,
-                      bool use_render_thread);
+    tl::expected<void, std::string> init(RendererType type, u16 width, u16 height,
+                                         const std::string& title, bool use_render_thread);
 
     /// Create vertex buffer.
     VertexBufferHandle createVertexBuffer(Memory data, const VertexDecl& decl,
@@ -548,3 +551,4 @@ private:
     bool renderFrame(Frame* frame);
 };
 }  // namespace dw
+}

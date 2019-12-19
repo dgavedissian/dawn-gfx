@@ -8,6 +8,7 @@
 #include <dga/platform.h>
 
 namespace dw {
+namespace gfx {
 using dga::u8;
 using dga::u16;
 using dga::u32;
@@ -18,6 +19,7 @@ using dga::i32;
 using dga::i64;
 using dga::usize;
 using dga::uint;
+}
 }
 
 #define DW_API DGA_API

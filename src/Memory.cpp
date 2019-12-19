@@ -5,6 +5,7 @@
 #include "dawn-gfx/detail/Memory.h"
 
 namespace dw {
+namespace gfx {
 Memory::Memory() : data_{nullptr}, size_{0} {
 }
 
@@ -25,4 +26,5 @@ std::byte* Memory::data() const {
 usize Memory::size() const {
     return size_;
 }
+}  // namespace gfx
 }  // namespace dw

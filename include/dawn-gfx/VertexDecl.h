@@ -10,6 +10,7 @@
 #include <cstddef>
 
 namespace dw {
+namespace gfx {
 // Vertex Declaration.
 class DW_API VertexDecl {
 public:
@@ -45,3 +46,4 @@ private:
     friend class GLRenderContext;
 };
 }  // namespace dw
+}

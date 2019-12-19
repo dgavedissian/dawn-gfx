@@ -5,6 +5,7 @@
 #include "null/NullRenderContext.h"
 
 namespace dw {
+namespace gfx {
 NullRenderContext::NullRenderContext() {
 }
 
@@ -49,4 +50,5 @@ void NullRenderContext::processCommandList(std::vector<RenderCommand>&) {
 bool NullRenderContext::frame(const Frame*) {
     return true;
 }
+}  // namespace gfx
 }  // namespace dw

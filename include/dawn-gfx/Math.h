@@ -11,6 +11,7 @@
 #endif
 
 namespace dw {
+namespace gfx {
 struct Vec2i {
     int x;
     int y;
@@ -43,4 +44,5 @@ using Quat = math::Quat;
 
 // Plane
 using Plane = math::Plane;
+}
 }

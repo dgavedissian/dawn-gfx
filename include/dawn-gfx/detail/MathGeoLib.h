@@ -14,14 +14,14 @@
 #endif
 
 // Fixed width types for MathGeoLib
-#define u8 dw::u8
-#define u16 dw::u16
-#define u32 dw::u32
-#define u64 dw::u64
-#define s8 dw::i8
-#define s16 dw::i16
-#define s32 dw::i32
-#define s64 dw::i64
+#define u8 dw::gfx::u8
+#define u16 dw::gfx::u16
+#define u32 dw::gfx::u32
+#define u64 dw::gfx::u64
+#define s8 dw::gfx::i8
+#define s16 dw::gfx::i16
+#define s32 dw::gfx::i32
+#define s64 dw::gfx::i64
 
 // MathGeoLib
 #define MATH_ENABLE_STL_SUPPORT

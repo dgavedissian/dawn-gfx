@@ -5,6 +5,7 @@
 #pragma once
 
 namespace dw {
+namespace gfx {
 namespace Modifier {
 enum Enum {
     None = 0,
@@ -135,5 +136,6 @@ enum Enum {
 
 namespace MouseButton {
 enum Enum { Left = 0, Middle, Right, Count };
+}
 }
 }
