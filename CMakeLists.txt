@@ -6,6 +6,12 @@ project(dawn-gfx)
 include(FetchContent)
 include(ExternalProject)
 
+if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    set(TOP_LEVEL_PROJECT TRUE)
+else()
+    set(TOP_LEVEL_PROJECT FALSE)
+endif()
+
 # Use GLVND if possible.
 if(POLICY CMP0072)
     cmake_policy(SET CMP0072 NEW)
@@ -157,4 +163,6 @@ target_link_libraries(dawn-gfx dga-base expected fmt glad glfw glslang SPIRV Mat
 target_compile_features(dawn-gfx PUBLIC cxx_std_17)
 set_target_properties(dawn-gfx PROPERTIES CXX_EXTENSIONS OFF)
 
-add_subdirectory(examples)
+if(TOP_LEVEL_PROJECT)
+    add_subdirectory(examples)
+endif()

@@ -22,4 +22,6 @@ using dga::uint;
 }
 }
 
+#ifndef DW_API
 #define DW_API DGA_API
+#endif
