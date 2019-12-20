@@ -5,12 +5,13 @@
 #pragma once
 
 #include "Base.h"
-#include "dawn-gfx/detail/Handle.h"
+#include "detail/Handle.h"
+#include "detail/Memory.h"
 #include "Math.h"
 #include "Colour.h"
-#include "dawn-gfx/detail/Memory.h"
 #include "Logger.h"
 #include "VertexDecl.h"
+#include "Input.h"
 
 #include <dga/barrier.h>
 #include <tl/expected.hpp>
@@ -386,7 +387,7 @@ public:
 
     /// Initialise.
     tl::expected<void, std::string> init(RendererType type, u16 width, u16 height,
-                                         const std::string& title, bool use_render_thread);
+                                         const std::string& title, InputCallbacks input_callbacks, bool use_render_thread);
 
     /// Create vertex buffer.
     VertexBufferHandle createVertexBuffer(Memory data, const VertexDecl& decl,

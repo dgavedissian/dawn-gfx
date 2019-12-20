@@ -5,17 +5,20 @@
 #pragma once
 
 #include "Renderer.h"
+#include "Input.h"
+#include <functional>
 
 namespace dw {
 namespace gfx {
-class DW_API RenderContext {
+class RenderContext {
 public:
+    RenderContext(Logger& logger) : logger_{logger} {}
     virtual ~RenderContext() = default;
 
     // Window management. Executed on the main thread.
-    // TODO: Make this return a Window object instead.
     virtual tl::expected<void, std::string> createWindow(u16 width, u16 height,
-                                                         const std::string& title) = 0;
+                                                         const std::string& title,
+                                                         InputCallbacks input_callbacks) = 0;
     virtual void destroyWindow() = 0;
     virtual void processEvents() = 0;
     virtual bool isWindowClosed() const = 0;
@@ -28,6 +31,9 @@ public:
     virtual void stopRendering() = 0;
     virtual void processCommandList(std::vector<RenderCommand>& command_list) = 0;
     virtual bool frame(const Frame* frame) = 0;
+
+protected:
+    Logger& logger_;
 };
 }
 }  // namespace dw

@@ -20,7 +20,8 @@ public:
 
     // Window management. Executed on the main thread.
     tl::expected<void, std::string> createWindow(u16 width, u16 height,
-                                                 const std::string& title) override;
+                                                 const std::string& title,
+                                                 InputCallbacks desc) override;
     void destroyWindow() override;
     void processEvents() override;
     bool isWindowClosed() const override;
@@ -56,12 +57,18 @@ public:
     }
 
 private:
-    Logger& logger_;
-
+    // Window.
     GLFWwindow* window_;
     u16 backbuffer_width_;
     u16 backbuffer_height_;
     Vec2 window_scale_;
+
+    // Input callbacks.
+    std::function<void(Key::Enum key, Modifier::Enum modifier, bool pressed)> on_key_;
+    std::function<void(const std::string& input)> on_char_input_;
+    std::function<void(MouseButton::Enum button, bool pressed)> on_mouse_button_;
+    std::function<void(const Vec2i& position)> on_mouse_move_;
+    std::function<void(const Vec2& offset)> on_mouse_scroll_;
 
     GLuint vao_;
     VertexDecl current_vertex_decl;

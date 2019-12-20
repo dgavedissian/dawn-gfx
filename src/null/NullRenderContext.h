@@ -11,12 +11,13 @@ namespace dw {
 namespace gfx {
 class NullRenderContext : public RenderContext {
 public:
-    NullRenderContext();
-    ~NullRenderContext() override;
+    NullRenderContext(Logger& logger);
+    ~NullRenderContext() override = default;
 
     // Window management. Executed on the main thread.
     tl::expected<void, std::string> createWindow(u16 width, u16 height,
-                                                 const std::string& title) override;
+                                                 const std::string& title,
+                                                 InputCallbacks input_callbacks) override;
     void destroyWindow() override;
     void processEvents() override;
     bool isWindowClosed() const override;

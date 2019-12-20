@@ -320,7 +320,7 @@ private:
 int last_error_code = 0;
 std::string last_error_description;
 
-GLRenderContext::GLRenderContext(Logger& logger) : logger_(logger) {
+GLRenderContext::GLRenderContext(Logger& logger) : RenderContext(logger) {
 }
 
 GLRenderContext::~GLRenderContext() {
@@ -328,7 +328,8 @@ GLRenderContext::~GLRenderContext() {
 }
 
 tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 height,
-                                                              const std::string& title) {
+                                                              const std::string& title,
+                                                              InputCallbacks input_callbacks) {
     logger_.info("Creating window.");
 
     // Initialise GLFW.
@@ -392,61 +393,83 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
 #ifndef DGA_EMSCRIPTEN
     glfwSwapInterval(0);
 #endif
-    //    glfwSetWindowUserPointer(window_, static_cast<void*>(context()));
+    glfwSetWindowUserPointer(window_, static_cast<void*>(this));
 
     // Setup callbacks.
-    //    glfwSetKeyCallback(window_, [](GLFWwindow* window, int key, int, int action, int) {
-    //        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
-    //
-    //        // Look up key.
-    //        auto key_it = s_key_map.find(key);
-    //        if (key_it == s_key_map.end()) {
-    //            ctx->module<Logger>()->withObjectName("GLFW").warn("Unknown key code {}", key);
-    //            return;
-    //        }
-    //
-    //        // If we are repeating a key, ignore.
-    //        if (action == GLFW_REPEAT) {
-    //            return;
-    //        }
-    //
-    //        if (action == GLFW_PRESS) {
-    //            ctx->module<Input>()->_notifyKey(key_it->second, Modifier::None, true);
-    //        } else if (action == GLFW_RELEASE) {
-    //            ctx->module<Input>()->_notifyKey(key_it->second, Modifier::None, false);
-    //        }
-    //    });
-    //    glfwSetCharCallback(window_, [](GLFWwindow* window, unsigned int c) {
-    //        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
-    //#ifdef DW_MSVC
-    //        std::wstring_convert<std::codecvt_utf8<i32>, i32> conv;
-    //#else
-    //      std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> conv;
-    //#endif
-    //        ctx->module<Input>()->_notifyCharInput(conv.to_bytes(static_cast<char32_t>(c)));
-    //    });
-    //    glfwSetMouseButtonCallback(window_, [](GLFWwindow* window, int button, int action, int) {
-    //        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
-    //        auto mouse_button = s_mouse_button_map.find(button);
-    //        if (mouse_button == s_mouse_button_map.end()) {
-    //            ctx->module<Logger>()->withObjectName("GLFW").warn("Unknown mouse button {}",
-    //            button); return;
-    //        }
-    //        if (action == GLFW_PRESS) {
-    //            ctx->module<Input>()->_notifyMouseButtonPress(mouse_button->second, true);
-    //        } else if (action == GLFW_RELEASE) {
-    //            ctx->module<Input>()->_notifyMouseButtonPress(mouse_button->second, false);
-    //        }
-    //    });
-    //    glfwSetCursorPosCallback(window_, [](GLFWwindow* window, double x, double y) {
-    //        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
-    //        ctx->module<Input>()->_notifyMouseMove({static_cast<int>(x), static_cast<int>(y)});
-    //    });
-    //    glfwSetScrollCallback(window_, [](GLFWwindow* window, double xoffset, double yoffset) {
-    //        auto ctx = static_cast<Context*>(glfwGetWindowUserPointer(window));
-    //        ctx->module<Input>()->_notifyScroll(
-    //            Vec2(static_cast<float>(xoffset), static_cast<float>(yoffset)));
-    //    });
+    on_key_ = input_callbacks.on_key;
+    on_char_input_ = input_callbacks.on_char_input;
+    on_mouse_button_ = input_callbacks.on_mouse_button;
+    on_mouse_move_ = input_callbacks.on_mouse_move;
+    on_mouse_scroll_ = input_callbacks.on_mouse_scroll;
+    glfwSetKeyCallback(window_, [](GLFWwindow* window, int key, int, int action, int) {
+        auto& ctx = *static_cast<GLRenderContext*>(glfwGetWindowUserPointer(window));
+        if (!ctx.on_key_) {
+            return;
+        }
+
+        // Look up key.
+        auto key_it = s_key_map.find(key);
+        if (key_it == s_key_map.end()) {
+            ctx.logger_.warn("Unknown key code {}", key);
+            return;
+        }
+
+        // If we are repeating a key, ignore.
+        if (action == GLFW_REPEAT) {
+            return;
+        }
+
+        if (action == GLFW_PRESS) {
+            ctx.on_key_(key_it->second, Modifier::None, true);
+        } else if (action == GLFW_RELEASE) {
+            ctx.on_key_(key_it->second, Modifier::None, false);
+        }
+    });
+    glfwSetCharCallback(window_, [](GLFWwindow* window, unsigned int c) {
+        auto& ctx = *static_cast<GLRenderContext*>(glfwGetWindowUserPointer(window));
+        if (!ctx.on_char_input_) {
+            return;
+        }
+#ifdef DGA_MSVC
+        std::wstring_convert<std::codecvt_utf8<i32>, i32> conv;
+#else
+        std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> conv;
+#endif
+        ctx.on_char_input_(conv.to_bytes(static_cast<char32_t>(c)));
+    });
+    glfwSetMouseButtonCallback(window_, [](GLFWwindow* window, int button, int action, int) {
+        auto& ctx = *static_cast<GLRenderContext*>(glfwGetWindowUserPointer(window));
+        if (!ctx.on_mouse_button_) {
+            return;
+        }
+
+        auto mouse_button = s_mouse_button_map.find(button);
+        if (mouse_button == s_mouse_button_map.end()) {
+            ctx.logger_.warn("Unknown mouse button {}", button);
+            return;
+        }
+        if (action == GLFW_PRESS) {
+            ctx.on_mouse_button_(mouse_button->second, true);
+        } else if (action == GLFW_RELEASE) {
+            ctx.on_mouse_button_(mouse_button->second, false);
+        }
+    });
+    glfwSetCursorPosCallback(window_, [](GLFWwindow* window, double x, double y) {
+        auto& ctx = *static_cast<GLRenderContext*>(glfwGetWindowUserPointer(window));
+        if (!ctx.on_mouse_move_) {
+            return;
+        }
+
+        ctx.on_mouse_move_({static_cast<int>(x), static_cast<int>(y)});
+    });
+    glfwSetScrollCallback(window_, [](GLFWwindow* window, double xoffset, double yoffset) {
+        auto& ctx = *static_cast<GLRenderContext*>(glfwGetWindowUserPointer(window));
+        if (!ctx.on_mouse_scroll_) {
+            return;
+        }
+
+        ctx.on_mouse_scroll_(Vec2(static_cast<float>(xoffset), static_cast<float>(yoffset)));
+    });
 
     // Initialise GL function pointers.
     if (!gladLoadGL(glfwGetProcAddress)) {
@@ -585,8 +608,8 @@ bool GLRenderContext::frame(const Frame* frame) {
                 glFrontFace(current->cull_front_face == CullFrontFace::CCW ? GL_CCW : GL_CW);
             }
             if (!previous || previous->polygon_mode != current->polygon_mode) {
-                /*glPolygonMode(GL_FRONT_AND_BACK,
-                              current->polygon_mode == PolygonMode::Fill ? GL_FILL : GL_LINE);*/
+                glPolygonMode(GL_FRONT_AND_BACK,
+                              current->polygon_mode == PolygonMode::Fill ? GL_FILL : GL_LINE);
             }
             if (!previous || previous->depth_enabled != current->depth_enabled) {
                 if (current->depth_enabled) {
@@ -839,8 +862,7 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
         }
 
         // Specialize the shader.
-        std::string vsEntrypoint = "main";  // Get VS entry point name.
-        glSpecializeShader(shader, (const GLchar*)vsEntrypoint.c_str(), 0, nullptr, nullptr);
+        glSpecializeShader(shader, (const GLchar*)c.entry_point.c_str(), 0, nullptr, nullptr);
     } else {
         // Convert SPIR-V into GLSL.
         spirv_cross::CompilerGLSL glsl_out{reinterpret_cast<const u32*>(c.data.data()),

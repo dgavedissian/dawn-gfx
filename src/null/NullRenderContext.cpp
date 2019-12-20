@@ -6,13 +6,11 @@
 
 namespace dw {
 namespace gfx {
-NullRenderContext::NullRenderContext() {
+NullRenderContext::NullRenderContext(Logger& logger) : RenderContext{logger} {
 }
 
-NullRenderContext::~NullRenderContext() {
-}
-
-tl::expected<void, std::string> NullRenderContext::createWindow(u16, u16, const std::string&) {
+tl::expected<void, std::string> NullRenderContext::createWindow(u16, u16, const std::string&,
+                                                                InputCallbacks) {
     return {};
 }
 

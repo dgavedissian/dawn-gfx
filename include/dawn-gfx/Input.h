@@ -137,5 +137,13 @@ enum Enum {
 namespace MouseButton {
 enum Enum { Left = 0, Middle, Right, Count };
 }
-}
-}
+
+struct InputCallbacks {
+    std::function<void(Key::Enum key, Modifier::Enum modifier, bool pressed)> on_key;
+    std::function<void(const std::string& input)> on_char_input;
+    std::function<void(MouseButton::Enum button, bool pressed)> on_mouse_button;
+    std::function<void(const Vec2i& position)> on_mouse_move;
+    std::function<void(const Vec2& offset)> on_mouse_scroll;
+};
+}  // namespace gfx
+}  // namespace dw

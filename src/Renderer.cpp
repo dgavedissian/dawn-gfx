@@ -66,7 +66,9 @@ Renderer::~Renderer() {
 }
 
 tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16 height,
-                                               const std::string& title, bool use_render_thread) {
+                                               const std::string& title,
+                                               InputCallbacks input_callbacks,
+                                               bool use_render_thread) {
 #ifdef DGA_EMSCRIPTEN
     use_render_thread = false;
 #endif
@@ -94,7 +96,7 @@ tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16
     switch (type) {
         case RendererType::Null:
             logger_.info("Using Null renderer.");
-            shared_render_context_ = std::make_unique<NullRenderContext>();
+            shared_render_context_ = std::make_unique<NullRenderContext>(logger_);
             break;
         case RendererType::OpenGL:
             logger_.info("Using OpenGL renderer.");
@@ -109,7 +111,8 @@ tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16
             shared_render_context_ = std::make_unique<GLRenderContext>(logger_);
             break;
     }
-    auto window_result = shared_render_context_->createWindow(width_, height_, window_title_);
+    auto window_result =
+        shared_render_context_->createWindow(width_, height_, window_title_, input_callbacks);
     if (!window_result) {
         return window_result;
     }

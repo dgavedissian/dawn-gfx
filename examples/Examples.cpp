@@ -31,7 +31,7 @@ public:
 class Example {
 public:
     Example() : r(logger_), frame_start_time_(std::chrono::steady_clock::now()) {
-        r.init(RendererType::OpenGL, 1024, 768, "Example", true);
+        r.init(RendererType::OpenGL, 1024, 768, "Example", InputCallbacks{}, true);
     }
 
     void tick() {
