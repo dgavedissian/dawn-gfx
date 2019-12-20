@@ -266,11 +266,7 @@ static_assert(static_cast<int>(TextureFormat::Count) ==
               "Texture format mapping mismatch.");
 
 // Uniform binder.
-class UniformBinder {
-public:
-    UniformBinder() : uniform_location_{0} {
-    }
-
+struct UniformBinder {
     void operator()(const int& value) {
         glUniform1i(uniform_location_, value);
         GL_CHECK();
@@ -312,7 +308,17 @@ public:
     }
 
 private:
-    GLint uniform_location_;
+    GLint uniform_location_ = 0;
+};
+
+struct StateChangedHelper {
+    const RenderItem* previous;
+    const RenderItem* current;
+
+    template <typename T>
+    bool operator()(T RenderItem::*member) {
+        return !previous || previous->*member != current->*member;
+    }
 };
 }  // namespace
 
@@ -522,18 +528,20 @@ bool GLRenderContext::frame(const Frame* frame) {
     assert(window_);
 
     // Upload transient vertex/element buffer data.
-    /*
     auto& tvb = frame->transient_vb_storage;
-    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_map_.at(tvb.handle).vertex_buffer);
-    GL_CHECK();
-    glBufferSubData(GL_ARRAY_BUFFER, 0, tvb.size, tvb.data.get());
-    GL_CHECK();
+    if (tvb.size > 0) {
+        glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_map_.at(tvb.handle).vertex_buffer);
+        GL_CHECK();
+        glBufferSubData(GL_ARRAY_BUFFER, 0, tvb.size, tvb.data.get());
+        GL_CHECK();
+    }
     auto& tib = frame->transient_ib_storage;
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer_map_.at(tib.handle).element_buffer);
-    GL_CHECK();
-    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, tib.size, tib.data.get());
-    GL_CHECK();
-     */
+    if (tib.size > 0) {
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer_map_.at(tib.handle).element_buffer);
+        GL_CHECK();
+        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, tib.size, tib.data.get());
+        GL_CHECK();
+    }
 
     // Process views.
     for (auto& v : frame->views) {
@@ -566,65 +574,66 @@ bool GLRenderContext::frame(const Frame* frame) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Render items.
-        for (uint i = 0; i < v.render_items.size(); ++i) {
+        for (usize i = 0; i < v.render_items.size(); ++i) {
             auto* previous = i > 0 ? &v.render_items[i - 1] : nullptr;
             auto* current = &v.render_items[i];
 
+            StateChangedHelper state_changed{previous, current};
+
             // Update render state.
-            if (!previous || previous->cull_face_enabled != current->cull_face_enabled) {
+            if (state_changed(&RenderItem::cull_face_enabled)) {
                 if (current->cull_face_enabled) {
                     glEnable(GL_CULL_FACE);
                 } else {
                     glDisable(GL_CULL_FACE);
                 }
             }
-            if (!previous || previous->cull_front_face != current->cull_front_face) {
+            if (state_changed(&RenderItem::cull_front_face)) {
                 glFrontFace(current->cull_front_face == CullFrontFace::CCW ? GL_CCW : GL_CW);
             }
-            if (!previous || previous->polygon_mode != current->polygon_mode) {
-                /*glPolygonMode(GL_FRONT_AND_BACK,
-                              current->polygon_mode == PolygonMode::Fill ? GL_FILL : GL_LINE);*/
+            if (state_changed(&RenderItem::polygon_mode)) {
+                glPolygonMode(GL_FRONT_AND_BACK,
+                              current->polygon_mode == PolygonMode::Fill ? GL_FILL : GL_LINE);
             }
-            if (!previous || previous->depth_enabled != current->depth_enabled) {
+            if (state_changed(&RenderItem::depth_enabled)) {
                 if (current->depth_enabled) {
                     glEnable(GL_DEPTH_TEST);
                 } else {
                     glDisable(GL_DEPTH_TEST);
                 }
             }
-            if (!previous || previous->blend_enabled != current->blend_enabled) {
+            if (state_changed(&RenderItem::blend_enabled)) {
                 if (current->blend_enabled) {
                     glEnable(GL_BLEND);
                 } else {
                     glDisable(GL_BLEND);
                 }
             }
-            if (!previous || previous->blend_equation_rgb != current->blend_equation_rgb ||
-                previous->blend_equation_a != current->blend_equation_a) {
+            if (state_changed(&RenderItem::blend_equation_rgb) || state_changed(&RenderItem::blend_equation_a)) {
                 glBlendEquationSeparate(s_blend_equation_map.at(current->blend_equation_rgb),
                                         s_blend_equation_map.at(current->blend_equation_a));
                 GL_CHECK();
             }
-            if (!previous || previous->blend_src_rgb != current->blend_src_rgb ||
-                previous->blend_src_a != current->blend_src_a ||
-                previous->blend_dest_rgb != current->blend_dest_rgb ||
-                previous->blend_dest_a != current->blend_dest_a) {
+            if (state_changed(&RenderItem::blend_src_rgb) ||
+                state_changed(&RenderItem::blend_src_a) ||
+                                  state_changed(&RenderItem::blend_dest_rgb) ||
+                                                    state_changed(&RenderItem::blend_dest_a)) {
                 glBlendFuncSeparate(s_blend_func_map.at(current->blend_src_rgb),
                                     s_blend_func_map.at(current->blend_dest_rgb),
                                     s_blend_func_map.at(current->blend_src_a),
                                     s_blend_func_map.at(current->blend_dest_a));
                 GL_CHECK();
             }
-            if (!previous || previous->colour_write != current->colour_write) {
+            if (state_changed(&RenderItem::colour_write)) {
                 GLboolean colour_enabled = current->colour_write ? GL_TRUE : GL_FALSE;
                 glColorMask(colour_enabled, colour_enabled, colour_enabled, colour_enabled);
             }
-            if (!previous || previous->depth_write != current->depth_write) {
+            if (state_changed(&RenderItem::depth_write)) {
                 glDepthMask(current->depth_write ? GL_TRUE : GL_FALSE);
             }
 
             // Scissor.
-            if (!previous || previous->scissor_enabled != current->scissor_enabled) {
+            if (state_changed(&RenderItem::scissor_enabled)) {
                 if (current->scissor_enabled) {
                     glEnable(GL_SCISSOR_TEST);
                 } else {
@@ -637,9 +646,9 @@ bool GLRenderContext::frame(const Frame* frame) {
                           current->scissor_width, current->scissor_height);
             }
 
-            // Bind Program.
+            // Bind program.
             ProgramData& program_data = program_map_.at(current->program);
-            if (!previous || previous->program != current->program) {
+            if (state_changed(&RenderItem::program)) {
                 assert(current->program.isValid());
                 glUseProgram(program_data.program);
                 GL_CHECK();
@@ -687,7 +696,7 @@ bool GLRenderContext::frame(const Frame* frame) {
             }
 
             // Bind vertex data.
-            if (!previous || previous->vb != current->vb) {
+            if (state_changed(&RenderItem::vb)) {
                 if (current->vb.isValid()) {
                     glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_map_.at(current->vb).vertex_buffer);
                     GL_CHECK();
@@ -695,7 +704,7 @@ bool GLRenderContext::frame(const Frame* frame) {
             }
 
             // Bind attributes.
-            for (uint attrib = 0; attrib < current_vertex_decl.attributes_.size(); ++attrib) {
+            for (usize attrib = 0; attrib < current_vertex_decl.attributes_.size(); ++attrib) {
                 glDisableVertexAttribArray(attrib);
                 GL_CHECK();
             }
@@ -709,7 +718,7 @@ bool GLRenderContext::frame(const Frame* frame) {
             }
 
             // Bind element data.
-            if (!previous || previous->ib != current->ib) {
+            if (state_changed(&RenderItem::ib)) {
                 if (current->ib.isValid()) {
                     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,
                                  index_buffer_map_.at(current->ib).element_buffer);

@@ -585,7 +585,7 @@ bool Renderer::renderFrame(Frame* frame) {
 }
 
 uint Renderer::backbufferView() const {
-    for (uint view_index = 0; view_index < submit_->views.size(); ++view_index) {
+    for (usize view_index = 0; view_index < submit_->views.size(); ++view_index) {
         if (submit_->views[view_index].frame_buffer.internal() == 0) {
             return view_index;
         }
