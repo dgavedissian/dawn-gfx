@@ -120,7 +120,7 @@ TextureHandle loadTexture(Renderer& r, const std::string& texture) {
     int width, height, bpp;
     stbi_uc* buffer = stbi_load(texture.c_str(), &width, &height, &bpp, 4);
     Memory data(buffer, static_cast<u32>(width * height * 4),
-                [](std::byte* buffer) { stbi_image_free(buffer); });
+                [](byte* buffer) { stbi_image_free(buffer); });
     return r.createTexture2D(static_cast<u16>(width), static_cast<u16>(height),
                              TextureFormat::RGBA8, std::move(data));
 }

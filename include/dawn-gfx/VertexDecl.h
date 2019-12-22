@@ -39,11 +39,12 @@ private:
     // Count: 3
     // AttributeType: 5
     // Normalised: 1
-    std::vector<std::pair<u16, std::byte*>> attributes_;
+    std::vector<std::pair<u16, byte*>> attributes_;
     u16 stride_;
 
     friend class Renderer;
     friend class GLRenderContext;
 };
+}  // namespace gfx
 }  // namespace dw
-}
+

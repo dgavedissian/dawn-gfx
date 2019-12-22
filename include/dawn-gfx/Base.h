@@ -19,6 +19,7 @@ using dga::i32;
 using dga::i64;
 using dga::usize;
 using dga::uint;
+using dga::byte;
 }
 }
 

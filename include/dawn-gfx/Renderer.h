@@ -7,7 +7,7 @@
 #include "Base.h"
 #include "detail/Handle.h"
 #include "detail/Memory.h"
-#include "Math.h"
+#include "MathDefs.h"
 #include "Colour.h"
 #include "Logger.h"
 #include "VertexDecl.h"
@@ -343,20 +343,20 @@ struct Frame {
 
     // Transient vertex/index buffer storage.
     struct {
-        std::unique_ptr<std::byte[]> data;
+        std::unique_ptr<byte[]> data;
         uint size;
         VertexBufferHandle handle;
     } transient_vb_storage;
 
     struct {
-        std::unique_ptr<std::byte[]> data;
+        std::unique_ptr<byte[]> data;
         uint size;
         IndexBufferHandle handle;
     } transient_ib_storage;
 
     // Transient vertex/index buffer data.
     struct TransientVertexBufferData {
-        std::byte* data;
+        byte* data;
         uint size;
         VertexDecl decl;
     };
@@ -364,7 +364,7 @@ struct Frame {
         transient_vertex_buffers_;
     TransientVertexBufferHandle next_transient_vertex_buffer_handle_;
     struct TransientIndexBufferData {
-        std::byte* data;
+        byte* data;
         uint size;
     };
     std::unordered_map<TransientIndexBufferHandle, TransientIndexBufferData>
@@ -406,12 +406,12 @@ public:
     /// Transient vertex buffer.
     TransientVertexBufferHandle allocTransientVertexBuffer(uint vertex_count,
                                                            const VertexDecl& decl);
-    std::byte* getTransientVertexBufferData(TransientVertexBufferHandle handle);
+    byte* getTransientVertexBufferData(TransientVertexBufferHandle handle);
     void setVertexBuffer(TransientVertexBufferHandle handle);
 
     /// Transient index buffer.
     TransientIndexBufferHandle allocTransientIndexBuffer(uint index_count);
-    std::byte* getTransientIndexBufferData(TransientIndexBufferHandle handle);
+    byte* getTransientIndexBufferData(TransientIndexBufferHandle handle);
     void setIndexBuffer(TransientIndexBufferHandle handle);
 
     /// Create shader.

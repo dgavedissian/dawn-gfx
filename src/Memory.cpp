@@ -11,15 +11,15 @@ Memory::Memory() : data_{nullptr}, size_{0} {
 
 Memory::Memory(usize size) : size_{size} {
     if (size > 0) {
-        data_.reset(new std::byte[size], std::default_delete<std::byte[]>());
+        data_.reset(new byte[size], std::default_delete<byte[]>());
     }
 }
 
-std::byte& Memory::operator[](size_t index) const {
+byte& Memory::operator[](size_t index) const {
     return data_.get()[index];
 }
 
-std::byte* Memory::data() const {
+byte* Memory::data() const {
     return data_.get();
 }
 

@@ -4,6 +4,7 @@
  */
 #pragma once
 
+#include <vector>
 #include "../Base.h"
 
 // Mark this header as a system header

@@ -18,7 +18,7 @@ VertexDecl& VertexDecl::add(VertexDecl::Attribute attribute, usize count,
                             VertexDecl::AttributeType type, bool normalised) {
     attributes_.emplace_back(
         std::make_pair(encodeAttributes(attribute, count, type, normalised),
-                       reinterpret_cast<std::byte*>(static_cast<std::uintptr_t>(stride_))));
+                       reinterpret_cast<byte*>(static_cast<std::uintptr_t>(stride_))));
     stride_ += static_cast<u16>(count) * attributeTypeSize(type);
     return *this;
 }

@@ -31,7 +31,7 @@ find_package(OpenGL REQUIRED)
 
 FetchContent_Declare(
     base
-    URL https://github.com/dgavedissian/base/archive/fe9f4a9dd4b2b605e405654177a87609171842cf.zip
+    URL https://github.com/dgavedissian/base/archive/ec74bef46996181c06a0032bc88d369f681f1c3c.zip
 )
 FetchContent_MakeAvailable(base)
 
@@ -137,7 +137,7 @@ add_library(dawn-gfx
     include/dawn-gfx/Colour.h
     include/dawn-gfx/Input.h
     include/dawn-gfx/Logger.h
-    include/dawn-gfx/Math.h
+    include/dawn-gfx/MathDefs.h
     include/dawn-gfx/MeshBuilder.h
     include/dawn-gfx/Renderer.h
     include/dawn-gfx/Shader.h
@@ -163,6 +163,9 @@ target_include_directories(dawn-gfx PRIVATE include/dawn-gfx src)
 target_link_libraries(dawn-gfx dga-base expected fmt glad glfw glslang SPIRV MathGeoLib spirv-cross-glsl)
 target_compile_features(dawn-gfx PUBLIC cxx_std_17)
 set_target_properties(dawn-gfx PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    add_compile_definitions(dawn-gfx _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING)
+endif()
 
 if(MASTER_PROJECT)
     add_subdirectory(examples)

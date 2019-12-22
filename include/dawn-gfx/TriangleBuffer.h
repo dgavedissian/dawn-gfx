@@ -4,9 +4,10 @@
  */
 #pragma once
 
-#include "Math.h"
+#include "MathDefs.h"
 #include "Renderer.h"
 #include <utility>
+#include <vector>
 
 namespace dw {
 namespace gfx {

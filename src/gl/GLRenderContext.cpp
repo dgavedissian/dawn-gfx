@@ -10,8 +10,8 @@
 #include <dga/string_algorithms.h>
 #include <fmt/format.h>
 #include <locale>
-#include <codecvt>
 #include <exception>
+#include <codecvt>
 
 /**
  * GLRenderContext. A render context implementation which targets GL 4.0 on desktop platforms,
@@ -378,7 +378,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
 #endif
 
     // Create the window.
-    window_ = glfwCreateWindow(width * window_scale_.x, height * window_scale_.y, title.c_str(),
+    window_ = glfwCreateWindow(static_cast<int>(width * window_scale_.x), static_cast<int>(height * window_scale_.y), title.c_str(),
                                nullptr, nullptr);
     if (!window_) {
         // Failed to create window.
@@ -850,7 +850,12 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
         // TODO: an error occurred.
     }
 
-    if (GLAD_GL_ARB_gl_spirv) {
+#if DGA_PLATFORM == DGA_WIN32
+    bool use_spirv = false;
+#else
+    bool use_spirv = GLAD_GL_ARB_gl_spirv;
+#endif
+    if (use_spirv) {
         glShaderBinary(1, &shader, GL_SHADER_BINARY_FORMAT_SPIR_V, c.data.data(), c.data.size());
         auto error = glGetError();
         if (error == GL_INVALID_VALUE) {
@@ -859,6 +864,8 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
             std::string error_message(info_log_length, '\0');
             glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data());
             logger_.error("[CreateShader] Shader Load Error: {}", error_message);
+        } else {
+            GL_CHECK();
         }
 
         // Specialize the shader.
@@ -907,6 +914,8 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
         logger_.error("[CreateShader] Shader Compile Error: {}", error_message);
 
         // TODO: Error
+    } else {
+        GL_CHECK();
     }
 
     shader_map_.emplace(c.handle, shader);
@@ -931,6 +940,7 @@ void GLRenderContext::operator()(const cmd::AttachShader& c) {
 void GLRenderContext::operator()(const cmd::LinkProgram& c) {
     GLuint program = program_map_.at(c.handle).program;
     glLinkProgram(program);
+    GL_CHECK();
 
     // Check the result of the link process.
     GLint result = GL_FALSE;

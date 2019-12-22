@@ -8,10 +8,11 @@
 #include <cstddef>
 #include <vector>
 #include <memory>
+#include <cstring>
 
 namespace dw {
 namespace gfx {
-using MemoryDeleter = void (*)(std::byte*);
+using MemoryDeleter = void (*)(byte*);
 
 // A blob of memory.
 class DW_API Memory {
@@ -48,16 +49,16 @@ public:
     Memory& operator=(Memory&&) = default;
 
     /// Access individual bytes.
-    std::byte& operator[](std::size_t index) const;
+    byte& operator[](std::size_t index) const;
 
     /// Access underlying byte buffer.
-    std::byte* data() const;
+    byte* data() const;
 
     /// Size of the byte buffer.
     usize size() const;
 
 private:
-    std::shared_ptr<std::byte> data_;
+    std::shared_ptr<byte> data_;
     usize size_;
     // A type erased pointer which owns an object that holds some data.
     std::shared_ptr<void> holder_;
@@ -65,7 +66,7 @@ private:
 
 template <typename T> Memory::Memory(const T* data, usize size) : Memory(data ? size : 0) {
     if (data != nullptr) {
-        memcpy(data_.get(), data, size);
+        std::memcpy(data_.get(), data, size);
     }
 }
 
@@ -78,15 +79,15 @@ template <typename T> Memory::Memory(std::vector<T>&& data) {
         std::make_shared<std::vector<T>>(std::move(data));
     // shared_ptr shouldn't own any memory, the memory is owned by vector_holder. As a result, we
     // pass a no-op deleter.
-    data_ = std::shared_ptr<std::byte>(
-        static_cast<std::byte*>(static_cast<void*>(vector_holder->data())), [](std::byte*) {});
+    data_ = std::shared_ptr<byte>(
+        static_cast<byte*>(static_cast<void*>(vector_holder->data())), [](byte*) {});
     size_ = vector_holder->size() * sizeof(T);
     holder_ = vector_holder;
 }
 
 template <typename T, typename Deleter>
 Memory::Memory(T* data, usize size, Deleter deleter) : size_{size} {
-    data_.reset(static_cast<std::byte*>(static_cast<void*>(data)), deleter);
+    data_.reset(static_cast<byte*>(static_cast<void*>(data)), deleter);
 }
 }
 }  // namespace dw

@@ -20,9 +20,9 @@ void View::clear() {
 
 Frame::Frame() {
     current_item = RenderItem();
-    transient_vb_storage.data.reset(new std::byte[DW_MAX_TRANSIENT_VERTEX_BUFFER_SIZE]);
+    transient_vb_storage.data.reset(new byte[DW_MAX_TRANSIENT_VERTEX_BUFFER_SIZE]);
     transient_vb_storage.size = 0;
-    transient_ib_storage.data.reset(new std::byte[DW_MAX_TRANSIENT_INDEX_BUFFER_SIZE]);
+    transient_ib_storage.data.reset(new byte[DW_MAX_TRANSIENT_INDEX_BUFFER_SIZE]);
     transient_ib_storage.size = 0;
     next_transient_vertex_buffer_handle_ = TransientVertexBufferHandle{0};
     next_transient_index_buffer_handle_ = TransientIndexBufferHandle{0};
@@ -202,13 +202,13 @@ TransientVertexBufferHandle Renderer::allocTransientVertexBuffer(uint vertex_cou
 
     // Allocate handle.
     auto handle = submit_->next_transient_vertex_buffer_handle_++;
-    std::byte* data = submit_->transient_vb_storage.data.get() + submit_->transient_vb_storage.size;
+    byte* data = submit_->transient_vb_storage.data.get() + submit_->transient_vb_storage.size;
     submit_->transient_vb_storage.size += size;
     submit_->transient_vertex_buffers_[handle] = {data, size, decl};
     return handle;
 }
 
-std::byte* Renderer::getTransientVertexBufferData(TransientVertexBufferHandle handle) {
+byte* Renderer::getTransientVertexBufferData(TransientVertexBufferHandle handle) {
     auto it = submit_->transient_vertex_buffers_.find(handle);
     if (it != submit_->transient_vertex_buffers_.end()) {
         return it->second.data;
@@ -232,13 +232,13 @@ TransientIndexBufferHandle Renderer::allocTransientIndexBuffer(uint index_count)
 
     // Allocate handle.
     auto handle = submit_->next_transient_index_buffer_handle_++;
-    std::byte* data = submit_->transient_ib_storage.data.get() + submit_->transient_ib_storage.size;
+    byte* data = submit_->transient_ib_storage.data.get() + submit_->transient_ib_storage.size;
     submit_->transient_ib_storage.size += size;
     submit_->transient_index_buffers_[handle] = {data, size};
     return handle;
 }
 
-std::byte* Renderer::getTransientIndexBufferData(TransientIndexBufferHandle handle) {
+byte* Renderer::getTransientIndexBufferData(TransientIndexBufferHandle handle) {
     auto it = submit_->transient_index_buffers_.find(handle);
     if (it != submit_->transient_index_buffers_.end()) {
         return it->second.data;

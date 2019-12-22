@@ -4,7 +4,7 @@
  */
 #pragma once
 
-#include "Math.h"
+#include "MathDefs.h"
 
 namespace dw {
 namespace gfx {
