@@ -14,7 +14,7 @@ namespace gfx {
 // Vertex Declaration.
 class DW_API VertexDecl {
 public:
-    enum class Attribute { Position, Normal, Colour, TexCoord0 };
+    enum class Attribute { Position, Normal, Colour, TexCoord0, Tangent };
 
     enum class AttributeType { Float, Uint8 };
 

@@ -17,6 +17,7 @@ public:
 
     MeshBuilder& normals(bool normals);
     MeshBuilder& texcoords(bool texcoords);
+    MeshBuilder& tangents(bool tangents);
 
     Mesh createPlane(float width, float height);
     Mesh createBox(float half_size);
@@ -26,6 +27,7 @@ private:
     Renderer& r_;
     bool with_normals_;
     bool with_texcoords_;
+    bool with_tangents_;
 };
 }
 }  // namespace dw

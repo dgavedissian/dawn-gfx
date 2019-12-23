@@ -19,6 +19,11 @@ MeshBuilder& MeshBuilder::texcoords(bool texcoords) {
     return *this;
 }
 
+MeshBuilder& MeshBuilder::tangents(bool tangents) {
+    with_tangents_ = tangents;
+    return *this;
+}
+
 Mesh MeshBuilder::createPlane(float width, float height) {
     TriangleBuffer buffer;
     buffer.begin();
@@ -59,6 +64,9 @@ Mesh MeshBuilder::createPlane(float width, float height) {
     // Triangles.
     buffer.triangle(0, 2, 1);
     buffer.triangle(1, 2, 3);
+    if (with_tangents_) {
+        buffer.calculateTangents();
+    }
     return buffer.end(r_);
 }
 
@@ -128,6 +136,9 @@ Mesh MeshBuilder::createBox(float half_size) {
         }
         buffer.triangle(tri * 3, tri * 3 + 1, tri * 3 + 2);
     }
+    if (with_tangents_) {
+        buffer.calculateTangents();
+    }
     return buffer.end(r_);
 }
 
@@ -179,6 +190,9 @@ Mesh MeshBuilder::createSphere(float radius, uint num_rings, uint num_segments) 
     }
 
     // Generate the mesh.
+    if (with_tangents_) {
+        buffer.calculateTangents();
+    }
     return buffer.end(r_);
 }
 }  // namespace gfx

@@ -378,8 +378,9 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
 #endif
 
     // Create the window.
-    window_ = glfwCreateWindow(static_cast<int>(width * window_scale_.x), static_cast<int>(height * window_scale_.y), title.c_str(),
-                               nullptr, nullptr);
+    window_ = glfwCreateWindow(static_cast<int>(width * window_scale_.x),
+                               static_cast<int>(height * window_scale_.y), title.c_str(), nullptr,
+                               nullptr);
     if (!window_) {
         // Failed to create window.
         return tl::make_unexpected(
