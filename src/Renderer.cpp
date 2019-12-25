@@ -9,12 +9,12 @@
 
 namespace dw {
 namespace gfx {
-View::View() : clear_colour{}, frame_buffer{FrameBufferHandle::invalid} {
+View::View() : clear_colour{}, frame_buffer{FrameBufferHandle{0}} {
 }
 
 void View::clear() {
     clear_colour.reset();
-    frame_buffer = FrameBufferHandle::invalid;
+    frame_buffer = FrameBufferHandle{0};
     render_items.clear();
 }
 
@@ -570,7 +570,6 @@ bool Renderer::renderFrame(Frame* frame) {
     for (auto& view : frame->views) {
         view.clear();
     }
-    frame->view(0).frame_buffer = FrameBufferHandle{0};
     frame->commands_pre.clear();
     frame->commands_post.clear();
     frame->transient_vb_storage.size = 0;
