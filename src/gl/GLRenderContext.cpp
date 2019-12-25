@@ -27,19 +27,45 @@
 #define DW_GL_VERSION DW_GLES_300
 #endif
 
-#define GL_CHECK() __CHECK(__FILE__, __LINE__)
-#define __CHECK(FILE, LINE)                                                            \
-    {                                                                                  \
-        GLuint err = glGetError();                                                     \
-        if (err != 0) {                                                                \
-            throw std::runtime_error(                                                  \
-                fmt::format("glGetError() returned {:#x} at {}:{}", err, FILE, LINE)); \
-        }                                                                              \
-    }
+#define GL_CHECK() checkGLError(__FILE__, __LINE__)
 
 namespace dw {
 namespace gfx {
 namespace {
+void checkGLError(const char* file, int line) {
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        std::ostringstream error_str;
+        error_str << "glGetError returned:" << std::endl;
+        while (err != GL_NO_ERROR) {
+            std::string error;
+            switch (err) {
+                case GL_INVALID_OPERATION:
+                    error = "GL_INVALID_OPERATION";
+                    break;
+                case GL_INVALID_ENUM:
+                    error = "GL_INVALID_ENUM";
+                    break;
+                case GL_INVALID_VALUE:
+                    error = "GL_INVALID_VALUE";
+                    break;
+                case GL_OUT_OF_MEMORY:
+                    error = "GL_OUT_OF_MEMORY";
+                    break;
+                case GL_INVALID_FRAMEBUFFER_OPERATION:
+                    error = "GL_INVALID_FRAMEBUFFER_OPERATION";
+                    break;
+                default:
+                    error = fmt::format("(unknown: {:#x})", err);
+                    break;
+            }
+            error_str << error << " - " << file << ":" << line << std::endl;
+            err = glGetError();
+        }
+        throw std::runtime_error(error_str.str());
+    }
+}
+
 // Buffer usage.
 GLenum mapBufferUsage(BufferUsage usage) {
     switch (usage) {

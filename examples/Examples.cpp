@@ -119,6 +119,9 @@ ShaderHandle loadShader(Renderer& r, ShaderStage type, const std::string& source
 TextureHandle loadTexture(Renderer& r, const std::string& texture) {
     int width, height, bpp;
     stbi_uc* buffer = stbi_load(texture.c_str(), &width, &height, &bpp, 4);
+    if (!buffer) {
+        throw std::runtime_error("Failed to load " + texture);
+    }
     Memory data(buffer, static_cast<u32>(width * height * 4),
                 [](byte* buffer) { stbi_image_free(buffer); });
     return r.createTexture2D(static_cast<u16>(width), static_cast<u16>(height),
