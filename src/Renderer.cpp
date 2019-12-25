@@ -9,11 +9,11 @@
 
 namespace dw {
 namespace gfx {
-View::View() : clear_colour{0.0f, 0.0f, 0.0f, 1.0f}, frame_buffer{FrameBufferHandle::invalid} {
+View::View() : clear_colour{}, frame_buffer{FrameBufferHandle::invalid} {
 }
 
 void View::clear() {
-    clear_colour = {0.0f, 0.0f, 0.0f, 1.0f};
+    clear_colour.reset();
     frame_buffer = FrameBufferHandle::invalid;
     render_items.clear();
 }

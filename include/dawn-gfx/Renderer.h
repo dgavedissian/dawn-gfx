@@ -22,6 +22,7 @@
 #include <array>
 #include <atomic>
 #include <thread>
+#include <optional>
 
 #define DW_MAX_TEXTURE_SAMPLERS 8
 #define DW_MAX_TRANSIENT_VERTEX_BUFFER_SIZE (1 << 20)
@@ -323,7 +324,7 @@ struct View {
     View();
     void clear();
 
-    Colour clear_colour;
+    std::optional<Colour> clear_colour;
     FrameBufferHandle frame_buffer;
     std::vector<RenderItem> render_items;
 };
