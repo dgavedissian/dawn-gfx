@@ -313,16 +313,20 @@ void Renderer::setUniform(const std::string& uniform_name, UniformData data) {
     submit_->current_item.uniforms[uniform_name] = data;
 }
 
-TextureHandle Renderer::createTexture2D(u16 width, u16 height, TextureFormat format, Memory data) {
+TextureHandle Renderer::createTexture2D(u16 width, u16 height, TextureFormat format, Memory data,
+                                        bool generate_mipmaps) {
     auto handle = texture_handle_.next();
     texture_data_[handle] = {width, height, format};
-    submitPreFrameCommand(cmd::CreateTexture2D{handle, width, height, format, std::move(data)});
+    submitPreFrameCommand(
+        cmd::CreateTexture2D{handle, width, height, format, std::move(data), generate_mipmaps});
     return handle;
 }
 
-void Renderer::setTexture(TextureHandle handle, uint sampler_unit) {
+void Renderer::setTexture(TextureHandle handle, uint sampler_unit, u32 sampler_flags) {
     // TODO: check precondition: texture_unit < MAX_TEXTURE_UNITS
-    submit_->current_item.textures[sampler_unit].handle = handle;
+    auto& binding = submit_->current_item.textures[sampler_unit];
+    binding.handle = handle;
+    binding.sampler_flags = sampler_flags;
 }
 
 void Renderer::deleteTexture(TextureHandle handle) {

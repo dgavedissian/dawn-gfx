@@ -719,7 +719,7 @@ public:
 };
 
 int main() {
-    auto example = std::make_unique<Textured3DCubeNormalMap>();
+    auto example = std::make_unique<Textured3DCube>();
     example->start();
 #ifdef DGA_EMSCRIPTEN
     // void emscripten_set_main_loop(em_callback_func func, int fps, int simulate_infinite_loop);

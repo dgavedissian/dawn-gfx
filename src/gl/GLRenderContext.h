@@ -13,14 +13,25 @@
 
 namespace dw {
 namespace gfx {
+class GLSamplerCache {
+public:
+    // Find a sampler object given a set of sampler flags. If the object does not exist, create it.
+    GLuint findOrCreate(u32 sampler_flags);
+
+    // Clear the cache.
+    void clear();
+
+private:
+    std::unordered_map<u32, GLuint> cache_;
+};
+
 class GLRenderContext : public RenderContext {
 public:
     explicit GLRenderContext(Logger& logger);
     ~GLRenderContext() override;
 
     // Window management. Executed on the main thread.
-    tl::expected<void, std::string> createWindow(u16 width, u16 height,
-                                                 const std::string& title,
+    tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title,
                                                  InputCallbacks desc) override;
     void destroyWindow() override;
     void processEvents() override;
@@ -99,6 +110,7 @@ private:
 
     // Textures.
     std::unordered_map<TextureHandle, GLuint> texture_map_;
+    GLSamplerCache sampler_cache_;
 
     // Frame buffers.
     struct FrameBufferData {
@@ -113,5 +125,5 @@ private:
     // Helper functions.
     void setupVertexArrayAttributes(const VertexDecl& decl, uint vb_offset);
 };
-}
+}  // namespace gfx
 }  // namespace dw

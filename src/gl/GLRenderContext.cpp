@@ -346,6 +346,53 @@ private:
 int last_error_code = 0;
 std::string last_error_description;
 
+GLuint GLSamplerCache::findOrCreate(u32 sampler_flags) {
+    auto it = cache_.find(sampler_flags);
+    if (it != cache_.end()) {
+        return it->second;
+    }
+
+    GLuint sampler_object;
+    glGenSamplers(1, &sampler_object);
+    GL_CHECK();
+
+    const std::unordered_map<u32, GLuint> wrapping_mode_map = {
+        {0b01, GL_REPEAT}, {0b10, GL_MIRRORED_REPEAT}, {0b11, GL_CLAMP_TO_EDGE}};
+    const std::unordered_map<u32, GLuint> mag_filter_map = {{0b01, GL_NEAREST}, {0b10, GL_LINEAR}};
+    const std::unordered_map<u32, GLuint> min_filter_map = {{0b0101, GL_NEAREST_MIPMAP_NEAREST},
+                                                            {0b0110, GL_NEAREST_MIPMAP_LINEAR},
+                                                            {0b1001, GL_LINEAR_MIPMAP_NEAREST},
+                                                            {0b1010, GL_LINEAR_MIPMAP_LINEAR}};
+
+    // Parse sampler flags.
+    auto u_wrapping_mode =
+        (sampler_flags & SamplerFlag::maskUWrappingMode) >> SamplerFlag::shiftUWrappingMode;
+    auto v_wrapping_mode =
+        (sampler_flags & SamplerFlag::maskVWrappingMode) >> SamplerFlag::shiftVWrappingMode;
+    auto w_wrapping_mode =
+        (sampler_flags & SamplerFlag::maskWWrappingMode) >> SamplerFlag::shiftWWrappingMode;
+    auto min_filter = (sampler_flags & SamplerFlag::maskMinFilter) >> SamplerFlag::shiftMinFilter;
+    auto mag_filter = (sampler_flags & SamplerFlag::maskMagFilter) >> SamplerFlag::shiftMagFilter;
+    auto mip_filter = (sampler_flags & SamplerFlag::maskMipFilter) >> SamplerFlag::shiftMipFilter;
+    glSamplerParameteri(sampler_object, GL_TEXTURE_WRAP_S, wrapping_mode_map.at(u_wrapping_mode));
+    glSamplerParameteri(sampler_object, GL_TEXTURE_WRAP_T, wrapping_mode_map.at(v_wrapping_mode));
+    glSamplerParameteri(sampler_object, GL_TEXTURE_WRAP_R, wrapping_mode_map.at(w_wrapping_mode));
+    glSamplerParameteri(sampler_object, GL_TEXTURE_MAG_FILTER, mag_filter_map.at(mag_filter));
+    glSamplerParameteri(sampler_object, GL_TEXTURE_MIN_FILTER,
+                        min_filter_map.at(min_filter << 2u | mip_filter));
+
+    cache_.emplace(sampler_flags, sampler_object);
+
+    return sampler_object;
+}
+
+void GLSamplerCache::clear() {
+    for (const auto& sampler : cache_) {
+        glDeleteSamplers(1, &sampler.second);
+    }
+    cache_.clear();
+}
+
 GLRenderContext::GLRenderContext(Logger& logger) : RenderContext(logger) {
 }
 
@@ -516,6 +563,8 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
 
 void GLRenderContext::destroyWindow() {
     if (window_) {
+        sampler_cache_.clear();
+
         glfwDestroyWindow(window_);
         window_ = nullptr;
         glfwTerminate();
@@ -727,18 +776,31 @@ bool GLRenderContext::frame(const Frame* frame) {
                 std::max(previous ? previous->textures.size() : 0, current->textures.size());
             for (uint j = 0; j < texture_count; ++j) {
                 glActiveTexture(GL_TEXTURE0 + j);
+                GL_CHECK();
                 if (j >= current->textures.size()) {
                     // If the iterator is greater than the number of current textures, this means we
                     // are hitting texture units used by the previous render item. Unbind it as it's
                     // no longer in use.
                     glBindTexture(GL_TEXTURE_2D, 0);
+                    GL_CHECK();
                 } else if (!current->textures[j].handle.isValid()) {
                     // Unbind the texture if the handle is invalid.
                     glBindTexture(GL_TEXTURE_2D, 0);
+                    GL_CHECK();
                 } else {
+                    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                     glBindTexture(GL_TEXTURE_2D, texture_map_.at(current->textures[j].handle));
+                    GL_CHECK();
                 }
-                GL_CHECK();
+
+                // Bind sampler.
+                if (current->textures[j].sampler_flags != 0) {
+                    GLuint sampler =
+                        sampler_cache_.findOrCreate(current->textures[j].sampler_flags);
+                    glBindSampler(j, sampler);
+                    GL_CHECK();
+                }
             }
 
             // Bind vertex data.
@@ -998,10 +1060,6 @@ void GLRenderContext::operator()(const cmd::CreateTexture2D& c) {
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
 
-    // Filtering.
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
     // Give image data to OpenGL.
     TextureFormatInfo format = s_texture_format[static_cast<int>(c.format)];
     logger_.debug(
@@ -1012,6 +1070,12 @@ void GLRenderContext::operator()(const cmd::CreateTexture2D& c) {
     glTexImage2D(GL_TEXTURE_2D, 0, format.internal_format, c.width, c.height, 0, format.format,
                  format.type, c.data.data());
     GL_CHECK();
+
+    // Generate mipmaps.
+    if (c.generate_mipmaps) {
+        glGenerateMipmap(GL_TEXTURE_2D);
+        GL_CHECK();
+    }
 
     // Add texture.
     texture_map_.emplace(c.handle, texture);

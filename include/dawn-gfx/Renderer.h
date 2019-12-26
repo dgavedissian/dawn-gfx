@@ -138,6 +138,63 @@ enum class TextureFormat {
     Count
 };
 
+// Sampler flags.
+namespace SamplerFlag {
+enum Enum : std::uint32_t {
+    // U wrapping mode.
+    URepeat = 0x0001,  // repeating
+    UMirror = 0x0002,  // mirrored
+    UClamp = 0x0003,   // clamp
+
+    // V wrapping mode.
+    VRepeat = 0x0004,  // repeating
+    VMirror = 0x0008,  // mirrored
+    VClamp = 0x000c,   // clamp
+
+    // W wrapping mode.
+    WRepeat = 0x0010,  // repeating
+    WMirror = 0x0020,  // mirrored
+    WClamp = 0x0030,   // clamp
+
+    // Combined wrapping modes.
+    UVRepeat = URepeat | VRepeat,
+    UVWRepeat = URepeat | VRepeat | WRepeat,
+    UVMirror = UMirror | VMirror,
+    UVWMirror = UMirror | VMirror | WMirror,
+    UVClamp = UClamp | VClamp,
+    UVWClamp = UClamp | VClamp | WClamp,
+
+    // Min filter.
+    MinPoint = 0x0040,   // nearest point filter
+    MinLinear = 0x0080,  // linear (anisotropic) filter
+
+    // Mag filter.
+    MagPoint = 0x0100,   // nearest point filter
+    MagLinear = 0x0200,  // linear (anisotropic) filter
+
+    // Mip filter.
+    MipPoint = 0x0400,   // nearest point filter
+    MipLinear = 0x0800,  // linear (anisotropic) filter
+
+    // Combined filters.
+    MinMagPoint = MinPoint | MagPoint,
+    MinMagLinear = MinLinear | MagLinear,
+};
+
+constexpr auto maskUWrappingMode = 0x0003;
+constexpr auto shiftUWrappingMode = 0;
+constexpr auto maskVWrappingMode = 0x000c;
+constexpr auto shiftVWrappingMode = 2;
+constexpr auto maskWWrappingMode = 0x0030;
+constexpr auto shiftWWrappingMode = 4;
+constexpr auto maskMinFilter = 0x00c0;
+constexpr auto shiftMinFilter = 6;
+constexpr auto maskMagFilter = 0x0300;
+constexpr auto shiftMagFilter = 8;
+constexpr auto maskMipFilter = 0x0c00;
+constexpr auto shiftMipFilter = 10;
+}  // namespace SamplerFlag
+
 // Render states.
 enum class RenderState { CullFace, Depth, Blending };
 enum class CullFrontFace { CCW, CW };
@@ -232,9 +289,8 @@ struct CreateTexture2D {
     u16 width;
     u16 height;
     TextureFormat format;
-    // TODO: Support custom mips.
-    // TODO: Support different filtering.
     Memory data;
+    bool generate_mipmaps;
 };
 
 struct DeleteTexture {
@@ -280,6 +336,7 @@ using UniformData = std::variant<int, float, Vec2, Vec3, Vec4, Mat3, Mat4>;
 struct RenderItem {
     struct TextureBinding {
         TextureHandle handle;
+        u32 sampler_flags;
     };
 
     // Vertices and indices.
@@ -388,7 +445,8 @@ public:
 
     /// Initialise.
     tl::expected<void, std::string> init(RendererType type, u16 width, u16 height,
-                                         const std::string& title, InputCallbacks input_callbacks, bool use_render_thread);
+                                         const std::string& title, InputCallbacks input_callbacks,
+                                         bool use_render_thread);
 
     /// Create vertex buffer.
     VertexBufferHandle createVertexBuffer(Memory data, const VertexDecl& decl,
@@ -436,8 +494,11 @@ public:
     void setUniform(const std::string& uniform_name, UniformData data);
 
     // Create texture.
-    TextureHandle createTexture2D(u16 width, u16 height, TextureFormat format, Memory data);
-    void setTexture(TextureHandle handle, uint sampler_unit);
+    TextureHandle createTexture2D(u16 width, u16 height, TextureFormat format, Memory data,
+                                  bool generate_mipmaps = true);
+    void setTexture(TextureHandle handle, uint sampler_unit,
+                    u32 sampler_flags = SamplerFlag::UVWClamp | SamplerFlag::MinMagLinear |
+                                        SamplerFlag::MipLinear);
     // get texture information.
     void deleteTexture(TextureHandle handle);
 
@@ -552,5 +613,5 @@ private:
     void renderThread();
     bool renderFrame(Frame* frame);
 };
+}  // namespace gfx
 }  // namespace dw
-}
