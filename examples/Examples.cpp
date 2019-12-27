@@ -23,7 +23,7 @@ using namespace dw::gfx;
 
 class StdoutLogger : public Logger {
 public:
-    void log(LogLevel level, const std::string& str) override {
+    void log(LogLevel level, const std::string& str) const override {
         (level == LogLevel::Error ? std::cerr : std::cout) << str << std::endl;
     }
 };

@@ -497,7 +497,7 @@ public:
     TextureHandle createTexture2D(u16 width, u16 height, TextureFormat format, Memory data,
                                   bool generate_mipmaps = true);
     void setTexture(TextureHandle handle, uint sampler_unit,
-                    u32 sampler_flags = SamplerFlag::UVWClamp | SamplerFlag::MinMagLinear |
+                    u32 sampler_flags = SamplerFlag::UVWRepeat | SamplerFlag::MinMagLinear |
                                         SamplerFlag::MipLinear);
     // get texture information.
     void deleteTexture(TextureHandle handle);

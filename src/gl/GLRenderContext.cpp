@@ -27,11 +27,20 @@
 #define DW_GL_VERSION DW_GLES_300
 #endif
 
-#define GL_CHECK() checkGLError(__FILE__, __LINE__)
+#ifndef NDEBUG
+#define GL_CHECK(call)                    \
+    do {                                  \
+        call;                             \
+        checkGLError(__FILE__, __LINE__); \
+    } while (false)
+#else
+#define GL_CHECK(call) call
+#endif
 
 namespace dw {
 namespace gfx {
 namespace {
+// Debugging
 void checkGLError(const char* file, int line) {
     GLenum err = glGetError();
     if (err != GL_NO_ERROR) {
@@ -63,6 +72,18 @@ void checkGLError(const char* file, int line) {
             err = glGetError();
         }
         throw std::runtime_error(error_str.str());
+    }
+}
+
+void GLAPIENTRY debugMessageCallback(GLenum source, GLenum type, GLuint id, GLenum severity,
+                                     GLsizei length, const GLchar* message,
+                                     const void* user_param) {
+    const auto& logger = *static_cast<const Logger*>(user_param);
+    if (type == GL_DEBUG_TYPE_ERROR) {
+        logger.debug("GL error: severity = {:#x}, message = {}", severity, message);
+    } else {
+        logger.debug("GL message: type = {:#x}, severity = {:#x}, message = {}", type, severity,
+                     message);
     }
 }
 
@@ -299,38 +320,31 @@ public:
     }
 
     void operator()(const int& value) {
-        glUniform1i(uniform_location_, value);
-        GL_CHECK();
+        GL_CHECK(glUniform1i(uniform_location_, value));
     }
 
     void operator()(const float& value) {
-        glUniform1f(uniform_location_, value);
-        GL_CHECK();
+        GL_CHECK(glUniform1f(uniform_location_, value));
     }
 
     void operator()(const Vec2& value) {
-        glUniform2f(uniform_location_, value.x, value.y);
-        GL_CHECK();
+        GL_CHECK(glUniform2f(uniform_location_, value.x, value.y));
     }
 
     void operator()(const Vec3& value) {
-        glUniform3f(uniform_location_, value.x, value.y, value.z);
-        GL_CHECK();
+        GL_CHECK(glUniform3f(uniform_location_, value.x, value.y, value.z));
     }
 
     void operator()(const Vec4& value) {
-        glUniform4f(uniform_location_, value.x, value.y, value.z, value.w);
-        GL_CHECK();
+        GL_CHECK(glUniform4f(uniform_location_, value.x, value.y, value.z, value.w));
     }
 
     void operator()(const Mat3& value) {
-        glUniformMatrix3fv(uniform_location_, 1, GL_TRUE, value.ptr());
-        GL_CHECK();
+        GL_CHECK(glUniformMatrix3fv(uniform_location_, 1, GL_TRUE, value.ptr()));
     }
 
     void operator()(const Mat4& value) {
-        glUniformMatrix4fv(uniform_location_, 1, GL_TRUE, value.ptr());
-        GL_CHECK();
+        GL_CHECK(glUniformMatrix4fv(uniform_location_, 1, GL_TRUE, value.ptr()));
     }
 
     void updateUniform(GLint location, const UniformData& data) {
@@ -353,8 +367,7 @@ GLuint GLSamplerCache::findOrCreate(u32 sampler_flags) {
     }
 
     GLuint sampler_object;
-    glGenSamplers(1, &sampler_object);
-    GL_CHECK();
+    GL_CHECK(glGenSamplers(1, &sampler_object));
 
     const std::unordered_map<u32, GLuint> wrapping_mode_map = {
         {0b01, GL_REPEAT}, {0b10, GL_MIRRORED_REPEAT}, {0b11, GL_CLAMP_TO_EDGE}};
@@ -374,12 +387,16 @@ GLuint GLSamplerCache::findOrCreate(u32 sampler_flags) {
     auto min_filter = (sampler_flags & SamplerFlag::maskMinFilter) >> SamplerFlag::shiftMinFilter;
     auto mag_filter = (sampler_flags & SamplerFlag::maskMagFilter) >> SamplerFlag::shiftMagFilter;
     auto mip_filter = (sampler_flags & SamplerFlag::maskMipFilter) >> SamplerFlag::shiftMipFilter;
-    glSamplerParameteri(sampler_object, GL_TEXTURE_WRAP_S, wrapping_mode_map.at(u_wrapping_mode));
-    glSamplerParameteri(sampler_object, GL_TEXTURE_WRAP_T, wrapping_mode_map.at(v_wrapping_mode));
-    glSamplerParameteri(sampler_object, GL_TEXTURE_WRAP_R, wrapping_mode_map.at(w_wrapping_mode));
-    glSamplerParameteri(sampler_object, GL_TEXTURE_MAG_FILTER, mag_filter_map.at(mag_filter));
-    glSamplerParameteri(sampler_object, GL_TEXTURE_MIN_FILTER,
-                        min_filter_map.at(min_filter << 2u | mip_filter));
+    GL_CHECK(glSamplerParameteri(sampler_object, GL_TEXTURE_WRAP_S,
+                                 wrapping_mode_map.at(u_wrapping_mode)));
+    GL_CHECK(glSamplerParameteri(sampler_object, GL_TEXTURE_WRAP_T,
+                                 wrapping_mode_map.at(v_wrapping_mode)));
+    GL_CHECK(glSamplerParameteri(sampler_object, GL_TEXTURE_WRAP_R,
+                                 wrapping_mode_map.at(w_wrapping_mode)));
+    GL_CHECK(
+        glSamplerParameteri(sampler_object, GL_TEXTURE_MAG_FILTER, mag_filter_map.at(mag_filter)));
+    GL_CHECK(glSamplerParameteri(sampler_object, GL_TEXTURE_MIN_FILTER,
+                                 min_filter_map.at(min_filter << 2u | mip_filter)));
 
     cache_.emplace(sampler_flags, sampler_object);
 
@@ -388,7 +405,7 @@ GLuint GLSamplerCache::findOrCreate(u32 sampler_flags) {
 
 void GLSamplerCache::clear() {
     for (const auto& sampler : cache_) {
-        glDeleteSamplers(1, &sampler.second);
+        GL_CHECK(glDeleteSamplers(1, &sampler.second));
     }
     cache_.clear();
 }
@@ -434,6 +451,9 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+#ifndef NDEBUG
+    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
+#endif
 #elif !defined(DGA_EMSCRIPTEN)
 #error Unsupported: GLES 3.0 on non Web platform.
 #endif
@@ -550,10 +570,23 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
         return tl::make_unexpected("gladLoadGL failed.");
     }
 
+    // Set debug callbacks.
+#ifndef NDEBUG
+    if (GLAD_GL_KHR_debug) {
+        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+        glDebugMessageCallback(debugMessageCallback, &logger_);
+    }
+#endif
+
     // Print GL information.
     logger_.info("OpenGL: {} - GLSL: {}", glGetString(GL_VERSION),
                  glGetString(GL_SHADING_LANGUAGE_VERSION));
     logger_.info("OpenGL Renderer: {}", glGetString(GL_RENDERER));
+    logger_.info("Extensions:");
+    logger_.info("- GL_KHR_debug: {}", static_cast<bool>(GLAD_GL_KHR_debug));
+    logger_.info("- GLAD_GL_ARB_gl_spirv: {}", static_cast<bool>(GLAD_GL_ARB_gl_spirv));
+    logger_.info("- GLAD_GL_EXT_texture_filter_anisotropic: {}",
+                 static_cast<bool>(GLAD_GL_EXT_texture_filter_anisotropic));
 
     // Hand off context to render thread.
     glfwMakeContextCurrent(nullptr);
@@ -598,17 +631,13 @@ Vec2i GLRenderContext::backbufferSize() const {
 void GLRenderContext::startRendering() {
     glfwMakeContextCurrent(window_);
 
-    glGenVertexArrays(1, &vao_);
-    GL_CHECK();
-    glBindVertexArray(vao_);
-    GL_CHECK();
+    GL_CHECK(glGenVertexArrays(1, &vao_));
+    GL_CHECK(glBindVertexArray(vao_));
 }
 
 void GLRenderContext::stopRendering() {
-    glBindVertexArray(0);
-    GL_CHECK();
-    glDeleteVertexArrays(1, &vao_);
-    GL_CHECK();
+    GL_CHECK(glBindVertexArray(0));
+    GL_CHECK(glDeleteVertexArrays(1, &vao_));
 }
 
 void GLRenderContext::processCommandList(std::vector<RenderCommand>& command_list) {
@@ -624,17 +653,14 @@ bool GLRenderContext::frame(const Frame* frame) {
     // Upload transient vertex/element buffer data.
     auto& tvb = frame->transient_vb_storage;
     if (tvb.size) {
-        glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_map_.at(tvb.handle).vertex_buffer);
-        GL_CHECK();
-        glBufferSubData(GL_ARRAY_BUFFER, 0, tvb.size, tvb.data.get());
-        GL_CHECK();
+        GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_map_.at(tvb.handle).vertex_buffer));
+        GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, tvb.size, tvb.data.get()));
     }
     auto& tib = frame->transient_ib_storage;
     if (tib.size) {
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer_map_.at(tib.handle).element_buffer);
-        GL_CHECK();
-        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, tib.size, tib.data.get());
-        GL_CHECK();
+        GL_CHECK(
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer_map_.at(tib.handle).element_buffer));
+        GL_CHECK(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, tib.size, tib.data.get()));
     }
 
     // Process views.
@@ -649,12 +675,11 @@ bool GLRenderContext::frame(const Frame* frame) {
             FrameBufferData& fb_data = frame_buffer_map_.at(v.frame_buffer);
             fb_width = fb_data.width;
             fb_height = fb_data.height;
-            glBindFramebuffer(GL_FRAMEBUFFER, fb_data.frame_buffer);
-            GL_CHECK();
+            GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, fb_data.frame_buffer));
         } else {
             fb_width = backbuffer_width_;
             fb_height = backbuffer_height_;
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, 0));
         }
 
         // TODO: Not sure what to use these for yet.
@@ -663,11 +688,11 @@ bool GLRenderContext::frame(const Frame* frame) {
 
         // Set up view.
         if (v.clear_colour) {
-            glClearColor(v.clear_colour->r(), v.clear_colour->g(), v.clear_colour->b(),
-                         v.clear_colour->a());
+            GL_CHECK(glClearColor(v.clear_colour->r(), v.clear_colour->g(), v.clear_colour->b(),
+                                  v.clear_colour->a()));
         }
-        glDisable(GL_SCISSOR_TEST);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        GL_CHECK(glDisable(GL_SCISSOR_TEST));
+        GL_CHECK(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
 
         // Render items.
         for (uint i = 0; i < v.render_items.size(); ++i) {
@@ -677,76 +702,77 @@ bool GLRenderContext::frame(const Frame* frame) {
             // Update render state.
             if (!previous || previous->cull_face_enabled != current->cull_face_enabled) {
                 if (current->cull_face_enabled) {
-                    glEnable(GL_CULL_FACE);
+                    GL_CHECK(glEnable(GL_CULL_FACE));
                 } else {
-                    glDisable(GL_CULL_FACE);
+                    GL_CHECK(glDisable(GL_CULL_FACE));
                 }
             }
             if (!previous || previous->cull_front_face != current->cull_front_face) {
-                glFrontFace(current->cull_front_face == CullFrontFace::CCW ? GL_CCW : GL_CW);
+                GL_CHECK(
+                    glFrontFace(current->cull_front_face == CullFrontFace::CCW ? GL_CCW : GL_CW));
             }
             if (!previous || previous->polygon_mode != current->polygon_mode) {
-                glPolygonMode(GL_FRONT_AND_BACK,
-                              current->polygon_mode == PolygonMode::Fill ? GL_FILL : GL_LINE);
+                GL_CHECK(glPolygonMode(GL_FRONT_AND_BACK, current->polygon_mode == PolygonMode::Fill
+                                                              ? GL_FILL
+                                                              : GL_LINE));
             }
             if (!previous || previous->depth_enabled != current->depth_enabled) {
                 if (current->depth_enabled) {
-                    glEnable(GL_DEPTH_TEST);
+                    GL_CHECK(glEnable(GL_DEPTH_TEST));
                 } else {
-                    glDisable(GL_DEPTH_TEST);
+                    GL_CHECK(glDisable(GL_DEPTH_TEST));
                 }
             }
             if (!previous || previous->blend_enabled != current->blend_enabled) {
                 if (current->blend_enabled) {
-                    glEnable(GL_BLEND);
+                    GL_CHECK(glEnable(GL_BLEND));
                 } else {
-                    glDisable(GL_BLEND);
+                    GL_CHECK(glDisable(GL_BLEND));
                 }
             }
             if (!previous || previous->blend_equation_rgb != current->blend_equation_rgb ||
                 previous->blend_equation_a != current->blend_equation_a) {
-                glBlendEquationSeparate(s_blend_equation_map.at(current->blend_equation_rgb),
-                                        s_blend_equation_map.at(current->blend_equation_a));
-                GL_CHECK();
+                GL_CHECK(
+                    glBlendEquationSeparate(s_blend_equation_map.at(current->blend_equation_rgb),
+                                            s_blend_equation_map.at(current->blend_equation_a)));
             }
             if (!previous || previous->blend_src_rgb != current->blend_src_rgb ||
                 previous->blend_src_a != current->blend_src_a ||
                 previous->blend_dest_rgb != current->blend_dest_rgb ||
                 previous->blend_dest_a != current->blend_dest_a) {
-                glBlendFuncSeparate(s_blend_func_map.at(current->blend_src_rgb),
-                                    s_blend_func_map.at(current->blend_dest_rgb),
-                                    s_blend_func_map.at(current->blend_src_a),
-                                    s_blend_func_map.at(current->blend_dest_a));
-                GL_CHECK();
+                GL_CHECK(glBlendFuncSeparate(s_blend_func_map.at(current->blend_src_rgb),
+                                             s_blend_func_map.at(current->blend_dest_rgb),
+                                             s_blend_func_map.at(current->blend_src_a),
+                                             s_blend_func_map.at(current->blend_dest_a)));
             }
             if (!previous || previous->colour_write != current->colour_write) {
                 GLboolean colour_enabled = current->colour_write ? GL_TRUE : GL_FALSE;
-                glColorMask(colour_enabled, colour_enabled, colour_enabled, colour_enabled);
+                GL_CHECK(
+                    glColorMask(colour_enabled, colour_enabled, colour_enabled, colour_enabled));
             }
             if (!previous || previous->depth_write != current->depth_write) {
-                glDepthMask(current->depth_write ? GL_TRUE : GL_FALSE);
+                GL_CHECK(glDepthMask(current->depth_write ? GL_TRUE : GL_FALSE));
             }
 
             // Scissor.
             if (!previous || previous->scissor_enabled != current->scissor_enabled) {
                 if (current->scissor_enabled) {
-                    glEnable(GL_SCISSOR_TEST);
+                    GL_CHECK(glEnable(GL_SCISSOR_TEST));
                 } else {
-                    glDisable(GL_SCISSOR_TEST);
+                    GL_CHECK(glDisable(GL_SCISSOR_TEST));
                 }
             }
             if (current->scissor_enabled) {
-                glScissor(current->scissor_x,
-                          fb_height - current->scissor_y - current->scissor_height,
-                          current->scissor_width, current->scissor_height);
+                GL_CHECK(glScissor(current->scissor_x,
+                                   fb_height - current->scissor_y - current->scissor_height,
+                                   current->scissor_width, current->scissor_height));
             }
 
             // Bind Program.
             ProgramData& program_data = program_map_.at(current->program);
             if (!previous || previous->program != current->program) {
                 assert(current->program.isValid());
-                glUseProgram(program_data.program);
-                GL_CHECK();
+                GL_CHECK(glUseProgram(program_data.program));
             }
 
             // Bind uniforms.
@@ -757,9 +783,8 @@ bool GLRenderContext::frame(const Frame* frame) {
                 if (location != program_data.uniform_location_map.end()) {
                     uniform_location = (*location).second;
                 } else {
-                    uniform_location =
-                        glGetUniformLocation(program_data.program, uniform_pair.first.c_str());
-                    GL_CHECK();
+                    GL_CHECK(uniform_location = glGetUniformLocation(program_data.program,
+                                                                     uniform_pair.first.c_str()));
                     program_data.uniform_location_map.emplace(uniform_pair.first, uniform_location);
                     if (uniform_location == -1) {
                         logger_.warn("[Frame] Unknown uniform '{}', skipping.", uniform_pair.first);
@@ -775,46 +800,41 @@ bool GLRenderContext::frame(const Frame* frame) {
             uint texture_count =
                 std::max(previous ? previous->textures.size() : 0, current->textures.size());
             for (uint j = 0; j < texture_count; ++j) {
-                glActiveTexture(GL_TEXTURE0 + j);
-                GL_CHECK();
+                GL_CHECK(glActiveTexture(GL_TEXTURE0 + j));
                 if (j >= current->textures.size()) {
                     // If the iterator is greater than the number of current textures, this means we
                     // are hitting texture units used by the previous render item. Unbind it as it's
                     // no longer in use.
-                    glBindTexture(GL_TEXTURE_2D, 0);
-                    GL_CHECK();
+                    GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
                 } else if (!current->textures[j].handle.isValid()) {
                     // Unbind the texture if the handle is invalid.
-                    glBindTexture(GL_TEXTURE_2D, 0);
-                    GL_CHECK();
+                    GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
                 } else {
                     // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                     // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                    glBindTexture(GL_TEXTURE_2D, texture_map_.at(current->textures[j].handle));
-                    GL_CHECK();
+                    GL_CHECK(
+                        glBindTexture(GL_TEXTURE_2D, texture_map_.at(current->textures[j].handle)));
                 }
 
                 // Bind sampler.
                 if (current->textures[j].sampler_flags != 0) {
                     GLuint sampler =
                         sampler_cache_.findOrCreate(current->textures[j].sampler_flags);
-                    glBindSampler(j, sampler);
-                    GL_CHECK();
+                    GL_CHECK(glBindSampler(j, sampler));
                 }
             }
 
             // Bind vertex data.
             if (!previous || previous->vb != current->vb) {
                 if (current->vb.isValid()) {
-                    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_map_.at(current->vb).vertex_buffer);
-                    GL_CHECK();
+                    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER,
+                                          vertex_buffer_map_.at(current->vb).vertex_buffer));
                 }
             }
 
             // Bind attributes.
             for (uint attrib = 0; attrib < current_vertex_decl.attributes_.size(); ++attrib) {
-                glDisableVertexAttribArray(attrib);
-                GL_CHECK();
+                GL_CHECK(glDisableVertexAttribArray(attrib));
             }
             if (current->vb.isValid()) {
                 current_vertex_decl = current->vertex_decl_override.empty()
@@ -828,12 +848,10 @@ bool GLRenderContext::frame(const Frame* frame) {
             // Bind element data.
             if (!previous || previous->ib != current->ib) {
                 if (current->ib.isValid()) {
-                    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,
-                                 index_buffer_map_.at(current->ib).element_buffer);
-                    GL_CHECK();
+                    GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,
+                                          index_buffer_map_.at(current->ib).element_buffer));
                 } else {
-                    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-                    GL_CHECK();
+                    GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0));
                 }
             }
 
@@ -841,12 +859,11 @@ bool GLRenderContext::frame(const Frame* frame) {
             if (current->primitive_count > 0) {
                 if (current->ib.isValid()) {
                     GLenum element_type = index_buffer_map_[current->ib].type;
-                    glDrawElements(GL_TRIANGLES, current->primitive_count * 3, element_type,
-                                   (void*)(std::intptr_t)current->ib_offset);
-                    GL_CHECK();
+                    GL_CHECK(glDrawElements(
+                        GL_TRIANGLES, current->primitive_count * 3, element_type,
+                        reinterpret_cast<void*>(static_cast<std::intptr_t>(current->ib_offset))));
                 } else {
-                    glDrawArrays(GL_TRIANGLES, 0, current->primitive_count * 3);
-                    GL_CHECK();
+                    GL_CHECK(glDrawArrays(GL_TRIANGLES, 0, current->primitive_count * 3));
                 }
             }
         }
@@ -863,33 +880,30 @@ void GLRenderContext::operator()(const cmd::CreateVertexBuffer& c) {
     // Create vertex buffer object.
     GLenum usage = mapBufferUsage(c.usage);
     GLuint vbo;
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    GL_CHECK(glGenBuffers(1, &vbo));
+    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, vbo));
     if (c.data.data()) {
-        glBufferData(GL_ARRAY_BUFFER, c.data.size(), c.data.data(), usage);
+        GL_CHECK(glBufferData(GL_ARRAY_BUFFER, c.data.size(), c.data.data(), usage));
     } else {
-        glBufferData(GL_ARRAY_BUFFER, c.size, nullptr, usage);
+        GL_CHECK(glBufferData(GL_ARRAY_BUFFER, c.size, nullptr, usage));
     }
-    GL_CHECK();
-
     vertex_buffer_map_.insert({c.handle, VertexBufferData{vbo, c.decl, usage, c.size}});
 }
 
 void GLRenderContext::operator()(const cmd::UpdateVertexBuffer& c) {
     auto& vb_data = vertex_buffer_map_.at(c.handle);
-    glBindBuffer(GL_ARRAY_BUFFER, vb_data.vertex_buffer);
+    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, vb_data.vertex_buffer));
     if (c.data.size() > vb_data.size) {
-        glBufferData(GL_ARRAY_BUFFER, c.data.size(), c.data.data(), vb_data.usage);
+        GL_CHECK(glBufferData(GL_ARRAY_BUFFER, c.data.size(), c.data.data(), vb_data.usage));
         vb_data.size = c.data.size();
     } else {
-        glBufferSubData(GL_ARRAY_BUFFER, c.offset, c.data.size(), c.data.data());
+        GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, c.offset, c.data.size(), c.data.data()));
     }
-    GL_CHECK();
 }
 
 void GLRenderContext::operator()(const cmd::DeleteVertexBuffer& c) {
     auto it = vertex_buffer_map_.find(c.handle);
-    glDeleteBuffers(1, &it->second.vertex_buffer);
+    GL_CHECK(glDeleteBuffers(1, &it->second.vertex_buffer));
     vertex_buffer_map_.erase(it);
 }
 
@@ -897,15 +911,13 @@ void GLRenderContext::operator()(const cmd::CreateIndexBuffer& c) {
     // Create element buffer object.
     GLenum usage = mapBufferUsage(c.usage);
     GLuint ebo;
-    glGenBuffers(1, &ebo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    GL_CHECK(glGenBuffers(1, &ebo));
+    GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo));
     if (c.data.data()) {
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, c.data.size(), c.data.data(), usage);
+        GL_CHECK(glBufferData(GL_ELEMENT_ARRAY_BUFFER, c.data.size(), c.data.data(), usage));
     } else {
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, c.size, nullptr, usage);
+        GL_CHECK(glBufferData(GL_ELEMENT_ARRAY_BUFFER, c.size, nullptr, usage));
     }
-    GL_CHECK();
-
     index_buffer_map_.insert(
         {c.handle,
          IndexBufferData{ebo,
@@ -916,30 +928,27 @@ void GLRenderContext::operator()(const cmd::CreateIndexBuffer& c) {
 
 void GLRenderContext::operator()(const cmd::UpdateIndexBuffer& c) {
     auto& ib_data = index_buffer_map_.at(c.handle);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ib_data.element_buffer);
+    GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ib_data.element_buffer));
     if (c.data.size() > ib_data.size) {
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, c.data.size(), c.data.data(), ib_data.usage);
+        GL_CHECK(
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, c.data.size(), c.data.data(), ib_data.usage));
         ib_data.size = c.data.size();
     } else {
-        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, c.offset, c.data.size(), c.data.data());
+        GL_CHECK(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, c.offset, c.data.size(), c.data.data()));
     }
-    GL_CHECK();
 }
 
 void GLRenderContext::operator()(const cmd::DeleteIndexBuffer& c) {
     auto it = index_buffer_map_.find(c.handle);
-    glDeleteBuffers(1, &it->second.element_buffer);
+    GL_CHECK(glDeleteBuffers(1, &it->second.element_buffer));
     index_buffer_map_.erase(it);
 }
 
 void GLRenderContext::operator()(const cmd::CreateShader& c) {
     static std::unordered_map<ShaderStage, GLenum> shader_type_map = {
         {ShaderStage::Vertex, GL_VERTEX_SHADER}, {ShaderStage::Fragment, GL_FRAGMENT_SHADER}};
-    GLuint shader = glCreateShader(shader_type_map.at(c.stage));
-    if (shader == 0) {
-        GL_CHECK();
-        // TODO: an error occurred.
-    }
+    GLuint shader = 0;
+    GL_CHECK(shader = glCreateShader(shader_type_map.at(c.stage)));
 
 #if DGA_PLATFORM == DGA_WIN32
     bool use_spirv = false;
@@ -955,12 +964,11 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
             std::string error_message(info_log_length, '\0');
             glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data());
             logger_.error("[CreateShader] Shader Load Error: {}", error_message);
-        } else {
-            GL_CHECK();
         }
 
         // Specialize the shader.
-        glSpecializeShader(shader, (const GLchar*)c.entry_point.c_str(), 0, nullptr, nullptr);
+        GL_CHECK(
+            glSpecializeShader(shader, (const GLchar*)c.entry_point.c_str(), 0, nullptr, nullptr));
     } else {
         // Convert SPIR-V into GLSL.
         spirv_cross::CompilerGLSL glsl_out{reinterpret_cast<const u32*>(c.data.data()),
@@ -990,23 +998,20 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
 
         // Compile the shader.
         const char* sources[] = {source.c_str()};
-        glShaderSource(shader, 1, sources, nullptr);
-        glCompileShader(shader);
+        GL_CHECK(glShaderSource(shader, 1, sources, nullptr));
+        GL_CHECK(glCompileShader(shader));
     }
 
     // Check compilation result.
     GLint result;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &result);
+    GL_CHECK(glGetShaderiv(shader, GL_COMPILE_STATUS, &result));
     if (result == GL_FALSE) {
         int info_log_length;
-        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length);
+        GL_CHECK(glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length));
         std::string error_message(info_log_length, '\0');
-        glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data());
+        GL_CHECK(glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data()));
         logger_.error("[CreateShader] Shader Compile Error: {}", error_message);
-
-        // TODO: Error
-    } else {
-        GL_CHECK();
+        return;
     }
 
     shader_map_.emplace(c.handle, shader);
@@ -1014,33 +1019,33 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
 
 void GLRenderContext::operator()(const cmd::DeleteShader& c) {
     auto it = shader_map_.find(c.handle);
-    glDeleteShader(it->second);
+    GL_CHECK(glDeleteShader(it->second));
     shader_map_.erase(it);
 }
 
 void GLRenderContext::operator()(const cmd::CreateProgram& c) {
     ProgramData program_data;
     program_data.program = glCreateProgram();
+    assert(program_data.program != 0);
     program_map_.emplace(c.handle, program_data);
 }
 
 void GLRenderContext::operator()(const cmd::AttachShader& c) {
-    glAttachShader(program_map_.at(c.handle).program, shader_map_.at(c.shader_handle));
+    GL_CHECK(glAttachShader(program_map_.at(c.handle).program, shader_map_.at(c.shader_handle)));
 }
 
 void GLRenderContext::operator()(const cmd::LinkProgram& c) {
     GLuint program = program_map_.at(c.handle).program;
-    glLinkProgram(program);
-    GL_CHECK();
+    GL_CHECK(glLinkProgram(program));
 
     // Check the result of the link process.
     GLint result = GL_FALSE;
     glGetProgramiv(program, GL_LINK_STATUS, &result);
     if (result == GL_FALSE) {
         int info_log_length;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_log_length);
+        GL_CHECK(glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_log_length));
         std::string error_message(info_log_length, '\0');
-        glGetProgramInfoLog(program, info_log_length, nullptr, error_message.data());
+        GL_CHECK(glGetProgramInfoLog(program, info_log_length, nullptr, error_message.data()));
         logger_.error("[CreateShader] Shader Compile Error: {}", error_message);
     }
 }
@@ -1048,7 +1053,7 @@ void GLRenderContext::operator()(const cmd::LinkProgram& c) {
 void GLRenderContext::operator()(const cmd::DeleteProgram& c) {
     auto it = program_map_.find(c.handle);
     if (it != program_map_.end()) {
-        glDeleteProgram(it->second.program);
+        GL_CHECK(glDeleteProgram(it->second.program));
         program_map_.erase(it);
     } else {
         logger_.error("[DeleteProgram] Unable to find program with handle {}", c.handle.internal());
@@ -1057,8 +1062,8 @@ void GLRenderContext::operator()(const cmd::DeleteProgram& c) {
 
 void GLRenderContext::operator()(const cmd::CreateTexture2D& c) {
     GLuint texture;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
+    GL_CHECK(glGenTextures(1, &texture));
+    GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture));
 
     // Give image data to OpenGL.
     TextureFormatInfo format = s_texture_format[static_cast<int>(c.format)];
@@ -1067,14 +1072,12 @@ void GLRenderContext::operator()(const cmd::CreateTexture2D& c) {
         "- type: {:#x}",
         static_cast<u32>(c.format), format.internal_format, format.internal_format_srgb,
         format.format, format.type);
-    glTexImage2D(GL_TEXTURE_2D, 0, format.internal_format, c.width, c.height, 0, format.format,
-                 format.type, c.data.data());
-    GL_CHECK();
+    GL_CHECK(glTexImage2D(GL_TEXTURE_2D, 0, format.internal_format, c.width, c.height, 0,
+                          format.format, format.type, c.data.data()));
 
     // Generate mipmaps.
     if (c.generate_mipmaps) {
-        glGenerateMipmap(GL_TEXTURE_2D);
-        GL_CHECK();
+        GL_CHECK(glGenerateMipmap(GL_TEXTURE_2D));
     }
 
     // Add texture.
@@ -1083,7 +1086,7 @@ void GLRenderContext::operator()(const cmd::CreateTexture2D& c) {
 
 void GLRenderContext::operator()(const cmd::DeleteTexture& c) {
     auto it = texture_map_.find(c.handle);
-    glDeleteTextures(1, &it->second);
+    GL_CHECK(glDeleteTextures(1, &it->second));
     texture_map_.erase(it);
 }
 
@@ -1093,8 +1096,8 @@ void GLRenderContext::operator()(const cmd::CreateFrameBuffer& c) {
     fb_data.width = c.width;
     fb_data.height = c.height;
 
-    glGenFramebuffers(1, &fb_data.frame_buffer);
-    glBindFramebuffer(GL_FRAMEBUFFER, fb_data.frame_buffer);
+    GL_CHECK(glGenFramebuffers(1, &fb_data.frame_buffer));
+    GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, fb_data.frame_buffer));
 
     // Bind colour buffers.
     std::vector<GLenum> draw_buffers;
@@ -1103,26 +1106,27 @@ void GLRenderContext::operator()(const cmd::CreateFrameBuffer& c) {
         auto gl_texture = texture_map_.find(texture);
         assert(gl_texture != texture_map_.end());
         draw_buffers.emplace_back(GL_COLOR_ATTACHMENT0 + attachment++);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, draw_buffers.back(), GL_TEXTURE_2D,
-                               gl_texture->second, 0);
+        GL_CHECK(glFramebufferTexture2D(GL_FRAMEBUFFER, draw_buffers.back(), GL_TEXTURE_2D,
+                                        gl_texture->second, 0));
     }
-    glDrawBuffers(static_cast<GLsizei>(draw_buffers.size()), draw_buffers.data());
+    GL_CHECK(glDrawBuffers(static_cast<GLsizei>(draw_buffers.size()), draw_buffers.data()));
 
     // Create depth buffer.
-    glGenRenderbuffers(1, &fb_data.depth_render_buffer);
-    glBindRenderbuffer(GL_RENDERBUFFER, fb_data.depth_render_buffer);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, c.width, c.height);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER,
-                              fb_data.depth_render_buffer);
+    GL_CHECK(glGenRenderbuffers(1, &fb_data.depth_render_buffer));
+    GL_CHECK(glBindRenderbuffer(GL_RENDERBUFFER, fb_data.depth_render_buffer));
+    GL_CHECK(glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, c.width, c.height));
+    GL_CHECK(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER,
+                                       fb_data.depth_render_buffer));
 
     // Check frame buffer status.
-    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    GLenum status;
+    GL_CHECK(status = glCheckFramebufferStatus(GL_FRAMEBUFFER));
     if (status != GL_FRAMEBUFFER_COMPLETE) {
         logger_.error("[CreateFrameBuffer] The framebuffer is not complete. Status: {:#x}", status);
     }
 
     // Unbind.
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, 0));
 
     // Add to map.
     frame_buffer_map_.emplace(c.handle, fb_data);
@@ -1158,12 +1162,10 @@ void GLRenderContext::setupVertexArrayAttributes(const VertexDecl& decl, uint vb
         //                    reinterpret_cast<uintptr_t>(attrib.second));
 
         // Set attribute.
-        glEnableVertexAttribArray(attrib_counter);
-        GL_CHECK();
-        glVertexAttribPointer(attrib_counter, count, gl_type->second,
-                              static_cast<GLboolean>(normalised ? GL_TRUE : GL_FALSE), decl.stride_,
-                              attrib.second + vb_offset);
-        GL_CHECK();
+        GL_CHECK(glEnableVertexAttribArray(attrib_counter));
+        GL_CHECK(glVertexAttribPointer(attrib_counter, count, gl_type->second,
+                                       static_cast<GLboolean>(normalised ? GL_TRUE : GL_FALSE),
+                                       decl.stride_, attrib.second + vb_offset));
         attrib_counter++;
     }
 }
