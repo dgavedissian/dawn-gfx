@@ -127,8 +127,9 @@ constexpr TBuiltInResource kDefaultTBuiltInResource = {
 
 namespace dw {
 namespace gfx {
-tl::expected<CompiledShader, ShaderCompileError> compileGLSL(const std::string& glsl_source,
-                                                             ShaderStage stage) {
+tl::expected<CompiledShader, ShaderCompileError> compileGLSL(
+    const std::string& glsl_source, ShaderStage stage,
+    const std::vector<std::string>& compile_definitions) {
     EShLanguage esh_stage;
     switch (stage) {
         case ShaderStage::Vertex:
@@ -145,10 +146,25 @@ tl::expected<CompiledShader, ShaderCompileError> compileGLSL(const std::string& 
                 ShaderCompileError{fmt::format("Unexpected shader stage {}", esh_stage), ""});
     }
 
+    // Add compile definitions to GLSL code.
+    auto glsl_source_with_definitions = glsl_source;
+    std::size_t compile_def_insert_pos = glsl_source_with_definitions.find("#version");
+    if (compile_def_insert_pos == std::string::npos) {
+        compile_def_insert_pos = 0;
+    } else {
+        compile_def_insert_pos =
+            glsl_source_with_definitions.find('\n', compile_def_insert_pos) + 1;
+    }
+    std::ostringstream compile_def_list;
+    for (const auto& define : compile_definitions) {
+        compile_def_list << "#define " << define << std::endl;
+    }
+    glsl_source_with_definitions.insert(compile_def_insert_pos, compile_def_list.str());
+
     // Parse GLSL code.
     glslang::TShader shader{esh_stage};
     const char* shader_strings[1];
-    shader_strings[0] = glsl_source.c_str();
+    shader_strings[0] = glsl_source_with_definitions.c_str();
     shader.setStrings(shader_strings, 1);
     if (!shader.parse(&kDefaultTBuiltInResource, 110, false, EShMsgDefault)) {
         return tl::make_unexpected(

@@ -20,7 +20,8 @@ struct ShaderCompileError {
 };
 
 // Compiles an in-memory GLSL shader into SPIR-V.
-tl::expected<CompiledShader, ShaderCompileError> compileGLSL(const std::string& glsl_source,
-                                                             ShaderStage stage);
-}
-}
+tl::expected<CompiledShader, ShaderCompileError> compileGLSL(
+    const std::string& glsl_source, ShaderStage stage,
+    const std::vector<std::string>& compile_definitions = {});
+}  // namespace gfx
+}  // namespace dw
