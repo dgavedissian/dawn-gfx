@@ -711,12 +711,12 @@ bool GLRenderContext::frame(const Frame* frame) {
         (void)fb_height;
 
         // Set up view.
+        GL_CHECK(glDisable(GL_SCISSOR_TEST));
         if (v.clear_colour) {
             GL_CHECK(glClearColor(v.clear_colour->r(), v.clear_colour->g(), v.clear_colour->b(),
                                   v.clear_colour->a()));
+            GL_CHECK(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
         }
-        GL_CHECK(glDisable(GL_SCISSOR_TEST));
-        GL_CHECK(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
 
         // Render items.
         for (uint i = 0; i < v.render_items.size(); ++i) {
