@@ -322,11 +322,13 @@ TextureHandle Renderer::createTexture2D(u16 width, u16 height, TextureFormat for
     return handle;
 }
 
-void Renderer::setTexture(TextureHandle handle, uint sampler_unit, u32 sampler_flags) {
+void Renderer::setTexture(TextureHandle handle, uint sampler_unit, u32 sampler_flags,
+                          float max_anisotropy) {
     // TODO: check precondition: texture_unit < MAX_TEXTURE_UNITS
     auto& binding = submit_->current_item.textures[sampler_unit];
     binding.handle = handle;
     binding.sampler_flags = sampler_flags;
+    binding.max_anisotropy = max_anisotropy;
 }
 
 void Renderer::deleteTexture(TextureHandle handle) {

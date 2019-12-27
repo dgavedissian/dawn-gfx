@@ -179,6 +179,9 @@ enum Enum : std::uint32_t {
     // Combined filters.
     MinMagPoint = MinPoint | MagPoint,
     MinMagLinear = MinLinear | MagLinear,
+
+    // Default.
+    Default = SamplerFlag::UVWRepeat | SamplerFlag::MinMagLinear | SamplerFlag::MipLinear
 };
 
 constexpr auto maskUWrappingMode = 0x0003;
@@ -337,6 +340,7 @@ struct RenderItem {
     struct TextureBinding {
         TextureHandle handle;
         u32 sampler_flags;
+        float max_anisotropy;
     };
 
     // Vertices and indices.
@@ -497,8 +501,7 @@ public:
     TextureHandle createTexture2D(u16 width, u16 height, TextureFormat format, Memory data,
                                   bool generate_mipmaps = true);
     void setTexture(TextureHandle handle, uint sampler_unit,
-                    u32 sampler_flags = SamplerFlag::UVWRepeat | SamplerFlag::MinMagLinear |
-                                        SamplerFlag::MipLinear);
+                    u32 sampler_flags = SamplerFlag::Default, float max_anisotropy = 0.0f);
     // get texture information.
     void deleteTexture(TextureHandle handle);
 

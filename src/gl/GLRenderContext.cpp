@@ -360,8 +360,21 @@ private:
 int last_error_code = 0;
 std::string last_error_description;
 
-GLuint GLSamplerCache::findOrCreate(u32 sampler_flags) {
-    auto it = cache_.find(sampler_flags);
+template <class T> inline void hash_combine(std::size_t& seed, const T& v) {
+    std::hash<T> hasher;
+    seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+void GLSamplerCache::setMaxSupportedAnisotropy(float max_anisotropy) {
+    max_supported_anisotropy_ = max_anisotropy;
+}
+
+GLuint GLSamplerCache::findOrCreate(u32 sampler_flags, float max_anisotropy) {
+    std::size_t hash = 0;
+    hash_combine(hash, sampler_flags);
+    hash_combine(hash, max_anisotropy);
+
+    auto it = cache_.find(hash);
     if (it != cache_.end()) {
         return it->second;
     }
@@ -398,7 +411,12 @@ GLuint GLSamplerCache::findOrCreate(u32 sampler_flags) {
     GL_CHECK(glSamplerParameteri(sampler_object, GL_TEXTURE_MIN_FILTER,
                                  min_filter_map.at(min_filter << 2u | mip_filter)));
 
-    cache_.emplace(sampler_flags, sampler_object);
+    if (GLAD_GL_EXT_texture_filter_anisotropic && max_anisotropy >= 1.0f) {
+        GL_CHECK(glSamplerParameterf(sampler_object, GL_TEXTURE_MAX_ANISOTROPY,
+                                     std::min(max_anisotropy, max_supported_anisotropy_)));
+    }
+
+    cache_.emplace(hash, sampler_object);
 
     return sampler_object;
 }
@@ -410,7 +428,8 @@ void GLSamplerCache::clear() {
     cache_.clear();
 }
 
-GLRenderContext::GLRenderContext(Logger& logger) : RenderContext(logger) {
+GLRenderContext::GLRenderContext(Logger& logger)
+    : RenderContext(logger), max_supported_anisotropy_(0.0f) {
 }
 
 GLRenderContext::~GLRenderContext() {
@@ -578,6 +597,9 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
     }
 #endif
 
+    GL_CHECK(glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &max_supported_anisotropy_));
+    sampler_cache_.setMaxSupportedAnisotropy(max_supported_anisotropy_);
+
     // Print GL information.
     logger_.info("OpenGL: {} - GLSL: {}", glGetString(GL_VERSION),
                  glGetString(GL_SHADING_LANGUAGE_VERSION));
@@ -587,6 +609,8 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
     logger_.info("- GLAD_GL_ARB_gl_spirv: {}", static_cast<bool>(GLAD_GL_ARB_gl_spirv));
     logger_.info("- GLAD_GL_EXT_texture_filter_anisotropic: {}",
                  static_cast<bool>(GLAD_GL_EXT_texture_filter_anisotropic));
+    logger_.info("Capabilities:");
+    logger_.info("- Max supported anisotropy: {}", max_supported_anisotropy_);
 
     // Hand off context to render thread.
     glfwMakeContextCurrent(nullptr);
@@ -800,26 +824,27 @@ bool GLRenderContext::frame(const Frame* frame) {
             uint texture_count =
                 std::max(previous ? previous->textures.size() : 0, current->textures.size());
             for (uint j = 0; j < texture_count; ++j) {
+                const auto& texture = current->textures[j];
+
                 GL_CHECK(glActiveTexture(GL_TEXTURE0 + j));
                 if (j >= current->textures.size()) {
                     // If the iterator is greater than the number of current textures, this means we
                     // are hitting texture units used by the previous render item. Unbind it as it's
                     // no longer in use.
                     GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
-                } else if (!current->textures[j].handle.isValid()) {
+                } else if (!texture.handle.isValid()) {
                     // Unbind the texture if the handle is invalid.
                     GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
                 } else {
                     // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                     // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                    GL_CHECK(
-                        glBindTexture(GL_TEXTURE_2D, texture_map_.at(current->textures[j].handle)));
+                    GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture_map_.at(texture.handle)));
                 }
 
                 // Bind sampler.
-                if (current->textures[j].sampler_flags != 0) {
+                if (texture.sampler_flags != 0) {
                     GLuint sampler =
-                        sampler_cache_.findOrCreate(current->textures[j].sampler_flags);
+                        sampler_cache_.findOrCreate(texture.sampler_flags, texture.max_anisotropy);
                     GL_CHECK(glBindSampler(j, sampler));
                 }
             }

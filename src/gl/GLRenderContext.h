@@ -15,14 +15,17 @@ namespace dw {
 namespace gfx {
 class GLSamplerCache {
 public:
+    void setMaxSupportedAnisotropy(float max_supported_anisotropy);
+
     // Find a sampler object given a set of sampler flags. If the object does not exist, create it.
-    GLuint findOrCreate(u32 sampler_flags);
+    GLuint findOrCreate(u32 sampler_flags, float max_anisotropy);
 
     // Clear the cache.
     void clear();
 
 private:
-    std::unordered_map<u32, GLuint> cache_;
+    std::unordered_map<std::size_t, GLuint> cache_;
+    float max_supported_anisotropy_;
 };
 
 class GLRenderContext : public RenderContext {
@@ -68,6 +71,8 @@ public:
     }
 
 private:
+    float max_supported_anisotropy_;
+
     // Window.
     GLFWwindow* window_;
     u16 backbuffer_width_;
