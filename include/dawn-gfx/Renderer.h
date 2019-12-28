@@ -399,8 +399,7 @@ struct RenderQueue {
     };
     std::optional<ClearParameters> clear_parameters;
     std::optional<FrameBufferHandle> frame_buffer;
-    usize render_items_begin = 0;
-    usize render_items_count = 0;
+    std::vector<RenderItem> render_items;
 };
 
 // Frame.
@@ -409,9 +408,7 @@ struct Frame {
     Frame();
     void clear();
 
-    RenderItem* current_item;
-    RenderQueue* current_render_queue;
-    std::vector<RenderItem> render_items;
+    RenderItem pending_item;
     std::vector<RenderQueue> render_queues;
 
     std::vector<RenderCommand> commands_pre;
@@ -525,13 +522,20 @@ public:
     TextureHandle getFrameBufferTexture(FrameBufferHandle handle, uint index);
     void deleteFrameBuffer(FrameBufferHandle handle);
 
-    /// Start a new render queue that outputs to a specific frame buffer.
+    /// Creates a new render queue that outputs to a specific frame buffer.
     /// @param frame_buffer Framebuffer to output to. To output to the backbuffer, set this to
     /// std::nullopt.
-    void startRenderQueue(std::optional<FrameBufferHandle> frame_buffer = std::nullopt);
+    /// @return The render queue ID which can be used in submit calls.
+    uint startRenderQueue(std::optional<FrameBufferHandle> frame_buffer = std::nullopt);
+
+    /// Returns the last created render queue.
+    uint lastCreatedRenderQueue() const;
+
+    /// Causes the last created render queue to clear the framebuffer to a specific colour when processed.
+    void setRenderQueueClear(const Colour& colour, bool clear_colour = true, bool clear_depth = true);
 
     /// Causes the current render queue to clear the framebuffer to a specific colour when processed.
-    void setRenderQueueClear(const Colour& colour, bool clear_colour = true, bool clear_depth = true);
+    void setRenderQueueClear(uint render_queue, const Colour& colour, bool clear_colour = true, bool clear_depth = true);
 
     /// Update state.
     void setStateEnable(RenderState state);
@@ -547,17 +551,19 @@ public:
     /// Scissor.
     void setScissor(u16 x, u16 y, u16 width, u16 height);
 
-    /// Update uniform and draw state, but submit no geometry.
+    /// Update uniform and draw state, but submit no geometry. Submits to the last created render queue.
     void submit(ProgramHandle program);
 
-    /// Update uniform and draw state, then draw. Based off:
-    /// https://github.com/bkaradzic/bgfx/blob/master/src/bgfx.cpp#L854
-    void submit(ProgramHandle program, uint vertex_count);
+    /// Update uniform and draw state, but submit no geometry.
+    void submit(uint render_queue, ProgramHandle program);
 
-    /// Update uniform and draw state, then draw. Based off:
-    /// https://github.com/bkaradzic/bgfx/blob/master/src/bgfx.cpp#L854
+    /// Update uniform and draw state, then draw. Submits to the last created render queue.
     /// Offset is in vertices/indices depending on whether an index buffer is being used.
-    void submit(ProgramHandle program, uint vertex_count, uint offset);
+    void submit(ProgramHandle program, uint vertex_count, uint offset = 0);
+
+    /// Update uniform and draw state, then draw.
+    /// Offset is in vertices/indices depending on whether an index buffer is being used.
+    void submit(uint render_queue, ProgramHandle program, uint vertex_count, uint offset = 0);
 
     /// Render a single frame.
     bool frame();
@@ -623,9 +629,6 @@ private:
     // Add a command to the submit thread.
     void submitPreFrameCommand(RenderCommand command);
     void submitPostFrameCommand(RenderCommand command);
-
-    // Finalise render queue.
-    void finaliseRenderQueue();
 
     // Renderer.
     std::unique_ptr<RenderContext> shared_render_context_;

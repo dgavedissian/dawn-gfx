@@ -14,7 +14,7 @@ Frame::Frame() {
 }
 
 void Frame::clear() {
-    render_items.clear();
+    pending_item = RenderItem();
     render_queues.clear();
     commands_pre.clear();
     commands_post.clear();
@@ -29,9 +29,8 @@ void Frame::clear() {
     updated_index_buffers.clear();
 #endif
 
-    // Add initial render item.
-    render_items.emplace_back();
-    current_item = &render_items.back();
+    // Add default render queue.
+    render_queues.emplace_back();
 }
 
 Renderer::Renderer(Logger& logger)
@@ -134,9 +133,9 @@ VertexBufferHandle Renderer::createVertexBuffer(Memory data, const VertexDecl& d
 }
 
 void Renderer::setVertexBuffer(VertexBufferHandle handle) {
-    submit_->current_item->vb = handle;
-    submit_->current_item->vb_offset = 0;
-    submit_->current_item->vertex_decl_override = VertexDecl{};
+    submit_->pending_item.vb = handle;
+    submit_->pending_item.vb_offset = 0;
+    submit_->pending_item.vertex_decl_override = VertexDecl{};
 }
 
 void Renderer::updateVertexBuffer(VertexBufferHandle handle, Memory data, uint offset) {
@@ -168,8 +167,8 @@ IndexBufferHandle Renderer::createIndexBuffer(Memory data, IndexBufferType type,
 }
 
 void Renderer::setIndexBuffer(IndexBufferHandle handle) {
-    submit_->current_item->ib = handle;
-    submit_->current_item->ib_offset = 0;
+    submit_->pending_item.ib = handle;
+    submit_->pending_item.ib_offset = 0;
 }
 
 void Renderer::updateIndexBuffer(IndexBufferHandle handle, Memory data, uint offset) {
@@ -216,9 +215,9 @@ byte* Renderer::getTransientVertexBufferData(TransientVertexBufferHandle handle)
 
 void Renderer::setVertexBuffer(TransientVertexBufferHandle handle) {
     Frame::TransientVertexBufferData& tvb = submit_->transient_vertex_buffers_.at(handle);
-    submit_->current_item->vb = transient_vb;
-    submit_->current_item->vb_offset = uint(tvb.data - submit_->transient_vb_storage.data.data());
-    submit_->current_item->vertex_decl_override = tvb.decl;
+    submit_->pending_item.vb = transient_vb;
+    submit_->pending_item.vb_offset = uint(tvb.data - submit_->transient_vb_storage.data.data());
+    submit_->pending_item.vertex_decl_override = tvb.decl;
 }
 
 std::optional<TransientIndexBufferHandle> Renderer::allocTransientIndexBuffer(uint index_count) {
@@ -246,8 +245,8 @@ byte* Renderer::getTransientIndexBufferData(TransientIndexBufferHandle handle) {
 
 void Renderer::setIndexBuffer(TransientIndexBufferHandle handle) {
     Frame::TransientIndexBufferData& tib = submit_->transient_index_buffers_.at(handle);
-    submit_->current_item->ib = transient_ib;
-    submit_->current_item->ib_offset = uint(tib.data - submit_->transient_ib_storage.data.data());
+    submit_->pending_item.ib = transient_ib;
+    submit_->pending_item.ib_offset = uint(tib.data - submit_->transient_ib_storage.data.data());
 }
 
 ShaderHandle Renderer::createShader(ShaderStage stage, const std::string& entry_point,
@@ -308,7 +307,7 @@ void Renderer::setUniform(const std::string& uniform_name, const Mat4& value) {
 }
 
 void Renderer::setUniform(const std::string& uniform_name, UniformData data) {
-    submit_->current_item->uniforms[uniform_name] = data;
+    submit_->pending_item.uniforms[uniform_name] = data;
 }
 
 TextureHandle Renderer::createTexture2D(u16 width, u16 height, TextureFormat format, Memory data,
@@ -323,7 +322,7 @@ TextureHandle Renderer::createTexture2D(u16 width, u16 height, TextureFormat for
 void Renderer::setTexture(TextureHandle handle, uint sampler_unit, u32 sampler_flags,
                           float max_anisotropy) {
     assert(sampler_unit < DW_MAX_TEXTURE_SAMPLERS);
-    auto& binding = submit_->current_item->textures[sampler_unit];
+    auto& binding = submit_->pending_item.textures[sampler_unit];
     binding.emplace(RenderItem::TextureBinding{handle, sampler_flags, max_anisotropy});
 }
 
@@ -366,34 +365,36 @@ void Renderer::deleteFrameBuffer(FrameBufferHandle handle) {
     submitPostFrameCommand(cmd::DeleteFrameBuffer{handle});
 }
 
-void Renderer::startRenderQueue(std::optional<FrameBufferHandle> frame_buffer) {
-    // Finalise previous render queue.
-    finaliseRenderQueue();
-
-    // Add a new render queue.
-    usize render_items_begin = submit_->render_queues.size();
+uint Renderer::startRenderQueue(std::optional<FrameBufferHandle> frame_buffer) {
     submit_->render_queues.emplace_back();
-    submit_->current_render_queue = &submit_->render_queues.back();
-    submit_->current_render_queue->render_items_begin = render_items_begin;
-    submit_->current_render_queue->frame_buffer = frame_buffer;
+    submit_->render_queues.back().frame_buffer = frame_buffer;
+    return lastCreatedRenderQueue();
+}
+
+uint Renderer::lastCreatedRenderQueue() const {
+    return submit_->render_queues.size() - 1;
 }
 
 void Renderer::setRenderQueueClear(const Colour& colour, bool clear_colour, bool clear_depth) {
-    assert(submit_->current_render_queue);
-    submit_->current_render_queue->clear_parameters.emplace(
+    setRenderQueueClear(lastCreatedRenderQueue(), colour, clear_colour, clear_depth);
+}
+
+void Renderer::setRenderQueueClear(uint render_queue, const Colour& colour, bool clear_colour,
+                                   bool clear_depth) {
+    submit_->render_queues[render_queue].clear_parameters.emplace(
         RenderQueue::ClearParameters{colour, clear_colour, clear_depth});
 }
 
 void Renderer::setStateEnable(RenderState state) {
     switch (state) {
         case RenderState::CullFace:
-            submit_->current_item->cull_face_enabled = true;
+            submit_->pending_item.cull_face_enabled = true;
             break;
         case RenderState::Depth:
-            submit_->current_item->depth_enabled = true;
+            submit_->pending_item.depth_enabled = true;
             break;
         case RenderState::Blending:
-            submit_->current_item->blend_enabled = true;
+            submit_->pending_item.blend_enabled = true;
             break;
     }
 }
@@ -401,23 +402,23 @@ void Renderer::setStateEnable(RenderState state) {
 void Renderer::setStateDisable(RenderState state) {
     switch (state) {
         case RenderState::CullFace:
-            submit_->current_item->cull_face_enabled = false;
+            submit_->pending_item.cull_face_enabled = false;
             break;
         case RenderState::Depth:
-            submit_->current_item->depth_enabled = false;
+            submit_->pending_item.depth_enabled = false;
             break;
         case RenderState::Blending:
-            submit_->current_item->blend_enabled = false;
+            submit_->pending_item.blend_enabled = false;
             break;
     }
 }
 
 void Renderer::setStateCullFrontFace(CullFrontFace front_face) {
-    submit_->current_item->cull_front_face = front_face;
+    submit_->pending_item.cull_front_face = front_face;
 }
 
 void Renderer::setStatePolygonMode(PolygonMode polygon_mode) {
-    submit_->current_item->polygon_mode = polygon_mode;
+    submit_->pending_item.polygon_mode = polygon_mode;
 }
 
 void Renderer::setStateBlendEquation(BlendEquation equation, BlendFunc src, BlendFunc dest) {
@@ -427,40 +428,45 @@ void Renderer::setStateBlendEquation(BlendEquation equation, BlendFunc src, Blen
 void Renderer::setStateBlendEquation(BlendEquation equation_rgb, BlendFunc src_rgb,
                                      BlendFunc dest_rgb, BlendEquation equation_a, BlendFunc src_a,
                                      BlendFunc dest_a) {
-    submit_->current_item->blend_equation_rgb = equation_rgb;
-    submit_->current_item->blend_src_rgb = src_rgb;
-    submit_->current_item->blend_dest_rgb = dest_rgb;
-    submit_->current_item->blend_equation_a = equation_a;
-    submit_->current_item->blend_src_a = src_a;
-    submit_->current_item->blend_dest_a = dest_a;
+    submit_->pending_item.blend_equation_rgb = equation_rgb;
+    submit_->pending_item.blend_src_rgb = src_rgb;
+    submit_->pending_item.blend_dest_rgb = dest_rgb;
+    submit_->pending_item.blend_equation_a = equation_a;
+    submit_->pending_item.blend_src_a = src_a;
+    submit_->pending_item.blend_dest_a = dest_a;
 }
 
 void Renderer::setColourWrite(bool write_enabled) {
-    submit_->current_item->colour_write = write_enabled;
+    submit_->pending_item.colour_write = write_enabled;
 }
 
 void Renderer::setDepthWrite(bool write_enabled) {
-    submit_->current_item->depth_write = write_enabled;
+    submit_->pending_item.depth_write = write_enabled;
 }
 
 void Renderer::setScissor(u16 x, u16 y, u16 width, u16 height) {
-    submit_->current_item->scissor_enabled = true;
-    submit_->current_item->scissor_x = x;
-    submit_->current_item->scissor_y = y;
-    submit_->current_item->scissor_width = width;
-    submit_->current_item->scissor_height = height;
+    submit_->pending_item.scissor_enabled = true;
+    submit_->pending_item.scissor_x = x;
+    submit_->pending_item.scissor_y = y;
+    submit_->pending_item.scissor_width = width;
+    submit_->pending_item.scissor_height = height;
 }
 
 void Renderer::submit(ProgramHandle program) {
-    submit(program, 0);
+    submit(lastCreatedRenderQueue(), program);
 }
 
-void Renderer::submit(ProgramHandle program, uint vertex_count) {
-    submit(program, vertex_count, 0);
+void Renderer::submit(uint render_queue, ProgramHandle program) {
+    submit(render_queue, program, 0);
 }
 
 void Renderer::submit(ProgramHandle program, uint vertex_count, uint offset) {
-    auto& item = *submit_->current_item;
+    submit(lastCreatedRenderQueue(), program, vertex_count, offset);
+}
+
+void Renderer::submit(uint render_queue, ProgramHandle program, uint vertex_count, uint offset) {
+    // Complete item.
+    auto& item = submit_->pending_item;
     item.program = program;
     item.primitive_count = vertex_count / 3;
     if (vertex_count > 0) {
@@ -475,13 +481,12 @@ void Renderer::submit(ProgramHandle program, uint vertex_count, uint offset) {
         }
     }
 
-    submit_->render_items.emplace_back();
-    submit_->current_item = &submit_->render_items.back();
+    // Move the "pending" render item to the specified render queue.
+    submit_->render_queues[render_queue].render_items.emplace_back(std::move(item));
+    item = RenderItem();
 }
 
 bool Renderer::frame() {
-    finaliseRenderQueue();
-
     // If we are rendering in multithreaded mode, wait for the render thread.
     if (use_render_thread_) {
         // If the rendering thread is doing nothing, print a warning and give up.
@@ -538,15 +543,6 @@ void Renderer::submitPreFrameCommand(RenderCommand command) {
 
 void Renderer::submitPostFrameCommand(RenderCommand command) {
     submit_->commands_post.emplace_back(std::move(command));
-}
-
-void Renderer::finaliseRenderQueue() {
-    if (submit_->current_render_queue) {
-        // We subtract one here because the last element in the render_items array is a "pending"
-        // render item, which we don't want to include in the queue.
-        submit_->current_render_queue->render_items_count =
-            submit_->render_items.size() - submit_->current_render_queue->render_items_begin - 1;
-    }
 }
 
 void Renderer::renderThread() {

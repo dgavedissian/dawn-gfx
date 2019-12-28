@@ -722,9 +722,9 @@ bool GLRenderContext::frame(const Frame* frame) {
         }
 
         // Render items.
-        for (uint i = 0; i < q.render_items_count; ++i) {
-            auto* previous = i > 0 ? &frame->render_items[q.render_items_begin + i - 1] : nullptr;
-            auto* current = &frame->render_items[q.render_items_begin + i];
+        for (uint i = 0; i < q.render_items.size(); ++i) {
+            auto* previous = i > 0 ? &q.render_items[i - 1] : nullptr;
+            auto* current = &q.render_items[i];
 
             // Update render state.
             if (!previous || previous->cull_face_enabled != current->cull_face_enabled) {

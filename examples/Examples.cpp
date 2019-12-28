@@ -171,7 +171,6 @@ public:
     }
 
     void render(float) override {
-        r.startRenderQueue();
         r.setRenderQueueClear({0.0f, 0.0f, 0.2f});
         r.setVertexBuffer(vb_);
         r.submit(program_, 3);
@@ -243,7 +242,6 @@ public:
     }
 
     void render(float dt) override {
-        r.startRenderQueue();
         r.setRenderQueueClear({0.0f, 0.0f, 0.2f});
 
         static float angle = 0.0f;
@@ -295,7 +293,6 @@ public:
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
         r.linkProgram(program_);
-        r.startRenderQueue();
         r.setUniform("wall_sampler", 0);
         r.submit(program_);
 
@@ -307,7 +304,6 @@ public:
     }
 
     void render(float dt) override {
-        r.startRenderQueue();
         r.setRenderQueueClear({0.0f, 0.0f, 0.2f});
 
         // Calculate matrices.
@@ -349,7 +345,6 @@ public:
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
         r.linkProgram(program_);
-        r.startRenderQueue();
         r.setUniform("wall_sampler", 0);
         r.setUniform("normal_sampler", 1);
         r.submit(program_);
@@ -363,7 +358,6 @@ public:
     }
 
     void render(float dt) override {
-        r.startRenderQueue();
         r.setRenderQueueClear({0.0f, 0.0f, 0.2f});
 
         // Calculate matrices.
@@ -425,7 +419,6 @@ public:
         r.attachShader(post_process_, pp_vs);
         r.attachShader(post_process_, pp_fs);
         r.linkProgram(post_process_);
-        r.startRenderQueue();
         r.setUniform("in_sampler", 0);
         r.submit(post_process_);
     }
@@ -507,7 +500,6 @@ public:
             r.attachShader(program_, fs);
             r.linkProgram(program_);
 
-            r.startRenderQueue();
             r.setUniform("screen_size", screen_size);
             r.setUniform("gb0_sampler", 0);
             r.setUniform("gb1_sampler", 1);
