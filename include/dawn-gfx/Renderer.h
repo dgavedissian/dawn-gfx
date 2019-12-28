@@ -390,38 +390,42 @@ struct RenderItem {
     // TODO: Stencil write.
 };
 
-// View.
-struct View {
-    View();
-    void clear();
-
-    std::optional<Colour> clear_colour;
+// Render queue.
+struct RenderQueue {
+    struct ClearParameters {
+        Colour colour;
+        bool clear_colour;
+        bool clear_depth;
+    };
+    std::optional<ClearParameters> clear_parameters;
     std::optional<FrameBufferHandle> frame_buffer;
-    std::vector<RenderItem> render_items;
+    usize render_items_begin = 0;
+    usize render_items_count = 0;
 };
 
 // Frame.
 class Renderer;
 struct Frame {
     Frame();
-    ~Frame() = default;
+    void clear();
 
-    View& view(uint view_index);
+    RenderItem* current_item;
+    RenderQueue* current_render_queue;
+    std::vector<RenderItem> render_items;
+    std::vector<RenderQueue> render_queues;
 
-    RenderItem current_item;
-    std::vector<View> views;
     std::vector<RenderCommand> commands_pre;
     std::vector<RenderCommand> commands_post;
 
     // Transient vertex/index buffer storage.
     struct {
-        std::unique_ptr<byte[]> data;
+        std::array<byte, DW_MAX_TRANSIENT_VERTEX_BUFFER_SIZE> data;
         uint size;
         std::optional<VertexBufferHandle> handle;
     } transient_vb_storage;
 
     struct {
-        std::unique_ptr<byte[]> data;
+        std::array<byte, DW_MAX_TRANSIENT_INDEX_BUFFER_SIZE> data;
         uint size;
         std::optional<IndexBufferHandle> handle;
     } transient_ib_storage;
@@ -521,9 +525,13 @@ public:
     TextureHandle getFrameBufferTexture(FrameBufferHandle handle, uint index);
     void deleteFrameBuffer(FrameBufferHandle handle);
 
-    /// View.
-    void setViewClear(uint view, const Colour& colour);
-    void setViewFrameBuffer(uint view, FrameBufferHandle handle);
+    /// Start a new render queue that outputs to a specific frame buffer.
+    /// @param frame_buffer Framebuffer to output to. To output to the backbuffer, set this to
+    /// std::nullopt.
+    void startRenderQueue(std::optional<FrameBufferHandle> frame_buffer = std::nullopt);
+
+    /// Causes the current render queue to clear the framebuffer to a specific colour when processed.
+    void setRenderQueueClear(const Colour& colour, bool clear_colour = true, bool clear_depth = true);
 
     /// Update state.
     void setStateEnable(RenderState state);
@@ -540,16 +548,16 @@ public:
     void setScissor(u16 x, u16 y, u16 width, u16 height);
 
     /// Update uniform and draw state, but submit no geometry.
-    void submit(uint view, ProgramHandle program);
+    void submit(ProgramHandle program);
 
     /// Update uniform and draw state, then draw. Based off:
     /// https://github.com/bkaradzic/bgfx/blob/master/src/bgfx.cpp#L854
-    void submit(uint view, ProgramHandle program, uint vertex_count);
+    void submit(ProgramHandle program, uint vertex_count);
 
     /// Update uniform and draw state, then draw. Based off:
     /// https://github.com/bkaradzic/bgfx/blob/master/src/bgfx.cpp#L854
     /// Offset is in vertices/indices depending on whether an index buffer is being used.
-    void submit(uint view, ProgramHandle program, uint vertex_count, uint offset);
+    void submit(ProgramHandle program, uint vertex_count, uint offset);
 
     /// Render a single frame.
     bool frame();
@@ -562,9 +570,6 @@ public:
 
     /// Get the current backbuffer size.
     Vec2i backbufferSize() const;
-
-    /// Get the view which corresponds to the backbuffer.
-    uint backbufferView() const;
 
 private:
     Logger& logger_;
@@ -618,6 +623,9 @@ private:
     // Add a command to the submit thread.
     void submitPreFrameCommand(RenderCommand command);
     void submitPostFrameCommand(RenderCommand command);
+
+    // Finalise render queue.
+    void finaliseRenderQueue();
 
     // Renderer.
     std::unique_ptr<RenderContext> shared_render_context_;

@@ -171,9 +171,10 @@ public:
     }
 
     void render(float) override {
-        r.setViewClear(0, {0.0f, 0.0f, 0.2f, 1.0f});
+        r.startRenderQueue();
+        r.setRenderQueueClear({0.0f, 0.0f, 0.2f});
         r.setVertexBuffer(vb_);
-        r.submit(0, program_, 3);
+        r.submit(program_, 3);
     }
 
     void stop() override {
@@ -215,9 +216,10 @@ public:
     }
 
     void render(float) override {
+        r.startRenderQueue();
         r.setVertexBuffer(vb_);
         r.setIndexBuffer(ib_);
-        r.submit(0, program_, 6);
+        r.submit(program_, 6);
     }
 
     void stop() override {
@@ -241,7 +243,8 @@ public:
     }
 
     void render(float dt) override {
-        r.setViewClear(0, {0.0f, 0.0f, 0.2f, 1.0f});
+        r.startRenderQueue();
+        r.setRenderQueueClear({0.0f, 0.0f, 0.2f});
 
         static float angle = 0.0f;
         angle += dt;
@@ -268,7 +271,7 @@ public:
 
         r.setVertexBuffer(tvb);
         r.setIndexBuffer(tib);
-        r.submit(0, program_, 6);
+        r.submit(program_, 6);
     }
 
     void stop() override {
@@ -292,8 +295,9 @@ public:
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
         r.linkProgram(program_);
+        r.startRenderQueue();
         r.setUniform("wall_sampler", 0);
-        r.submit(0, program_);
+        r.submit(program_);
 
         // Load texture.
         texture_ = util::loadTexture(r, util::media("/wall.jpg"));
@@ -303,6 +307,9 @@ public:
     }
 
     void render(float dt) override {
+        r.startRenderQueue();
+        r.setRenderQueueClear({0.0f, 0.0f, 0.2f});
+
         // Calculate matrices.
         static float angle = 0.0f;
         angle += M_PI / 4.0f * dt;  // 45 degrees per second.
@@ -314,11 +321,10 @@ public:
         r.setUniform("light_direction", Vec3{1.0f, 1.0f, 1.0f}.Normalized());
 
         // Set vertex buffer and submit.
-        r.setViewClear(0, {0.0f, 0.0f, 0.2f, 1.0f});
         r.setTexture(texture_, 0);
         r.setVertexBuffer(box_.vb);
         r.setIndexBuffer(box_.ib);
-        r.submit(0, program_, box_.index_count);
+        r.submit(program_, box_.index_count);
     }
 
     void stop() override {
@@ -343,9 +349,10 @@ public:
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
         r.linkProgram(program_);
+        r.startRenderQueue();
         r.setUniform("wall_sampler", 0);
         r.setUniform("normal_sampler", 1);
-        r.submit(0, program_);
+        r.submit(program_);
 
         // Load texture.
         surface_texture_ = util::loadTexture(r, util::media("/stone_wall.jpg"));
@@ -356,6 +363,9 @@ public:
     }
 
     void render(float dt) override {
+        r.startRenderQueue();
+        r.setRenderQueueClear({0.0f, 0.0f, 0.2f});
+
         // Calculate matrices.
         static float angle = 0.0f;
         angle += M_PI / 4.0f * dt;  // 45 degrees per second.
@@ -367,12 +377,11 @@ public:
         r.setUniform("light_dir", Vec3{1.0f, 1.0f, 1.0f}.Normalized());
 
         // Set vertex buffer and submit.
-        r.setViewClear(0, {0.0f, 0.0f, 0.2f, 1.0f});
         r.setTexture(surface_texture_, 0);
         r.setTexture(normal_texture_, 1);
         r.setVertexBuffer(box_.vb);
         r.setIndexBuffer(box_.ib);
-        r.submit(0, program_, box_.index_count);
+        r.submit(program_, box_.index_count);
     }
 
     void stop() override {
@@ -416,8 +425,9 @@ public:
         r.attachShader(post_process_, pp_vs);
         r.attachShader(post_process_, pp_fs);
         r.linkProgram(post_process_);
+        r.startRenderQueue();
         r.setUniform("in_sampler", 0);
-        r.submit(0, post_process_);
+        r.submit(post_process_);
     }
 
     void render(float dt) override {
@@ -431,21 +441,23 @@ public:
         r.setUniform("mvp_matrix", proj * view * model);
         r.setUniform("light_direction", Vec3{1.0f, 1.0f, 1.0f}.Normalized());
 
-        // Set up views.
-        r.setViewClear(0, {0.0f, 0.0f, 0.2f, 1.0f});
-        r.setViewFrameBuffer(0, fb_handle_);
-        r.setViewClear(1, {0.0f, 0.2f, 0.0f, 1.0f});
-        r.setViewFrameBuffer(1, FrameBufferHandle{0});
+        // Set up render queue to frame buffer.
+        r.startRenderQueue(fb_handle_);
+        r.setRenderQueueClear({0.0f, 0.0f, 0.2f});
 
         // Set vertex buffer and submit.
         r.setVertexBuffer(box_.vb);
         r.setIndexBuffer(box_.ib);
-        r.submit(0, box_program_, box_.index_count);
+        r.submit(box_program_, box_.index_count);
+
+        // Set up render queue to draw fsq to backbuffer.
+        r.startRenderQueue();
+        r.setRenderQueueClear({0.0f, 0.2f, 0.0f});
 
         // Draw fb.
         r.setTexture(r.getFrameBufferTexture(fb_handle_, 0), 0);
         r.setVertexBuffer(fsq_vb_);
-        r.submit(1, post_process_, 3);
+        r.submit(post_process_, 3);
     }
 
     void stop() override {
@@ -494,6 +506,8 @@ public:
             r.attachShader(program_, vs);
             r.attachShader(program_, fs);
             r.linkProgram(program_);
+
+            r.startRenderQueue();
             r.setUniform("screen_size", screen_size);
             r.setUniform("gb0_sampler", 0);
             r.setUniform("gb1_sampler", 1);
@@ -501,7 +515,7 @@ public:
             r.setUniform("light_colour", colour.rgb());
             r.setUniform("linear_term", linear_term);
             r.setUniform("quadratic_term", quadratic_term);
-            r.submit(0, program_);
+            r.submit(program_);
             sphere_ = MeshBuilder{r}.normals(false).texcoords(false).createSphere(
                 light_sphere_radius_, 8, 8);
         }
@@ -515,7 +529,7 @@ public:
             model_ = Mat4::Translate(position);
         }
 
-        void draw(uint view, const Mat4& view_matrix, const Mat4& proj_matrix) {
+        void draw(const Mat4& view_matrix, const Mat4& proj_matrix) {
             Mat4 mvp = proj_matrix * view_matrix * model_;
 
             // Invert culling when inside the light sphere.
@@ -534,7 +548,7 @@ public:
             r.setIndexBuffer(sphere_.ib);
             r.setUniform("mvp_matrix", mvp);
             r.setUniform("light_position", position_);
-            r.submit(view, program_, sphere_.index_count);
+            r.submit(program_, sphere_.index_count);
         }
 
     private:
@@ -567,6 +581,9 @@ public:
     static constexpr auto kGroundSize = 30.0f;
 
     void start() override {
+        // Create render queue for setting initial uniform state.
+        r.startRenderQueue();
+
         // Load shaders.
         auto vs =
             util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/object_gbuffer.vs"));
@@ -578,7 +595,7 @@ public:
         r.linkProgram(ground_program_);
         r.setUniform("wall_sampler", 0);
         r.setUniform("texcoord_scale", Vec2{kGroundSize / 5.0f, kGroundSize / 5.0f});
-        r.submit(0, ground_program_);
+        r.submit(ground_program_);
 
         sphere_program_ = r.createProgram();
         r.attachShader(sphere_program_, vs);
@@ -586,7 +603,7 @@ public:
         r.linkProgram(sphere_program_);
         r.setUniform("wall_sampler", 0);
         r.setUniform("texcoord_scale", Vec2{1.0f, 1.0f});
-        r.submit(0, sphere_program_);
+        r.submit(sphere_program_);
 
         // Create ground.
         ground_ = MeshBuilder{r}.normals(true).texcoords(true).createPlane(kGroundSize * 2.0f,
@@ -620,7 +637,7 @@ public:
         r.setUniform("gb1_sampler", 1);
         r.setUniform("gb2_sampler", 2);
         r.setUniform("ambient_light", Vec3{0.1f, 0.1f, 0.1f});
-        r.submit(0, post_process_);
+        r.submit(post_process_);
 
         // Lights.
         std::array<float, 2> intervals = {0.5f, 1.0f};
@@ -654,11 +671,9 @@ public:
     }
 
     void render(float dt) override {
-        // Set up views.
-        r.setViewClear(0, {0.0f, 0.0f, 0.0f, 1.0f});
-        r.setViewFrameBuffer(0, gbuffer_);
-        r.setViewClear(1, {0.0f, 0.0f, 0.0f, 1.0f});
-        r.setViewFrameBuffer(1, FrameBufferHandle{0});
+        // Set up gbuffer render queue.
+        r.startRenderQueue(gbuffer_);
+        r.setRenderQueueClear({0.0f, 0.0f, 0.0f});
 
         // Calculate matrices.
         Mat4 model = Mat4::RotateX(math::pi * -0.5f);
@@ -673,7 +688,7 @@ public:
         r.setVertexBuffer(ground_.vb);
         r.setIndexBuffer(ground_.ib);
         r.setTexture(texture_, 0);
-        r.submit(0, ground_program_, ground_.index_count);
+        r.submit(ground_program_, ground_.index_count);
 
         // Draw spheres.
         for (const auto& sphere_info : spheres) {
@@ -683,15 +698,19 @@ public:
             r.setVertexBuffer(sphere_.vb);
             r.setIndexBuffer(sphere_.ib);
             r.setTexture(texture_, 0);
-            r.submit(0, sphere_program_, sphere_.index_count);
+            r.submit(sphere_program_, sphere_.index_count);
         }
+
+        // Set up backbuffer render queue.
+        r.startRenderQueue();
+        r.setRenderQueueClear({0.0f, 0.0f, 0.0f});
 
         // Draw fb.
         r.setTexture(r.getFrameBufferTexture(gbuffer_, 0), 0);
         r.setTexture(r.getFrameBufferTexture(gbuffer_, 1), 1);
         r.setTexture(r.getFrameBufferTexture(gbuffer_, 2), 2);
         r.setVertexBuffer(fsq_vb_);
-        r.submit(1, post_process_, 3);
+        r.submit(post_process_, 3);
 
         // Update and draw point lights.
         static float angle = 0.0f;
@@ -706,7 +725,7 @@ public:
             r.setTexture(r.getFrameBufferTexture(gbuffer_, 0), 0);
             r.setTexture(r.getFrameBufferTexture(gbuffer_, 1), 1);
             r.setTexture(r.getFrameBufferTexture(gbuffer_, 2), 2);
-            light_info.light->draw(1, view, proj);
+            light_info.light->draw(view, proj);
         }
     }
 

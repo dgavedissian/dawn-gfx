@@ -678,25 +678,21 @@ bool GLRenderContext::frame(const Frame* frame) {
     auto& tvb = frame->transient_vb_storage;
     if (tvb.handle) {
         GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_map_.at(*tvb.handle).vertex_buffer));
-        GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, tvb.size, tvb.data.get()));
+        GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, tvb.size, tvb.data.data()));
     }
     auto& tib = frame->transient_ib_storage;
     if (tib.handle) {
         GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,
                               index_buffer_map_.at(*tib.handle).element_buffer));
-        GL_CHECK(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, tib.size, tib.data.get()));
+        GL_CHECK(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, tib.size, tib.data.data()));
     }
 
-    // Process views.
-    for (auto& v : frame->views) {
-        if (v.render_items.empty()) {
-            continue;
-        }
-
+    // Process render queues.
+    for (auto& q : frame->render_queues) {
         // Set up framebuffer.
         u16 fb_width, fb_height;
-        if (v.frame_buffer) {
-            FrameBufferData& fb_data = frame_buffer_map_.at(*v.frame_buffer);
+        if (q.frame_buffer) {
+            FrameBufferData& fb_data = frame_buffer_map_.at(*q.frame_buffer);
             fb_width = fb_data.width;
             fb_height = fb_data.height;
             GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, fb_data.frame_buffer));
@@ -710,18 +706,25 @@ bool GLRenderContext::frame(const Frame* frame) {
         (void)fb_width;
         (void)fb_height;
 
-        // Set up view.
+        // Clear frame buffer.
         GL_CHECK(glDisable(GL_SCISSOR_TEST));
-        if (v.clear_colour) {
-            GL_CHECK(glClearColor(v.clear_colour->r(), v.clear_colour->g(), v.clear_colour->b(),
-                                  v.clear_colour->a()));
-            GL_CHECK(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+        if (q.clear_parameters) {
+            auto colour = q.clear_parameters->colour;
+            GL_CHECK(glClearColor(colour.r(), colour.g(), colour.b(), colour.a()));
+            GLbitfield clear_mask = 0;
+            if (q.clear_parameters->clear_colour) {
+                clear_mask |= GL_COLOR_BUFFER_BIT;
+            }
+            if (q.clear_parameters->clear_depth) {
+                clear_mask |= GL_DEPTH_BUFFER_BIT;
+            }
+            GL_CHECK(glClear(clear_mask));
         }
 
         // Render items.
-        for (uint i = 0; i < v.render_items.size(); ++i) {
-            auto* previous = i > 0 ? &v.render_items[i - 1] : nullptr;
-            auto* current = &v.render_items[i];
+        for (uint i = 0; i < q.render_items_count; ++i) {
+            auto* previous = i > 0 ? &frame->render_items[q.render_items_begin + i - 1] : nullptr;
+            auto* current = &frame->render_items[q.render_items_begin + i];
 
             // Update render state.
             if (!previous || previous->cull_face_enabled != current->cull_face_enabled) {
