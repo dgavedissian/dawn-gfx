@@ -10,64 +10,53 @@
 namespace dw {
 namespace gfx {
 // Type safe handles.
-template <typename Tag, int Invalid> class Handle {
+template <typename HandleType> class BaseHandle {
 public:
-    using base_type = u16;
+    using base_type = u32;
 
-    static const base_type invalid = static_cast<base_type>(Invalid);
+    BaseHandle() : value_(-1) {}
 
-    Handle() : internal_handle_{invalid} {
-    }
-
-    explicit Handle(base_type internal_handle) : internal_handle_{internal_handle} {
+    explicit BaseHandle(base_type value) : value_(value) {
     }
 
     explicit operator base_type() const {
-        return internal();
+        return value_;
     }
 
-    Handle<Tag, Invalid>& operator=(base_type other) {
-        internal_handle_ = other;
-        return *this;
+    HandleType& operator=(base_type other) {
+        value_ = other;
+        return static_cast<HandleType&>(*this);
     }
 
-    bool operator==(const Handle<Tag, Invalid>& other) const {
-        return internal_handle_ == other.internal_handle_;
+    bool operator==(const BaseHandle& other) const {
+        return value_ == other.value_;
     }
 
     bool operator==(base_type other) const {
-        return internal_handle_ == other;
+        return value_ == other;
     }
 
-    bool operator!=(const Handle<Tag, Invalid>& other) const {
-        return internal_handle_ != other.internal_handle_;
+    bool operator!=(const BaseHandle& other) const {
+        return value_ != other.value_;
     }
 
     bool operator!=(base_type other) const {
-        return internal_handle_ != other;
+        return value_ != other;
     }
 
-    Handle<Tag, Invalid>& operator++() {
-        ++internal_handle_;
-        return *this;
+    HandleType& operator++() {
+        ++value_;
+        return static_cast<HandleType&>(*this);
     }
 
-    Handle<Tag, Invalid> operator++(int) {
-        Handle<Tag, Invalid> tmp{*this};
-        ++internal_handle_;
-        return tmp;
-    }
-
-    base_type internal() const {
-        return internal_handle_;
-    }
-
-    bool isValid() const {
-        return internal_handle_ != invalid;
+    HandleType operator++(int) {
+        BaseHandle tmp{*this};
+        ++value_;
+        return static_cast<HandleType&>(tmp);
     }
 
 private:
-    base_type internal_handle_;
+    base_type value_;
 };
 
 // Handle generator.
@@ -75,7 +64,10 @@ template <typename Handle> class HandleGenerator {
 public:
     HandleGenerator() : next_{1} {
     }
-    ~HandleGenerator() = default;
+
+    void reset() {
+        next_ = Handle(1);
+    }
 
     Handle next() {
         return next_++;
@@ -84,16 +76,17 @@ public:
 private:
     Handle next_;
 };
-}
+}  // namespace gfx
 }  // namespace dw
 
 namespace std {
-template <typename Tag, int Invalid> struct hash<dw::gfx::Handle<Tag, Invalid>> {
-    typedef dw::gfx::Handle<Tag, Invalid> argument_type;
-    typedef std::size_t result_type;
+template <typename HandleType> struct hash<dw::gfx::BaseHandle<HandleType>> {
+    using argument_type = dw::gfx::BaseHandle<HandleType>;
+    using result_type = std::size_t;
+    using base_type = typename dw::gfx::BaseHandle<HandleType>::base_type;
     result_type operator()(const argument_type& k) const {
-        std::hash<typename dw::gfx::Handle<Tag, Invalid>::base_type> base_hash;
-        return base_hash(k.internal());
+        std::hash<base_type> base_hash;
+        return base_hash(base_type(k));
     }
 };
 }  // namespace std

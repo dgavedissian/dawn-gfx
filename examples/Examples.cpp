@@ -257,12 +257,12 @@ public:
             .add(VertexDecl::Attribute::Position, 2, VertexDecl::AttributeType::Float)
             .add(VertexDecl::Attribute::Colour, 3, VertexDecl::AttributeType::Float)
             .end();
-        auto tvb = r.allocTransientVertexBuffer(sizeof(vertices) / decl.stride(), decl);
+        auto tvb = *r.allocTransientVertexBuffer(sizeof(vertices) / decl.stride(), decl);
         auto* vertex_data = reinterpret_cast<float*>(r.getTransientVertexBufferData(tvb));
         memcpy(vertex_data, vertices, sizeof(vertices));
 
         u16 elements[] = {0, 2, 1, 2, 0, 3};
-        auto tib = r.allocTransientIndexBuffer(sizeof(elements) / sizeof(elements[0]));
+        auto tib = *r.allocTransientIndexBuffer(sizeof(elements) / sizeof(elements[0]));
         auto* index_data = reinterpret_cast<u16*>(r.getTransientIndexBufferData(tib));
         memcpy(index_data, elements, sizeof(elements));
 
@@ -719,7 +719,7 @@ public:
 };
 
 int main() {
-    auto example = std::make_unique<Textured3DCube>();
+    auto example = std::make_unique<Textured3DCubeNormalMap>();
     example->start();
 #ifdef DGA_EMSCRIPTEN
     // void emscripten_set_main_loop(em_callback_func func, int fps, int simulate_infinite_loop);

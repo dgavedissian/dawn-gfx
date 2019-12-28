@@ -676,27 +676,27 @@ bool GLRenderContext::frame(const Frame* frame) {
 
     // Upload transient vertex/element buffer data.
     auto& tvb = frame->transient_vb_storage;
-    if (tvb.size) {
-        GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_map_.at(tvb.handle).vertex_buffer));
+    if (tvb.handle) {
+        GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_map_.at(*tvb.handle).vertex_buffer));
         GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, tvb.size, tvb.data.get()));
     }
     auto& tib = frame->transient_ib_storage;
-    if (tib.size) {
-        GL_CHECK(
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer_map_.at(tib.handle).element_buffer));
+    if (tib.handle) {
+        GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,
+                              index_buffer_map_.at(*tib.handle).element_buffer));
         GL_CHECK(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, tib.size, tib.data.get()));
     }
 
     // Process views.
     for (auto& v : frame->views) {
-        if (v.render_items.empty() || !v.frame_buffer.isValid()) {
+        if (v.render_items.empty()) {
             continue;
         }
 
         // Set up framebuffer.
         u16 fb_width, fb_height;
-        if (v.frame_buffer.internal() > 0) {
-            FrameBufferData& fb_data = frame_buffer_map_.at(v.frame_buffer);
+        if (v.frame_buffer) {
+            FrameBufferData& fb_data = frame_buffer_map_.at(*v.frame_buffer);
             fb_width = fb_data.width;
             fb_height = fb_data.height;
             GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, fb_data.frame_buffer));
@@ -793,9 +793,8 @@ bool GLRenderContext::frame(const Frame* frame) {
             }
 
             // Bind Program.
-            ProgramData& program_data = program_map_.at(current->program);
+            ProgramData& program_data = program_map_.at(*current->program);
             if (!previous || previous->program != current->program) {
-                assert(current->program.isValid());
                 GL_CHECK(glUseProgram(program_data.program));
             }
 
@@ -832,28 +831,26 @@ bool GLRenderContext::frame(const Frame* frame) {
                     // are hitting texture units used by the previous render item. Unbind it as it's
                     // no longer in use.
                     GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
-                } else if (!texture.handle.isValid()) {
+                    GL_CHECK(glBindSampler(j, 0));
+                } else if (!texture) {
                     // Unbind the texture if the handle is invalid.
                     GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
+                    GL_CHECK(glBindSampler(j, 0));
                 } else {
-                    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                    GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture_map_.at(texture.handle)));
-                }
-
-                // Bind sampler.
-                if (texture.sampler_flags != 0) {
-                    GLuint sampler =
-                        sampler_cache_.findOrCreate(texture.sampler_flags, texture.max_anisotropy);
-                    GL_CHECK(glBindSampler(j, sampler));
+                    GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture_map_.at(texture->handle)));
+                    if (texture->sampler_flags != 0) {
+                        GLuint sampler = sampler_cache_.findOrCreate(texture->sampler_flags,
+                                                                     texture->max_anisotropy);
+                        GL_CHECK(glBindSampler(j, sampler));
+                    }
                 }
             }
 
             // Bind vertex data.
             if (!previous || previous->vb != current->vb) {
-                if (current->vb.isValid()) {
+                if (current->vb) {
                     GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER,
-                                          vertex_buffer_map_.at(current->vb).vertex_buffer));
+                                          vertex_buffer_map_.at(*current->vb).vertex_buffer));
                 }
             }
 
@@ -861,9 +858,9 @@ bool GLRenderContext::frame(const Frame* frame) {
             for (uint attrib = 0; attrib < current_vertex_decl.attributes_.size(); ++attrib) {
                 GL_CHECK(glDisableVertexAttribArray(attrib));
             }
-            if (current->vb.isValid()) {
+            if (current->vb) {
                 current_vertex_decl = current->vertex_decl_override.empty()
-                                          ? vertex_buffer_map_.at(current->vb).decl
+                                          ? vertex_buffer_map_.at(*current->vb).decl
                                           : current->vertex_decl_override;
                 setupVertexArrayAttributes(current_vertex_decl, current->vb_offset);
             } else {
@@ -872,9 +869,9 @@ bool GLRenderContext::frame(const Frame* frame) {
 
             // Bind element data.
             if (!previous || previous->ib != current->ib) {
-                if (current->ib.isValid()) {
+                if (current->ib) {
                     GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,
-                                          index_buffer_map_.at(current->ib).element_buffer));
+                                          index_buffer_map_.at(*current->ib).element_buffer));
                 } else {
                     GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0));
                 }
@@ -882,8 +879,8 @@ bool GLRenderContext::frame(const Frame* frame) {
 
             // Submit.
             if (current->primitive_count > 0) {
-                if (current->ib.isValid()) {
-                    GLenum element_type = index_buffer_map_[current->ib].type;
+                if (current->ib) {
+                    GLenum element_type = index_buffer_map_.at(*current->ib).type;
                     GL_CHECK(glDrawElements(
                         GL_TRIANGLES, current->primitive_count * 3, element_type,
                         reinterpret_cast<void*>(static_cast<std::intptr_t>(current->ib_offset))));
@@ -1081,7 +1078,7 @@ void GLRenderContext::operator()(const cmd::DeleteProgram& c) {
         GL_CHECK(glDeleteProgram(it->second.program));
         program_map_.erase(it);
     } else {
-        logger_.error("[DeleteProgram] Unable to find program with handle {}", c.handle.internal());
+        logger_.error("[DeleteProgram] Unable to find program with handle {}", u32(c.handle));
     }
 }
 

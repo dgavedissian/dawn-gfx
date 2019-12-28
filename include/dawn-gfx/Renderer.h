@@ -28,27 +28,37 @@
 #define DW_MAX_TRANSIENT_VERTEX_BUFFER_SIZE (1 << 20)
 #define DW_MAX_TRANSIENT_INDEX_BUFFER_SIZE (1 << 20)
 
+// Handles.
+#define DEFINE_HANDLE_TYPE(_Name)                                     \
+    namespace dw {                                                    \
+    namespace gfx {                                                   \
+    struct _Name : BaseHandle<_Name> {                                \
+        using BaseHandle::BaseHandle;                                 \
+    };                                                                \
+    }                                                                 \
+    }                                                                 \
+    namespace std {                                                   \
+    template <> struct hash<dw::gfx::_Name> {                         \
+        using argument_type = dw::gfx::_Name;                         \
+        using result_type = std::size_t;                              \
+        result_type operator()(const argument_type& k) const {        \
+            std::hash<dw::gfx::BaseHandle<dw::gfx::_Name>> base_hash; \
+            return base_hash(k);                                      \
+        }                                                             \
+    };                                                                \
+    }
+
+DEFINE_HANDLE_TYPE(VertexBufferHandle)
+DEFINE_HANDLE_TYPE(TransientVertexBufferHandle)
+DEFINE_HANDLE_TYPE(IndexBufferHandle)
+DEFINE_HANDLE_TYPE(TransientIndexBufferHandle)
+DEFINE_HANDLE_TYPE(ShaderHandle)
+DEFINE_HANDLE_TYPE(ProgramHandle)
+DEFINE_HANDLE_TYPE(TextureHandle)
+DEFINE_HANDLE_TYPE(FrameBufferHandle)
+
 namespace dw {
 namespace gfx {
-// Handles.
-namespace detail {
-struct VertexBufferTag {};
-struct TransientVertexBufferTag {};
-struct IndexBufferTag {};
-struct TransientIndexBufferTag {};
-struct ShaderTag {};
-struct ProgramTag {};
-struct TextureTag {};
-struct FrameBufferTag {};
-}  // namespace detail
-using VertexBufferHandle = Handle<detail::VertexBufferTag, -1>;
-using TransientVertexBufferHandle = Handle<detail::TransientVertexBufferTag, -1>;
-using IndexBufferHandle = Handle<detail::IndexBufferTag, -1>;
-using TransientIndexBufferHandle = Handle<detail::TransientIndexBufferTag, -1>;
-using ShaderHandle = Handle<detail::ShaderTag, -1>;
-using ProgramHandle = Handle<detail::ProgramTag, -1>;
-using TextureHandle = Handle<detail::TextureTag, -1>;
-using FrameBufferHandle = Handle<detail::FrameBufferTag, -1>;
 
 // Renderer type.
 enum class RendererType { Null, OpenGL, D3D12, Vulkan };
@@ -344,17 +354,17 @@ struct RenderItem {
     };
 
     // Vertices and indices.
-    VertexBufferHandle vb;
+    std::optional<VertexBufferHandle> vb;
     uint vb_offset = 0;  // Offset in bytes.
     VertexDecl vertex_decl_override;
-    IndexBufferHandle ib;  // Offset in bytes.
+    std::optional<IndexBufferHandle> ib;  // Offset in bytes.
     uint ib_offset = 0;
     uint primitive_count = 0;
 
     // Shader program and parameters.
-    ProgramHandle program;
+    std::optional<ProgramHandle> program;
     std::unordered_map<std::string, UniformData> uniforms;
-    std::array<TextureBinding, DW_MAX_TEXTURE_SAMPLERS> textures;
+    std::array<std::optional<TextureBinding>, DW_MAX_TEXTURE_SAMPLERS> textures;
 
     // Scissor.
     bool scissor_enabled = false;
@@ -386,7 +396,7 @@ struct View {
     void clear();
 
     std::optional<Colour> clear_colour;
-    FrameBufferHandle frame_buffer;
+    std::optional<FrameBufferHandle> frame_buffer;
     std::vector<RenderItem> render_items;
 };
 
@@ -407,13 +417,13 @@ struct Frame {
     struct {
         std::unique_ptr<byte[]> data;
         uint size;
-        VertexBufferHandle handle;
+        std::optional<VertexBufferHandle> handle;
     } transient_vb_storage;
 
     struct {
         std::unique_ptr<byte[]> data;
         uint size;
-        IndexBufferHandle handle;
+        std::optional<IndexBufferHandle> handle;
     } transient_ib_storage;
 
     // Transient vertex/index buffer data.
@@ -424,14 +434,14 @@ struct Frame {
     };
     std::unordered_map<TransientVertexBufferHandle, TransientVertexBufferData>
         transient_vertex_buffers_;
-    TransientVertexBufferHandle next_transient_vertex_buffer_handle_;
+    HandleGenerator<TransientVertexBufferHandle> transient_vertex_buffer_handle_generator_;
     struct TransientIndexBufferData {
         byte* data;
         uint size;
     };
     std::unordered_map<TransientIndexBufferHandle, TransientIndexBufferData>
         transient_index_buffers_;
-    TransientIndexBufferHandle next_transient_index_buffer_handle_;
+    HandleGenerator<TransientIndexBufferHandle> transient_index_buffer_handle_generator_;
 
 #ifdef DW_DEBUG
     // Used for debugging to ensure that vertex buffers aren't updated multiple times a frame.
@@ -467,13 +477,13 @@ public:
     void deleteIndexBuffer(IndexBufferHandle handle);
 
     /// Transient vertex buffer.
-    TransientVertexBufferHandle allocTransientVertexBuffer(uint vertex_count,
-                                                           const VertexDecl& decl);
+    std::optional<TransientVertexBufferHandle> allocTransientVertexBuffer(uint vertex_count,
+                                                                          const VertexDecl& decl);
     byte* getTransientVertexBufferData(TransientVertexBufferHandle handle);
     void setVertexBuffer(TransientVertexBufferHandle handle);
 
     /// Transient index buffer.
-    TransientIndexBufferHandle allocTransientIndexBuffer(uint index_count);
+    std::optional<TransientIndexBufferHandle> allocTransientIndexBuffer(uint index_count);
     byte* getTransientIndexBufferData(TransientIndexBufferHandle handle);
     void setIndexBuffer(TransientIndexBufferHandle handle);
 

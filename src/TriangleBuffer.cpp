@@ -93,11 +93,9 @@ Mesh TriangleBuffer::end(Renderer& r) {
     }
 
     // Upload to GPU.
-    Mesh result;
-    result.vb = r.createVertexBuffer(std::move(data), decl);
-    result.vertex_count = static_cast<uint>(vertices_.size());
-    result.ib = r.createIndexBuffer(Memory(indices_), IndexBufferType::U32);
-    result.index_count = static_cast<uint>(indices_.size());
+    Mesh result{r.createVertexBuffer(std::move(data), decl),
+                r.createIndexBuffer(Memory(indices_), IndexBufferType::U32),
+                static_cast<uint>(vertices_.size()), static_cast<uint>(indices_.size())};
     return result;
 }
 

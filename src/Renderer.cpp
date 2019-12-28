@@ -9,12 +9,12 @@
 
 namespace dw {
 namespace gfx {
-View::View() : clear_colour{}, frame_buffer{FrameBufferHandle{0}} {
+View::View() {
 }
 
 void View::clear() {
     clear_colour.reset();
-    frame_buffer = FrameBufferHandle{0};
+    frame_buffer.reset();
     render_items.clear();
 }
 
@@ -24,11 +24,8 @@ Frame::Frame() {
     transient_vb_storage.size = 0;
     transient_ib_storage.data.reset(new byte[DW_MAX_TRANSIENT_INDEX_BUFFER_SIZE]);
     transient_ib_storage.size = 0;
-    next_transient_vertex_buffer_handle_ = TransientVertexBufferHandle{0};
-    next_transient_index_buffer_handle_ = TransientIndexBufferHandle{0};
-
-    // By default, view 0 will point to the backbuffer.
-    view(0).frame_buffer = FrameBufferHandle{0};
+    transient_vertex_buffer_handle_generator_.reset();
+    transient_index_buffer_handle_generator_.reset();
 }
 
 View& Frame::view(uint view_index) {
@@ -46,7 +43,9 @@ Renderer::Renderer(Logger& logger)
       shared_rt_finished_(false),
       shared_frame_barrier_(2),
       submit_(&frames_[0]),
-      render_(&frames_[1]) {
+      render_(&frames_[1]),
+      transient_vb(-1),
+      transient_ib(-1) {
 }
 
 Renderer::~Renderer() {
@@ -192,16 +191,16 @@ void Renderer::deleteIndexBuffer(IndexBufferHandle handle) {
     submitPostFrameCommand(cmd::DeleteIndexBuffer{handle});
 }
 
-TransientVertexBufferHandle Renderer::allocTransientVertexBuffer(uint vertex_count,
-                                                                 const VertexDecl& decl) {
+std::optional<TransientVertexBufferHandle> Renderer::allocTransientVertexBuffer(
+    uint vertex_count, const VertexDecl& decl) {
     // Check that we have enough space.
     uint size = vertex_count * decl.stride();
     if (size > transient_vb_max_size - submit_->transient_vb_storage.size) {
-        return TransientVertexBufferHandle{};
+        return std::nullopt;
     }
 
     // Allocate handle.
-    auto handle = submit_->next_transient_vertex_buffer_handle_++;
+    auto handle = submit_->transient_vertex_buffer_handle_generator_.next();
     byte* data = submit_->transient_vb_storage.data.get() + submit_->transient_vb_storage.size;
     submit_->transient_vb_storage.size += size;
     submit_->transient_vertex_buffers_[handle] = {data, size, decl};
@@ -223,15 +222,15 @@ void Renderer::setVertexBuffer(TransientVertexBufferHandle handle) {
     submit_->current_item.vertex_decl_override = tvb.decl;
 }
 
-TransientIndexBufferHandle Renderer::allocTransientIndexBuffer(uint index_count) {
+std::optional<TransientIndexBufferHandle> Renderer::allocTransientIndexBuffer(uint index_count) {
     // Check that we have enough space.
     uint size = index_count * sizeof(u16);
     if (size > transient_ib_max_size - submit_->transient_ib_storage.size) {
-        return TransientIndexBufferHandle{};
+        return std::nullopt;
     }
 
     // Allocate handle.
-    auto handle = submit_->next_transient_index_buffer_handle_++;
+    auto handle = submit_->transient_index_buffer_handle_generator_.next();
     byte* data = submit_->transient_ib_storage.data.get() + submit_->transient_ib_storage.size;
     submit_->transient_ib_storage.size += size;
     submit_->transient_index_buffers_[handle] = {data, size};
@@ -324,11 +323,9 @@ TextureHandle Renderer::createTexture2D(u16 width, u16 height, TextureFormat for
 
 void Renderer::setTexture(TextureHandle handle, uint sampler_unit, u32 sampler_flags,
                           float max_anisotropy) {
-    // TODO: check precondition: texture_unit < MAX_TEXTURE_UNITS
+    assert(sampler_unit < DW_MAX_TEXTURE_SAMPLERS);
     auto& binding = submit_->current_item.textures[sampler_unit];
-    binding.handle = handle;
-    binding.sampler_flags = sampler_flags;
-    binding.max_anisotropy = max_anisotropy;
+    binding.emplace(RenderItem::TextureBinding{handle, sampler_flags, max_anisotropy});
 }
 
 void Renderer::deleteTexture(TextureHandle handle) {
@@ -375,7 +372,11 @@ void Renderer::setViewClear(uint view, const Colour& colour) {
 }
 
 void Renderer::setViewFrameBuffer(uint view, FrameBufferHandle handle) {
-    submit_->view(view).frame_buffer = handle;
+    if (handle == 0) {
+        submit_->view(view).frame_buffer.reset();
+    } else {
+        submit_->view(view).frame_buffer = handle;
+    }
 }
 
 void Renderer::setStateEnable(RenderState state) {
@@ -458,12 +459,14 @@ void Renderer::submit(uint view, ProgramHandle program, uint vertex_count, uint 
     item.program = program;
     item.primitive_count = vertex_count / 3;
     if (vertex_count > 0) {
-        if (item.ib.isValid()) {
-            IndexBufferType type = index_buffer_types_.at(item.ib);
+        if (item.ib.has_value()) {
+            IndexBufferType type = index_buffer_types_.at(*item.ib);
             item.ib_offset += offset * (type == IndexBufferType::U16 ? sizeof(u16) : sizeof(u32));
-        } else {
-            const VertexDecl& decl = vertex_buffer_decl_.at(item.vb);
+        } else if (item.vb.has_value()) {
+            const VertexDecl& decl = vertex_buffer_decl_.at(*item.vb);
             item.vb_offset += offset * decl.stride();
+        } else {
+            logger_.error("Submitted item with no vertex or index buffer bound.");
         }
     }
     submit_->view(view).render_items.emplace_back(std::move(item));
@@ -581,9 +584,9 @@ bool Renderer::renderFrame(Frame* frame) {
     frame->transient_vb_storage.size = 0;
     frame->transient_ib_storage.size = 0;
     frame->transient_vertex_buffers_.clear();
-    frame->next_transient_vertex_buffer_handle_ = TransientVertexBufferHandle{0};
+    frame->transient_vertex_buffer_handle_generator_.reset();
     frame->transient_index_buffers_.clear();
-    frame->next_transient_index_buffer_handle_ = TransientIndexBufferHandle{0};
+    frame->transient_index_buffer_handle_generator_.reset();
 #ifdef DW_DEBUG
     frame->updated_vertex_buffers.clear();
     frame->updated_index_buffers.clear();
@@ -594,7 +597,7 @@ bool Renderer::renderFrame(Frame* frame) {
 
 uint Renderer::backbufferView() const {
     for (uint view_index = 0; view_index < submit_->views.size(); ++view_index) {
-        if (submit_->views[view_index].frame_buffer.internal() == 0) {
+        if (!submit_->views[view_index].frame_buffer.has_value()) {
             return view_index;
         }
     }
