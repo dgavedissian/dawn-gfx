@@ -8,9 +8,9 @@ gb0: |diffuse.rgb|X|
 gb1: |position.xyz|X|
 gb2: |normal.xyz|X|
 */
-uniform sampler2D gb0_sampler;
-uniform sampler2D gb1_sampler;
-uniform sampler2D gb2_sampler;
+uniform sampler2D gb0_texture;
+uniform sampler2D gb1_texture;
+uniform sampler2D gb2_texture;
 uniform vec2 screen_size;
 
 uniform vec3 light_position;
@@ -22,9 +22,9 @@ void main()
 {
     vec2 screen_coord = gl_FragCoord.xy / screen_size;
 
-    vec3 diffuse_colour = texture(gb0_sampler, screen_coord).rgb;
-    vec3 pixel_position = texture(gb1_sampler, screen_coord).rgb;
-    vec3 pixel_normal = normalize(texture(gb2_sampler, screen_coord).rgb);
+    vec3 diffuse_colour = texture(gb0_texture, screen_coord).rgb;
+    vec3 pixel_position = texture(gb1_texture, screen_coord).rgb;
+    vec3 pixel_normal = normalize(texture(gb2_texture, screen_coord).rgb);
 
     vec3 lighting = vec3(0.0);
 

@@ -1,26 +1,28 @@
 #version 330 core
 
-in vec2 TexCoord;
+in VertexData {
+    vec2 texcoord;
+} i;
 
-layout(location = 0) out vec4 outColor;
+layout(location = 0) out vec4 out_colour;
 
-uniform sampler2D gb0_sampler;
-uniform sampler2D gb1_sampler;
-uniform sampler2D gb2_sampler;
+uniform sampler2D gb0_texture;
+uniform sampler2D gb1_texture;
+uniform sampler2D gb2_texture;
 
 void main()
 {
-    vec4 gb0 = texture(gb0_sampler, TexCoord);
-    vec4 gb1 = texture(gb1_sampler, TexCoord);
-    vec4 gb2 = texture(gb2_sampler, TexCoord);
+    vec4 gb0 = texture(gb0_texture, i.texcoord);
+    vec4 gb1 = texture(gb1_texture, i.texcoord);
+    vec4 gb2 = texture(gb2_texture, i.texcoord);
 
-    if (TexCoord.x < 0.5 && TexCoord.y >= 0.5) {
-        outColor = texture(gb0_sampler, (TexCoord - vec2(0.0, 0.5)) * 2.0);
-    } else if (TexCoord.x >= 0.5 && TexCoord.y >= 0.5) {
-        outColor = texture(gb1_sampler, (TexCoord - vec2(0.5, 0.5)) * 2.0);
-    } else if (TexCoord.x < 0.5 && TexCoord.y < 0.5) {
-        outColor = texture(gb2_sampler, (TexCoord - vec2(0.0, 0.0)) * 2.0);
+    if (i.texcoord.x < 0.5 && i.texcoord.y >= 0.5) {
+        out_colour = texture(gb0_sampler, (i.texcoord - vec2(0.0, 0.5)) * 2.0);
+    } else if (i.texcoord.x >= 0.5 && i.texcoord.y >= 0.5) {
+        out_colour = texture(gb1_sampler, (i.texcoord - vec2(0.5, 0.5)) * 2.0);
+    } else if (i.texcoord.x < 0.5 && i.texcoord.y < 0.5) {
+        out_colour = texture(gb2_sampler, (i.texcoord - vec2(0.0, 0.0)) * 2.0);
     } else {
-        outColor = vec4(0, 0, 0, 0);
+        out_colour = vec4(0, 0, 0, 0);
     }
 }

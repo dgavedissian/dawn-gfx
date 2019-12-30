@@ -144,8 +144,9 @@ public:
 
     void start() override {
         // Load shaders.
-        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/test.vs"));
-        auto fs = util::loadShader(r, ShaderStage::Fragment, util::media("/shaders/test.fs"));
+        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/basic_colour.vs"));
+        auto fs =
+            util::loadShader(r, ShaderStage::Fragment, util::media("/shaders/basic_colour.fs"));
         program_ = r.createProgram();
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
@@ -190,8 +191,9 @@ public:
 
     void start() override {
         // Load shaders.
-        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/test.vs"));
-        auto fs = util::loadShader(r, ShaderStage::Fragment, util::media("/shaders/test.fs"));
+        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/basic_colour.vs"));
+        auto fs =
+            util::loadShader(r, ShaderStage::Fragment, util::media("/shaders/basic_colour.fs"));
         program_ = r.createProgram();
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
@@ -215,7 +217,7 @@ public:
     }
 
     void render(float) override {
-        r.startRenderQueue();
+        r.setRenderQueueClear({0.0f, 0.0f, 0.2f});
         r.setVertexBuffer(vb_);
         r.setIndexBuffer(ib_);
         r.submit(program_, 6);
@@ -233,8 +235,9 @@ public:
 
     void start() override {
         // Load shaders.
-        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/test.vs"));
-        auto fs = util::loadShader(r, ShaderStage::Fragment, util::media("/shaders/test.fs"));
+        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("/shaders/basic_colour.vs"));
+        auto fs =
+            util::loadShader(r, ShaderStage::Fragment, util::media("/shaders/basic_colour.fs"));
         program_ = r.createProgram();
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
@@ -293,7 +296,7 @@ public:
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
         r.linkProgram(program_);
-        r.setUniform("wall_sampler", 0);
+        r.setUniform("diffuse_texture", 0);
         r.submit(program_);
 
         // Load texture.
@@ -345,8 +348,8 @@ public:
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
         r.linkProgram(program_);
-        r.setUniform("wall_sampler", 0);
-        r.setUniform("normal_sampler", 1);
+        r.setUniform("diffuse_texture", 0);
+        r.setUniform("normal_map_texture", 1);
         r.submit(program_);
 
         // Load texture.
@@ -368,7 +371,7 @@ public:
         static Mat4 proj = util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
         r.setUniform("model_matrix", model);
         r.setUniform("mvp_matrix", proj * view * model);
-        r.setUniform("light_dir", Vec3{1.0f, 1.0f, 1.0f}.Normalized());
+        r.setUniform("light_direction", Vec3{1.0f, 1.0f, 1.0f}.Normalized());
 
         // Set vertex buffer and submit.
         r.setTexture(surface_texture_, 0);
@@ -400,6 +403,8 @@ public:
         r.attachShader(box_program_, vs);
         r.attachShader(box_program_, fs);
         r.linkProgram(box_program_);
+        r.setUniform("diffuse_colour", Vec3{1.0f, 1.0f, 1.0f});
+        r.submit(box_program_);
 
         // Create box.
         box_ = MeshBuilder{r}.normals(true).texcoords(true).createBox(10.0f);
@@ -419,7 +424,7 @@ public:
         r.attachShader(post_process_, pp_vs);
         r.attachShader(post_process_, pp_fs);
         r.linkProgram(post_process_);
-        r.setUniform("in_sampler", 0);
+        r.setUniform("input_texture", 0);
         r.submit(post_process_);
     }
 
@@ -501,9 +506,9 @@ public:
             r.linkProgram(program_);
 
             r.setUniform("screen_size", screen_size);
-            r.setUniform("gb0_sampler", 0);
-            r.setUniform("gb1_sampler", 1);
-            r.setUniform("gb2_sampler", 2);
+            r.setUniform("gb0_texture", 0);
+            r.setUniform("gb1_texture", 1);
+            r.setUniform("gb2_texture", 2);
             r.setUniform("light_colour", colour.rgb());
             r.setUniform("linear_term", linear_term);
             r.setUniform("quadratic_term", quadratic_term);
@@ -556,7 +561,7 @@ public:
 
     struct PointLightInfo {
         std::unique_ptr<PointLight> light;
-        float angle_offset;
+        float angle_offset = 0.0f;
         Vec3 origin;
     };
     std::vector<PointLightInfo> point_lights;
@@ -585,7 +590,7 @@ public:
         r.attachShader(ground_program_, vs);
         r.attachShader(ground_program_, fs);
         r.linkProgram(ground_program_);
-        r.setUniform("wall_sampler", 0);
+        r.setUniform("diffuse_texture", 0);
         r.setUniform("texcoord_scale", Vec2{kGroundSize / 5.0f, kGroundSize / 5.0f});
         r.submit(ground_program_);
 
@@ -593,7 +598,7 @@ public:
         r.attachShader(sphere_program_, vs);
         r.attachShader(sphere_program_, fs);
         r.linkProgram(sphere_program_);
-        r.setUniform("wall_sampler", 0);
+        r.setUniform("diffuse_texture", 0);
         r.setUniform("texcoord_scale", Vec2{1.0f, 1.0f});
         r.submit(sphere_program_);
 
@@ -625,9 +630,9 @@ public:
         r.attachShader(post_process_, pp_vs);
         r.attachShader(post_process_, pp_fs);
         r.linkProgram(post_process_);
-        r.setUniform("gb0_sampler", 0);
-        r.setUniform("gb1_sampler", 1);
-        r.setUniform("gb2_sampler", 2);
+        r.setUniform("gb0_texture", 0);
+        r.setUniform("gb1_texture", 1);
+        r.setUniform("gb2_texture", 2);
         r.setUniform("ambient_light", Vec3{0.1f, 0.1f, 0.1f});
         r.submit(post_process_);
 
@@ -730,7 +735,7 @@ public:
 };
 
 int main() {
-    auto example = std::make_unique<Textured3DCubeNormalMap>();
+    auto example = std::make_unique<PostProcessing>();
     example->start();
 #ifdef DGA_EMSCRIPTEN
     // void emscripten_set_main_loop(em_callback_func func, int fps, int simulate_infinite_loop);

@@ -1,9 +1,10 @@
 #version 330 core
 
-in vec3 WorldPosition;
-in vec2 TexCoord;
-in vec3 Normal;
-in vec3 Color;
+in VertexData {
+    vec3 world_position;
+    vec3 normal;
+    vec2 texcoord;
+} i;
 
 /*
 GBUFFER LAYOUT:
@@ -18,12 +19,12 @@ layout(location = 2) out vec4 gb2;
 uniform vec3 light_direction;
 uniform vec2 texcoord_scale;
 
-uniform sampler2D wall_sampler;
+uniform sampler2D diffuse_texture;
 
 void main()
 {
-    vec4 diffuse = texture(wall_sampler, TexCoord * texcoord_scale);
+    vec4 diffuse = texture(diffuse_texture, i.texcoord * texcoord_scale);
     gb0.rgb = diffuse.rgb;
-    gb1.rgb = WorldPosition;
-    gb2.rgb = normalize(Normal);
+    gb1.rgb = i.world_position;
+    gb2.rgb = normalize(i.normal);
 }

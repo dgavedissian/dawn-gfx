@@ -1,17 +1,17 @@
 #version 330 core
 
-in vec2 TexCoord;
-in vec3 Normal;
-in vec3 Color;
+in VertexData {
+    vec2 texcoord;
+    vec3 normal;
+} i;
 
-layout(location = 0) out vec4 outColor;
+layout(location = 0) out vec4 out_colour;
 
 uniform vec3 light_direction;
-
-uniform sampler2D wall_sampler;
+uniform sampler2D diffuse_texture;
 
 void main()
 {
-    vec4 diffuse = texture(wall_sampler, TexCoord);
-    outColor = clamp(dot(Normal, light_direction), 0.0, 1.0) * vec4(Color, 1.0) * diffuse;
+    vec4 diffuse = texture(diffuse_texture, i.texcoord);
+    out_colour = clamp(dot(i.normal, light_direction), 0.0, 1.0) * diffuse;
 }

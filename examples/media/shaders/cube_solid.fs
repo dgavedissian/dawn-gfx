@@ -1,13 +1,15 @@
 #version 330 core
 
-in vec3 Normal;
-in vec3 Color;
+in VertexData {
+    vec3 normal;
+} i;
 
-layout(location = 0) out vec4 outColor;
+layout(location = 0) out vec4 out_colour;
 
 uniform vec3 light_direction;
+uniform vec3 diffuse_colour = vec3(1.0, 1.0, 1.0);
 
 void main()
 {
-    outColor = clamp(dot(Normal, light_direction), 0.0, 1.0) * vec4(Color, 1.0);
+    out_colour = clamp(dot(i.normal, light_direction), 0.0, 1.0) * vec4(diffuse_colour, 1.0);
 }

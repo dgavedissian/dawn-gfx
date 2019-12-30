@@ -1,22 +1,22 @@
 #version 330 core
 
-layout(location = 0) in vec3 position;
-layout(location = 1) in vec3 normal;
-layout(location = 2) in vec2 texcoord0;
+layout(location = 0) in vec3 in_position;
+layout(location = 1) in vec3 in_normal;
+layout(location = 2) in vec2 in_texcoord;
 
 uniform mat4 model_matrix;
 uniform mat4 mvp_matrix;
 
-out vec3 WorldPosition;
-out vec2 TexCoord;
-out vec3 Normal;
-out vec3 Color;
+out VertexData {
+    vec3 world_position;
+    vec3 normal;
+    vec2 texcoord;
+} o;
 
 void main()
 {
-    TexCoord = texcoord0;
-    Color = vec3(1.0, 1.0, 1.0);
-    WorldPosition = (model_matrix * vec4(position, 1.0)).xyz;
-    Normal = (model_matrix * vec4(normal, 0.0)).xyz;
-    gl_Position = mvp_matrix * vec4(position, 1.0);
+    gl_Position = mvp_matrix * vec4(in_position, 1.0);
+    o.world_position = (model_matrix * vec4(in_position, 1.0)).xyz;
+    o.normal = (model_matrix * vec4(in_normal, 0.0)).xyz;
+    o.texcoord = in_texcoord;
 }
