@@ -160,6 +160,25 @@ if(MSVC)
     add_compile_definitions(dawn-gfx _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING)
 endif()
 
+# ImGUI.
+FetchContent_Declare(
+    imgui
+    URL https://github.com/ocornut/imgui/archive/v1.74.tar.gz
+    URL_MD5 df95e1b2e7f1e6f9ee750ac0ec5a9d99
+)
+FetchContent_MakeAvailable(imgui)
+add_library(imgui EXCLUDE_FROM_ALL
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/imgui.cpp)
+target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
+
+add_library(dawn-gfx-imgui INTERFACE)
+target_sources(dawn-gfx-imgui INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include/dawn-gfx-imgui/ImGuiBackend.h)
+target_include_directories(dawn-gfx-imgui INTERFACE include)
+target_link_libraries(dawn-gfx-imgui INTERFACE imgui)
+
 if(MASTER_PROJECT)
     add_subdirectory(examples)
 endif()

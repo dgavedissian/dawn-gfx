@@ -5,6 +5,7 @@
 #include <dawn-gfx/Renderer.h>
 #include <dawn-gfx/Shader.h>
 #include <dawn-gfx/MeshBuilder.h>
+#include <dawn-gfx-imgui/ImGuiBackend.h>
 
 #include <iostream>
 #include <fstream>
@@ -32,10 +33,22 @@ class Example {
 public:
     Example() : r(logger_), frame_start_time_(std::chrono::steady_clock::now()) {
         r.init(RendererType::OpenGL, 1024, 768, "Example", InputCallbacks{}, true);
+
+        ImGui::SetCurrentContext(ImGui::CreateContext());
+        imgui_backend_ = std::make_unique<ImGuiBackend>(r, ImGui::GetIO());
     }
 
     void tick() {
+        imgui_backend_->newFrame();
+        ImGui::NewFrame();
+
         render(dt_);
+
+        ImGui::Text("FPS: 1000.0");
+        ImGui::Render();
+
+        // Render frame.
+        imgui_backend_->render(ImGui::GetDrawData());
         if (!r.frame()) {
             running_ = false;
         }
@@ -71,8 +84,11 @@ public:
 
 private:
     StdoutLogger logger_;
+    std::unique_ptr<ImGuiBackend> imgui_backend_;
+
     float dt_ = 1.0f / 60.0f;
     std::chrono::steady_clock::time_point frame_start_time_;
+
     bool running_ = true;
 };
 
@@ -108,7 +124,7 @@ ShaderHandle loadShader(Renderer& r, ShaderStage type, const std::string& source
     std::ifstream shader(source_file);
     std::string shader_source((std::istreambuf_iterator<char>(shader)),
                               std::istreambuf_iterator<char>());
-    auto spv_result = compileGLSL(shader_source, type);
+    auto spv_result = compileGLSL(type, shader_source);
     if (!spv_result) {
         throw std::runtime_error("Compile error: " + spv_result.error().compile_error);
     }

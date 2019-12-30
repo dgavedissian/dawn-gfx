@@ -12,7 +12,7 @@ if(NOT stb_POPULATED)
 endif()
 
 add_executable(Examples Examples.cpp)
-target_link_libraries(Examples dawn-gfx stb)
+target_link_libraries(Examples dawn-gfx stb dawn-gfx-imgui)
 
 if(EMSCRIPTEN)
     set_target_properties(Examples PROPERTIES SUFFIX .html)

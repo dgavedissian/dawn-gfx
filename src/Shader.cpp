@@ -128,7 +128,7 @@ constexpr TBuiltInResource kDefaultTBuiltInResource = {
 namespace dw {
 namespace gfx {
 tl::expected<CompiledShader, ShaderCompileError> compileGLSL(
-    const std::string& glsl_source, ShaderStage stage,
+    ShaderStage stage, const std::string& glsl_source,
     const std::vector<std::string>& compile_definitions) {
     EShLanguage esh_stage;
     switch (stage) {
