@@ -18,22 +18,15 @@ if(POLICY CMP0072)
     cmake_policy(SET CMP0072 NEW)
 endif()
 
-# Patch tool
-if(WIN32)
-    # Hilariously, Windows won't run the tool without admin privileges if it's called patch.exe.
-    set(PATCH_TOOL ${CMAKE_CURRENT_SOURCE_DIR}/tools/ptool.exe)
-else()
-    set(PATCH_TOOL patch)
-endif()
-
 # Dependencies.
 find_package(OpenGL REQUIRED)
 
 FetchContent_Declare(
     base
-    URL https://github.com/dgavedissian/base/archive/ec74bef46996181c06a0032bc88d369f681f1c3c.zip
+    URL https://github.com/dgavedissian/base/archive/03643c3692416899b023319badc14b8b23e212e6.zip
 )
 FetchContent_MakeAvailable(base)
+make_patch_tool_available()
 
 FetchContent_Declare(
     expected
