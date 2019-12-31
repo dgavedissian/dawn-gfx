@@ -79,11 +79,17 @@ void GLAPIENTRY debugMessageCallback(GLenum source, GLenum type, GLuint id, GLen
                                      GLsizei length, const GLchar* message,
                                      const void* user_param) {
     const auto& logger = *static_cast<const Logger*>(user_param);
+    std::string message_str{message};
+    if (message_str.substr(message_str.size() - 2) == "\r\n") {
+        message_str = message_str.substr(0, message_str.size() - 2);
+    } else {
+        message_str = message_str.substr(0, message_str.size() - 1);
+    }
     if (type == GL_DEBUG_TYPE_ERROR) {
-        logger.debug("GL error: severity = {:#x}, message = {}", severity, message);
+        logger.debug("GL error: severity = {:#x}, message = {}", severity, message_str);
     } else {
         logger.debug("GL message: type = {:#x}, severity = {:#x}, message = {}", type, severity,
-                     message);
+                     message_str);
     }
 }
 
@@ -707,7 +713,6 @@ bool GLRenderContext::frame(const Frame* frame) {
         (void)fb_height;
 
         // Clear frame buffer.
-        GL_CHECK(glDisable(GL_SCISSOR_TEST));
         if (q.clear_parameters) {
             auto colour = q.clear_parameters->colour;
             GL_CHECK(glClearColor(colour.r(), colour.g(), colour.b(), colour.a()));
@@ -771,28 +776,6 @@ bool GLRenderContext::frame(const Frame* frame) {
                                              s_blend_func_map.at(current->blend_dest_rgb),
                                              s_blend_func_map.at(current->blend_src_a),
                                              s_blend_func_map.at(current->blend_dest_a)));
-            }
-            if (!previous || previous->colour_write != current->colour_write) {
-                GLboolean colour_enabled = current->colour_write ? GL_TRUE : GL_FALSE;
-                GL_CHECK(
-                    glColorMask(colour_enabled, colour_enabled, colour_enabled, colour_enabled));
-            }
-            if (!previous || previous->depth_write != current->depth_write) {
-                GL_CHECK(glDepthMask(current->depth_write ? GL_TRUE : GL_FALSE));
-            }
-
-            // Scissor.
-            if (!previous || previous->scissor_enabled != current->scissor_enabled) {
-                if (current->scissor_enabled) {
-                    GL_CHECK(glEnable(GL_SCISSOR_TEST));
-                } else {
-                    GL_CHECK(glDisable(GL_SCISSOR_TEST));
-                }
-            }
-            if (current->scissor_enabled) {
-                GL_CHECK(glScissor(current->scissor_x,
-                                   fb_height - current->scissor_y - current->scissor_height,
-                                   current->scissor_width, current->scissor_height));
             }
 
             // Bind Program.
@@ -880,6 +863,21 @@ bool GLRenderContext::frame(const Frame* frame) {
                 }
             }
 
+            // Set viewport masks. These will need to be unset after processing the command to avoid
+            // clobbering the next glClear call.
+            if (!current->colour_write) {
+                GL_CHECK(glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE));
+            }
+            if (!current->depth_write) {
+                GL_CHECK(glDepthMask(GL_FALSE));
+            }
+            if (current->scissor_enabled) {
+                GL_CHECK(glEnable(GL_SCISSOR_TEST));
+                GL_CHECK(glScissor(current->scissor_x,
+                                   fb_height - current->scissor_y - current->scissor_height,
+                                   current->scissor_width, current->scissor_height));
+            }
+
             // Submit.
             if (current->primitive_count > 0) {
                 if (current->ib) {
@@ -890,6 +888,17 @@ bool GLRenderContext::frame(const Frame* frame) {
                 } else {
                     GL_CHECK(glDrawArrays(GL_TRIANGLES, 0, current->primitive_count * 3));
                 }
+            }
+
+            // Restore viewport masks.
+            if (!current->colour_write) {
+                GL_CHECK(glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE));
+            }
+            if (!current->depth_write) {
+                GL_CHECK(glDepthMask(GL_TRUE));
+            }
+            if (current->scissor_enabled) {
+                GL_CHECK(glDisable(GL_SCISSOR_TEST));
             }
         }
     }
