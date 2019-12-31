@@ -99,10 +99,6 @@ tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16
             logger_.info("Using OpenGL renderer.");
             shared_render_context_ = std::make_unique<GLRenderContext>(logger_);
             break;
-        case RendererType::D3D12:
-            logger_.error("D3D12 renderer unimplemented. Falling back to OpenGL.");
-            shared_render_context_ = std::make_unique<GLRenderContext>(logger_);
-            break;
         case RendererType::Vulkan:
             logger_.error("Vulkan renderer unimplemented. Falling back to OpenGL.");
             shared_render_context_ = std::make_unique<GLRenderContext>(logger_);

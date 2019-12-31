@@ -61,7 +61,7 @@ namespace dw {
 namespace gfx {
 
 // Renderer type.
-enum class RendererType { Null, OpenGL, D3D12, Vulkan };
+enum class RendererType { Null, OpenGL, Vulkan };
 
 // Shader type.
 enum class ShaderStage { Vertex, Geometry, Fragment };
