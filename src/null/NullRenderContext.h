@@ -11,7 +11,7 @@ namespace dw {
 namespace gfx {
 class NullRenderContext : public RenderContext {
 public:
-    NullRenderContext(Logger& logger);
+    explicit NullRenderContext(Logger& logger);
     ~NullRenderContext() override = default;
 
     // Window management. Executed on the main thread.
