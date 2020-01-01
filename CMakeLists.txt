@@ -13,14 +13,7 @@ if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     set(MASTER_PROJECT ON)
 endif()
 
-# Use GLVND if possible.
-if(POLICY CMP0072)
-    cmake_policy(SET CMP0072 NEW)
-endif()
-
-# Dependencies.
-find_package(OpenGL REQUIRED)
-
+# Pinned dependencies.
 FetchContent_Declare(
     base
     URL https://github.com/dgavedissian/base/archive/03643c3692416899b023319badc14b8b23e212e6.zip
@@ -122,6 +115,10 @@ if(NOT spirv-cross_POPULATED)
     target_include_directories(spirv-cross-core PUBLIC $<BUILD_INTERFACE:${spirv-cross_SOURCE_DIR}/include/spirv_cross>)
 endif()
 
+# Vulkan
+find_package(Vulkan REQUIRED)
+
+# Main library
 add_library(dawn-gfx
     include/dawn-gfx/detail/Handle.h
     include/dawn-gfx/detail/MathGeoLib.h
@@ -141,6 +138,8 @@ add_library(dawn-gfx
     src/gl/GLRenderContext.h
     src/null/NullRenderContext.cpp
     src/null/NullRenderContext.h
+    src/vulkan/VulkanRenderContext.cpp
+    src/vulkan/VulkanRenderContext.h
     src/Colour.cpp
     src/Glslang.h
     src/Memory.cpp
@@ -153,7 +152,7 @@ add_library(dawn-gfx
     src/VertexDecl.cpp)
 target_include_directories(dawn-gfx PUBLIC include)
 target_include_directories(dawn-gfx PRIVATE include/dawn-gfx src)
-target_link_libraries(dawn-gfx dga-base expected fmt glad glfw glslang SPIRV MathGeoLib spirv-cross-glsl)
+target_link_libraries(dawn-gfx dga-base expected fmt glad glfw glslang SPIRV MathGeoLib spirv-cross-glsl Vulkan::Vulkan)
 target_compile_features(dawn-gfx PUBLIC cxx_std_17)
 set_target_properties(dawn-gfx PROPERTIES CXX_EXTENSIONS OFF)
 if(MSVC)

@@ -34,7 +34,7 @@ public:
 class Example {
 public:
     static int runMain(std::unique_ptr<Example> example, const char* window_title) {
-        example->initRenderer(RendererType::OpenGL, 1024, 768, window_title);
+        example->initRenderer(RendererType::Vulkan, 1024, 768, window_title);
         example->start();
 #ifdef DGA_EMSCRIPTEN
         // void emscripten_set_main_loop(em_callback_func func, int fps, int

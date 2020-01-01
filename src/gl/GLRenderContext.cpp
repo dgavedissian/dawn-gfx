@@ -14,11 +14,11 @@
 #include <codecvt>
 
 /**
- * GLRenderContext. A render context implementation which targets GL 4.0 on desktop platforms,
+ * GLRenderContext. A render context implementation which targets GL
+#define DW_GL_410 1 4.0 on desktop platforms,
  * and WebGL 2 on HTML5.
  */
 
-#define DW_GL_410 1
 #define DW_GLES_300 2
 
 #ifndef DGA_EMSCRIPTEN
@@ -482,6 +482,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
 #elif !defined(DGA_EMSCRIPTEN)
 #error Unsupported: GLES 3.0 on non Web platform.
 #endif
+    // TODO: Support resizing.
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     // Select monitor.
