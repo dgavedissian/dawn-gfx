@@ -52,6 +52,8 @@ private:
     std::vector<vk::Image> swap_chain_images_;
     std::vector<vk::ImageView> swap_chain_image_views_;
 
+    vk::PipelineLayout pipeline_layout_;
+
     bool checkValidationLayerSupport();
     std::vector<const char*> getRequiredExtensions(bool enable_validation_layers);
 
@@ -59,6 +61,7 @@ private:
     void createDevice();
     void createSwapChain();
     void createImageViews();
+    void createGraphicsPipeline();
 
     void cleanup();
 };

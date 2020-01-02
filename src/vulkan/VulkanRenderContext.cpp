@@ -7,6 +7,8 @@
 #include <set>
 #include <cstdint>
 
+#include "dawn-gfx/Shader.h"
+
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE;
 
 namespace dw {
@@ -438,7 +440,166 @@ void VulkanRenderContext::createImageViews() {
     }
 }
 
+void VulkanRenderContext::createGraphicsPipeline() {
+    auto vertex_shader_result = compileGLSL(ShaderStage::Vertex, R"(
+        #version 450
+        #extension GL_ARB_separate_shader_objects : enable
+
+        layout(location = 0) out vec3 fragColor;
+
+        vec2 positions[3] = vec2[](
+            vec2(0.0, -0.5),
+            vec2(0.5, 0.5),
+            vec2(-0.5, 0.5)
+        );
+
+        vec3 colors[3] = vec3[](
+            vec3(1.0, 0.0, 0.0),
+            vec3(0.0, 1.0, 0.0),
+            vec3(0.0, 0.0, 1.0)
+        );
+
+        void main() {
+            gl_Position = vec4(positions[gl_VertexIndex], 0.0, 1.0);
+            fragColor = colors[gl_VertexIndex];
+        })");
+    auto fragment_shader_result = compileGLSL(ShaderStage::Fragment, R"(#version 450
+        #extension GL_ARB_separate_shader_objects : enable
+
+        layout(location = 0) in vec3 fragColor;
+
+        layout(location = 0) out vec4 outColor;
+
+        void main() {
+            outColor = vec4(fragColor, 1.0);
+        })");
+    if (!vertex_shader_result) {
+        throw std::runtime_error(vertex_shader_result.error().compile_error);
+    }
+    auto& vertex_shader = *vertex_shader_result;
+    if (!fragment_shader_result) {
+        throw std::runtime_error(fragment_shader_result.error().compile_error);
+    }
+    auto& fragment_shader = *fragment_shader_result;
+
+    // Create shader modules
+    vk::ShaderModuleCreateInfo vs_module_create_info;
+    vs_module_create_info.pCode = reinterpret_cast<const u32*>(vertex_shader.spirv.data());
+    vs_module_create_info.codeSize = vertex_shader.spirv.size();
+    auto vs_module = device_.createShaderModule(vs_module_create_info);
+    vk::ShaderModuleCreateInfo fs_module_create_info;
+    fs_module_create_info.pCode = reinterpret_cast<const u32*>(fragment_shader.spirv.data());
+    fs_module_create_info.codeSize = vertex_shader.spirv.size();
+    auto fs_module = device_.createShaderModule(fs_module_create_info);
+
+    // Create shader stages.
+    vk::PipelineShaderStageCreateInfo vs_stage_info;
+    vs_stage_info.stage = vk::ShaderStageFlagBits::eVertex;
+    vs_stage_info.module = vs_module;
+    vs_stage_info.pName = vertex_shader.entry_point.c_str();
+    vk::PipelineShaderStageCreateInfo fs_stage_info;
+    fs_stage_info.stage = vk::ShaderStageFlagBits::eFragment;
+    fs_stage_info.module = fs_module;
+    fs_stage_info.pName = fragment_shader.entry_point.c_str();
+    vk::PipelineShaderStageCreateInfo shaderStages[] = {vs_stage_info, fs_stage_info};
+
+    // Create fixed function stages.
+    vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+    vertexInputInfo.vertexBindingDescriptionCount = 0;
+    vertexInputInfo.pVertexBindingDescriptions = nullptr;  // Optional
+    vertexInputInfo.vertexAttributeDescriptionCount = 0;
+    vertexInputInfo.pVertexAttributeDescriptions = nullptr;  // Optional
+
+    vk::PipelineInputAssemblyStateCreateInfo inputAssembly;
+    inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    vk::Viewport viewport;
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(swap_chain_extent_.width);
+    viewport.height = static_cast<float>(swap_chain_extent_.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    vk::Rect2D scissor;
+    scissor.offset = vk::Offset2D{0, 0};
+    scissor.extent = swap_chain_extent_;
+
+    vk::PipelineViewportStateCreateInfo viewportState;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    vk::PipelineRasterizationStateCreateInfo rasterizer;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = vk::PolygonMode::eFill;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = vk::CullModeFlagBits::eBack;
+    rasterizer.frontFace = vk::FrontFace::eClockwise;
+    rasterizer.depthBiasEnable = VK_FALSE;
+    rasterizer.depthBiasConstantFactor = 0.0f;  // Optional
+    rasterizer.depthBiasClamp = 0.0f;           // Optional
+    rasterizer.depthBiasSlopeFactor = 0.0f;     // Optional
+
+    vk::PipelineMultisampleStateCreateInfo multisampling;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
+    multisampling.minSampleShading = 1.0f;           // Optional
+    multisampling.pSampleMask = nullptr;             // Optional
+    multisampling.alphaToCoverageEnable = VK_FALSE;  // Optional
+    multisampling.alphaToOneEnable = VK_FALSE;       // Optional
+
+    vk::PipelineColorBlendAttachmentState colorBlendAttachment;
+    colorBlendAttachment.colorWriteMask =
+        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+        vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+    colorBlendAttachment.blendEnable = VK_FALSE;
+    colorBlendAttachment.srcColorBlendFactor = vk::BlendFactor::eOne;   // Optional
+    colorBlendAttachment.dstColorBlendFactor = vk::BlendFactor::eZero;  // Optional
+    colorBlendAttachment.colorBlendOp = vk::BlendOp::eAdd;              // Optional
+    colorBlendAttachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;   // Optional
+    colorBlendAttachment.dstAlphaBlendFactor = vk::BlendFactor::eZero;  // Optional
+    colorBlendAttachment.alphaBlendOp = vk::BlendOp::eAdd;              // Optional
+
+    /* Alpha blending:
+        colorBlendAttachment.blendEnable = VK_TRUE;
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+     */
+
+    vk::PipelineColorBlendStateCreateInfo colorBlending;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.logicOp = vk::LogicOp::eCopy;  // Optional
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+    colorBlending.blendConstants[0] = 0.0f;  // Optional
+    colorBlending.blendConstants[1] = 0.0f;  // Optional
+    colorBlending.blendConstants[2] = 0.0f;  // Optional
+    colorBlending.blendConstants[3] = 0.0f;  // Optional
+
+    vk::DynamicState dynamicStates[] = {vk::DynamicState::eViewport, vk::DynamicState::eLineWidth};
+
+    vk::PipelineDynamicStateCreateInfo dynamicState;
+    dynamicState.dynamicStateCount = 2;
+    dynamicState.pDynamicStates = dynamicStates;
+
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
+    pipelineLayoutInfo.setLayoutCount = 0;             // Optional
+    pipelineLayoutInfo.pSetLayouts = nullptr;          // Optional
+    pipelineLayoutInfo.pushConstantRangeCount = 0;     // Optional
+    pipelineLayoutInfo.pPushConstantRanges = nullptr;  // Optional
+    pipeline_layout_ = device_.createPipelineLayout(pipelineLayoutInfo);
+}
+
 void VulkanRenderContext::cleanup() {
+    device_.destroy(pipeline_layout_);
     for (const auto& image_view : swap_chain_image_views_) {
         device_.destroy(image_view);
     }
