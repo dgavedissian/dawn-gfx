@@ -506,7 +506,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
             fmt::format("glfwCreateWindow failed. Code: {:#x}. Description: {}", last_error_code,
                         last_error_description));
     }
-    Vec2i fb_size = backbufferSize();
+    Vec2i fb_size = framebufferSize();
     backbuffer_width_ = static_cast<u16>(fb_size.x);
     backbuffer_height_ = static_cast<u16>(fb_size.y);
     glfwMakeContextCurrent(window_);
@@ -653,7 +653,7 @@ Vec2 GLRenderContext::windowScale() const {
     return window_scale_;
 }
 
-Vec2i GLRenderContext::backbufferSize() const {
+Vec2i GLRenderContext::framebufferSize() const {
     int fb_width, fb_height;
     glfwGetFramebufferSize(window_, &fb_width, &fb_height);
     return Vec2i{fb_width, fb_height};

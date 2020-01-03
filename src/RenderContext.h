@@ -24,7 +24,7 @@ public:
     virtual bool isWindowClosed() const = 0;
     virtual Vec2i windowSize() const = 0;
     virtual Vec2 windowScale() const = 0;
-    virtual Vec2i backbufferSize() const = 0;
+    virtual Vec2i framebufferSize() const = 0;
 
     // Command buffer processing. Executed on the render thread.
     virtual void startRendering() = 0;

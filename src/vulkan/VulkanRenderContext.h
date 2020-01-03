@@ -26,7 +26,7 @@ public:
     bool isWindowClosed() const override;
     Vec2i windowSize() const override;
     Vec2 windowScale() const override;
-    Vec2i backbufferSize() const override;
+    Vec2i framebufferSize() const override;
 
     // Command buffer processing. Executed on the render thread.
     void startRendering() override;
@@ -43,8 +43,11 @@ private:
     vk::SurfaceKHR surface_;
     vk::PhysicalDevice physical_device_;
     vk::Device device_;
+
     vk::Queue graphics_queue_;
     vk::Queue present_queue_;
+    u32 graphics_queue_family_index_;
+    u32 present_queue_family_index_;
 
     vk::SwapchainKHR swap_chain_;
     vk::Format swap_chain_image_format_;
@@ -64,6 +67,7 @@ private:
     std::vector<vk::Semaphore> image_available_semaphores_;
     std::vector<vk::Semaphore> render_finished_semaphores_;
     std::vector<vk::Fence> in_flight_fences_;
+    std::vector<vk::Fence> images_in_flight_;
     std::size_t current_frame_;
 
     bool checkValidationLayerSupport();

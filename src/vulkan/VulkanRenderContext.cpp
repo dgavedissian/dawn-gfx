@@ -185,8 +185,10 @@ Vec2 VulkanRenderContext::windowScale() const {
     return {1.0f, 1.0f};
 }
 
-Vec2i VulkanRenderContext::backbufferSize() const {
-    return {0, 0};
+Vec2i VulkanRenderContext::framebufferSize() const {
+    int window_width, window_height;
+    glfwGetFramebufferSize(window_, &window_width, &window_height);
+    return Vec2i{window_width, window_height};
 }
 
 void VulkanRenderContext::startRendering() {
@@ -251,7 +253,6 @@ void VulkanRenderContext::createInstance(bool enable_validation_layers) {
     for (const auto& extension : all_extensions) {
         extension_list << " " << extension.extensionName;
     }
-    extension_list << std::endl;
     logger_.info(extension_list.str());
 
     vk::ApplicationInfo app_info;
@@ -346,11 +347,13 @@ void VulkanRenderContext::createDevice() {
         throw std::runtime_error("failed to find a suitable GPU.");
     }
     auto indices = QueueFamilyIndices::fromPhysicalDevice(physical_device_, surface_);
+    graphics_queue_family_index_ = indices.graphics_family.value();
+    present_queue_family_index_ = indices.present_family.value();
 
     // Create a logical device.
     std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
-    std::set<uint32_t> unique_queues_families = {indices.graphics_family.value(),
-                                                 indices.present_family.value()};
+    std::set<uint32_t> unique_queues_families = {graphics_queue_family_index_,
+                                                 present_queue_family_index_};
     float queue_priority = 1.0f;
     for (uint32_t queue_family : unique_queues_families) {
         vk::DeviceQueueCreateInfo queue_create_info;
@@ -366,7 +369,7 @@ void VulkanRenderContext::createDevice() {
     create_info.pQueueCreateInfos = queue_create_infos.data();
     create_info.queueCreateInfoCount = static_cast<u32>(queue_create_infos.size());
     create_info.pEnabledFeatures = &device_features;
-    // No device specific extensions.c
+    // No device specific extensions.
     create_info.enabledExtensionCount = static_cast<uint32_t>(kRequiredDeviceExtensions.size());
     create_info.ppEnabledExtensionNames = kRequiredDeviceExtensions.data();
     // Technically unneeded, but worth doing anyway for old vulkan implementations.
@@ -739,16 +742,24 @@ void VulkanRenderContext::createSyncObjects() {
         fence_create_info.flags = vk::FenceCreateFlagBits::eSignaled;
         in_flight_fences_.push_back(device_.createFence(fence_create_info));
     }
+
+    images_in_flight_.resize(swap_chain_images_.size());
 }
 
 void VulkanRenderContext::drawFrame() {
     device_.waitForFences(in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
-    device_.resetFences(in_flight_fences_[current_frame_]);
 
     u32 image_index;
     device_.acquireNextImageKHR(swap_chain_, UINT64_MAX,
                                 image_available_semaphores_[current_frame_], vk::Fence{},
                                 &image_index);
+
+    // Check if a previous frame is using this image (i.e. there is a fence to wait on).
+    if (images_in_flight_[image_index]) {
+        device_.waitForFences(images_in_flight_[image_index], VK_TRUE, UINT64_MAX);
+    }
+    // Mark this image as now being in use by this frame.
+    images_in_flight_[image_index] = in_flight_fences_[current_frame_];
 
     // Submit command buffer.
     vk::SubmitInfo submit_info;
@@ -762,6 +773,7 @@ void VulkanRenderContext::drawFrame() {
     vk::Semaphore signal_semaphores[] = {render_finished_semaphores_[current_frame_]};
     submit_info.signalSemaphoreCount = 1;
     submit_info.pSignalSemaphores = signal_semaphores;
+    device_.resetFences(in_flight_fences_[current_frame_]);
     graphics_queue_.submit(submit_info, in_flight_fences_[current_frame_]);
 
     // Present.

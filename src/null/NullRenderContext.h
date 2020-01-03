@@ -23,7 +23,7 @@ public:
     bool isWindowClosed() const override;
     Vec2i windowSize() const override;
     Vec2 windowScale() const override;
-    Vec2i backbufferSize() const override;
+    Vec2i framebufferSize() const override;
 
     // Command buffer processing. Executed on the render thread.
     void startRendering() override;

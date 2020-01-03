@@ -532,7 +532,7 @@ Vec2 Renderer::windowScale() const {
 }
 
 Vec2i Renderer::backbufferSize() const {
-    return shared_render_context_->backbufferSize();
+    return shared_render_context_->framebufferSize();
 }
 
 void Renderer::submitPreFrameCommand(RenderCommand command) {
