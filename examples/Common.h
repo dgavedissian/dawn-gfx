@@ -57,16 +57,17 @@ public:
     void initRenderer(RendererType type, u16 width, u16 height, const char* window_title) {
         r.init(type, width, height, window_title, InputCallbacks{}, true);
 
-        ImGui::SetCurrentContext(ImGui::CreateContext());
-        imgui_backend_ = std::make_unique<ImGuiBackend>(r, ImGui::GetIO());
+        //ImGui::SetCurrentContext(ImGui::CreateContext());
+        //imgui_backend_ = std::make_unique<ImGuiBackend>(r, ImGui::GetIO());
     }
 
     void tick() {
-        imgui_backend_->newFrame();
-        ImGui::NewFrame();
+        //imgui_backend_->newFrame();
+        //ImGui::NewFrame();
 
         render(dt_);
 
+        /*
         ImGui::SetNextWindowPos({10, 10});
         ImGui::SetNextWindowSize({150, 50});
         if (!ImGui::Begin("FPS", nullptr,
@@ -82,6 +83,7 @@ public:
         // Render frame.
         ImGui::Render();
         imgui_backend_->render(ImGui::GetDrawData());
+        */
         if (!r.frame()) {
             running_ = false;
         }

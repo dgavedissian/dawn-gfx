@@ -70,8 +70,8 @@ endif()
 
 FetchContent_Declare(
     glslang
-    URL https://github.com/KhronosGroup/glslang/archive/7.10.2984.tar.gz
-    URL_MD5 865bad2658dd1d61f9c5583a4a1992e6
+    URL https://github.com/KhronosGroup/glslang/archive/7.13.3496.tar.gz
+    URL_MD5 9bfbff6115e490654e149fd0558dba0c
 )
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)

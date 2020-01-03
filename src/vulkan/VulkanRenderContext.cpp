@@ -14,8 +14,9 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE;
 namespace dw {
 namespace gfx {
 namespace {
-const std::vector<const char*> validation_layers = {"VK_LAYER_KHRONOS_validation"};
-const std::vector<const char*> required_device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+const std::vector<const char*> kValidationLayers = {"VK_LAYER_KHRONOS_validation"};
+const std::vector<const char*> kRequiredDeviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+constexpr auto kMaxFramesInFlight = 2;
 
 VKAPI_ATTR VkBool32 VKAPI_CALL
 DebugMessageCallback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
@@ -116,7 +117,8 @@ struct SwapChainSupportDetails {
 };
 }  // namespace
 
-VulkanRenderContext::VulkanRenderContext(Logger& logger) : RenderContext{logger} {
+VulkanRenderContext::VulkanRenderContext(Logger& logger)
+    : RenderContext{logger}, current_frame_(0) {
 }
 
 tl::expected<void, std::string> VulkanRenderContext::createWindow(u16 width, u16 height,
@@ -145,6 +147,12 @@ tl::expected<void, std::string> VulkanRenderContext::createWindow(u16 width, u16
     createInstance(true);
     createDevice();
     createSwapChain();
+    createImageViews();
+    createRenderPass();
+    createGraphicsPipeline();
+    createFramebuffers();
+    createCommandBuffers();
+    createSyncObjects();
 
     return {};
 }
@@ -191,12 +199,13 @@ void VulkanRenderContext::processCommandList(std::vector<RenderCommand>&) {
 }
 
 bool VulkanRenderContext::frame(const Frame*) {
+    drawFrame();
     return true;
 }
 
 bool VulkanRenderContext::checkValidationLayerSupport() {
     auto layer_properties_list = vk::enumerateInstanceLayerProperties();
-    for (const char* layer_name : validation_layers) {
+    for (const char* layer_name : kValidationLayers) {
         bool layer_found = false;
         for (const vk::LayerProperties& layer_properties : layer_properties_list) {
             if (std::strcmp(layer_name, layer_properties.layerName) == 0) {
@@ -262,8 +271,8 @@ void VulkanRenderContext::createInstance(bool enable_validation_layers) {
 
     // Enable validation layers if requested.
     if (enable_validation_layers) {
-        create_info.enabledLayerCount = static_cast<u32>(validation_layers.size());
-        create_info.ppEnabledLayerNames = validation_layers.data();
+        create_info.enabledLayerCount = static_cast<u32>(kValidationLayers.size());
+        create_info.ppEnabledLayerNames = kValidationLayers.data();
     } else {
         create_info.enabledLayerCount = 0;
     }
@@ -274,13 +283,14 @@ void VulkanRenderContext::createInstance(bool enable_validation_layers) {
 
     if (enable_validation_layers) {
         vk::DebugUtilsMessengerCreateInfoEXT debug_messenger_info;
-        debug_messenger_info.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
-                                               vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
-                                               vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
-                                               vk::DebugUtilsMessageSeverityFlagBitsEXT::eError;
-        debug_messenger_info.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
-                                           vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
-                                           vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance;
+        debug_messenger_info
+            .messageSeverity = /*vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
+                               vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
+                               vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |*/
+            vk::DebugUtilsMessageSeverityFlagBitsEXT::eError;
+        debug_messenger_info.messageType = /*vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |*/
+            vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
+            vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance;
         debug_messenger_info.pfnUserCallback = DebugMessageCallback;
         debug_messenger_info.pUserData = &logger_;
         debug_messenger_ = instance_.createDebugUtilsMessengerEXT(debug_messenger_info);
@@ -306,8 +316,8 @@ void VulkanRenderContext::createDevice() {
         // Check for required extensions.
         std::vector<vk::ExtensionProperties> device_extensions =
             device.enumerateDeviceExtensionProperties();
-        std::set<std::string> missing_extensions(required_device_extensions.begin(),
-                                                 required_device_extensions.end());
+        std::set<std::string> missing_extensions(kRequiredDeviceExtensions.begin(),
+                                                 kRequiredDeviceExtensions.end());
         for (const auto& extension : device_extensions) {
             missing_extensions.erase(extension.extensionName);
         }
@@ -357,12 +367,12 @@ void VulkanRenderContext::createDevice() {
     create_info.queueCreateInfoCount = static_cast<u32>(queue_create_infos.size());
     create_info.pEnabledFeatures = &device_features;
     // No device specific extensions.c
-    create_info.enabledExtensionCount = static_cast<uint32_t>(required_device_extensions.size());
-    create_info.ppEnabledExtensionNames = required_device_extensions.data();
+    create_info.enabledExtensionCount = static_cast<uint32_t>(kRequiredDeviceExtensions.size());
+    create_info.ppEnabledExtensionNames = kRequiredDeviceExtensions.data();
     // Technically unneeded, but worth doing anyway for old vulkan implementations.
     if (debug_messenger_) {
-        create_info.enabledLayerCount = static_cast<uint32_t>(validation_layers.size());
-        create_info.ppEnabledLayerNames = validation_layers.data();
+        create_info.enabledLayerCount = static_cast<uint32_t>(kValidationLayers.size());
+        create_info.ppEnabledLayerNames = kValidationLayers.data();
     } else {
         create_info.enabledLayerCount = 0;
     }
@@ -440,6 +450,45 @@ void VulkanRenderContext::createImageViews() {
     }
 }
 
+void VulkanRenderContext::createRenderPass() {
+    vk::AttachmentDescription colour_attachment;
+    colour_attachment.format = swap_chain_image_format_;
+    colour_attachment.samples = vk::SampleCountFlagBits::e1;
+    colour_attachment.loadOp = vk::AttachmentLoadOp::eLoad;
+    colour_attachment.storeOp = vk::AttachmentStoreOp::eStore;
+    colour_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+    colour_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+    colour_attachment.initialLayout = vk::ImageLayout::eUndefined;
+    colour_attachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
+
+    vk::AttachmentReference colour_attachment_ref;
+    colour_attachment_ref.attachment = 0;
+    colour_attachment_ref.layout = vk::ImageLayout::eColorAttachmentOptimal;
+
+    vk::SubpassDescription subpass;
+    subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colour_attachment_ref;
+
+    vk::SubpassDependency dependency;
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.srcAccessMask = {};
+    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.dstAccessMask =
+        vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
+
+    vk::RenderPassCreateInfo render_pass_info;
+    render_pass_info.attachmentCount = 1;
+    render_pass_info.pAttachments = &colour_attachment;
+    render_pass_info.subpassCount = 1;
+    render_pass_info.pSubpasses = &subpass;
+    render_pass_info.dependencyCount = 1;
+    render_pass_info.pDependencies = &dependency;
+    render_pass_ = device_.createRenderPass(render_pass_info);
+}
+
 void VulkanRenderContext::createGraphicsPipeline() {
     auto vertex_shader_result = compileGLSL(ShaderStage::Vertex, R"(
         #version 450
@@ -485,11 +534,11 @@ void VulkanRenderContext::createGraphicsPipeline() {
     // Create shader modules
     vk::ShaderModuleCreateInfo vs_module_create_info;
     vs_module_create_info.pCode = reinterpret_cast<const u32*>(vertex_shader.spirv.data());
-    vs_module_create_info.codeSize = vertex_shader.spirv.size();
+    vs_module_create_info.codeSize = vertex_shader.spirv.size() * 4;
     auto vs_module = device_.createShaderModule(vs_module_create_info);
     vk::ShaderModuleCreateInfo fs_module_create_info;
     fs_module_create_info.pCode = reinterpret_cast<const u32*>(fragment_shader.spirv.data());
-    fs_module_create_info.codeSize = vertex_shader.spirv.size();
+    fs_module_create_info.codeSize = fragment_shader.spirv.size() * 4;
     auto fs_module = device_.createShaderModule(fs_module_create_info);
 
     // Create shader stages.
@@ -504,15 +553,15 @@ void VulkanRenderContext::createGraphicsPipeline() {
     vk::PipelineShaderStageCreateInfo shaderStages[] = {vs_stage_info, fs_stage_info};
 
     // Create fixed function stages.
-    vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
-    vertexInputInfo.vertexBindingDescriptionCount = 0;
-    vertexInputInfo.pVertexBindingDescriptions = nullptr;  // Optional
-    vertexInputInfo.vertexAttributeDescriptionCount = 0;
-    vertexInputInfo.pVertexAttributeDescriptions = nullptr;  // Optional
+    vk::PipelineVertexInputStateCreateInfo vertex_input_info;
+    vertex_input_info.vertexBindingDescriptionCount = 0;
+    vertex_input_info.pVertexBindingDescriptions = nullptr;  // Optional
+    vertex_input_info.vertexAttributeDescriptionCount = 0;
+    vertex_input_info.pVertexAttributeDescriptions = nullptr;  // Optional
 
-    vk::PipelineInputAssemblyStateCreateInfo inputAssembly;
-    inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
+    vk::PipelineInputAssemblyStateCreateInfo input_assembly;
+    input_assembly.topology = vk::PrimitiveTopology::eTriangleList;
+    input_assembly.primitiveRestartEnable = VK_FALSE;
 
     vk::Viewport viewport;
     viewport.x = 0.0f;
@@ -526,11 +575,11 @@ void VulkanRenderContext::createGraphicsPipeline() {
     scissor.offset = vk::Offset2D{0, 0};
     scissor.extent = swap_chain_extent_;
 
-    vk::PipelineViewportStateCreateInfo viewportState;
-    viewportState.viewportCount = 1;
-    viewportState.pViewports = &viewport;
-    viewportState.scissorCount = 1;
-    viewportState.pScissors = &scissor;
+    vk::PipelineViewportStateCreateInfo viewport_state;
+    viewport_state.viewportCount = 1;
+    viewport_state.pViewports = &viewport;
+    viewport_state.scissorCount = 1;
+    viewport_state.pScissors = &scissor;
 
     vk::PipelineRasterizationStateCreateInfo rasterizer;
     rasterizer.depthClampEnable = VK_FALSE;
@@ -552,54 +601,203 @@ void VulkanRenderContext::createGraphicsPipeline() {
     multisampling.alphaToCoverageEnable = VK_FALSE;  // Optional
     multisampling.alphaToOneEnable = VK_FALSE;       // Optional
 
-    vk::PipelineColorBlendAttachmentState colorBlendAttachment;
-    colorBlendAttachment.colorWriteMask =
+    vk::PipelineColorBlendAttachmentState colour_blend_attachment;
+    colour_blend_attachment.colorWriteMask =
         vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
         vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-    colorBlendAttachment.srcColorBlendFactor = vk::BlendFactor::eOne;   // Optional
-    colorBlendAttachment.dstColorBlendFactor = vk::BlendFactor::eZero;  // Optional
-    colorBlendAttachment.colorBlendOp = vk::BlendOp::eAdd;              // Optional
-    colorBlendAttachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;   // Optional
-    colorBlendAttachment.dstAlphaBlendFactor = vk::BlendFactor::eZero;  // Optional
-    colorBlendAttachment.alphaBlendOp = vk::BlendOp::eAdd;              // Optional
+    colour_blend_attachment.blendEnable = VK_FALSE;
+    colour_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eOne;   // Optional
+    colour_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eZero;  // Optional
+    colour_blend_attachment.colorBlendOp = vk::BlendOp::eAdd;              // Optional
+    colour_blend_attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;   // Optional
+    colour_blend_attachment.dstAlphaBlendFactor = vk::BlendFactor::eZero;  // Optional
+    colour_blend_attachment.alphaBlendOp = vk::BlendOp::eAdd;              // Optional
 
     /* Alpha blending:
-        colorBlendAttachment.blendEnable = VK_TRUE;
-        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+        colour_blend_attachment.blendEnable = VK_TRUE;
+        colour_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colour_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colour_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
+        colour_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colour_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        colour_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
      */
 
-    vk::PipelineColorBlendStateCreateInfo colorBlending;
-    colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.logicOp = vk::LogicOp::eCopy;  // Optional
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
-    colorBlending.blendConstants[0] = 0.0f;  // Optional
-    colorBlending.blendConstants[1] = 0.0f;  // Optional
-    colorBlending.blendConstants[2] = 0.0f;  // Optional
-    colorBlending.blendConstants[3] = 0.0f;  // Optional
+    vk::PipelineColorBlendStateCreateInfo colour_blending;
+    colour_blending.logicOpEnable = VK_FALSE;
+    colour_blending.logicOp = vk::LogicOp::eCopy;  // Optional
+    colour_blending.attachmentCount = 1;
+    colour_blending.pAttachments = &colour_blend_attachment;
+    colour_blending.blendConstants[0] = 0.0f;  // Optional
+    colour_blending.blendConstants[1] = 0.0f;  // Optional
+    colour_blending.blendConstants[2] = 0.0f;  // Optional
+    colour_blending.blendConstants[3] = 0.0f;  // Optional
 
-    vk::DynamicState dynamicStates[] = {vk::DynamicState::eViewport, vk::DynamicState::eLineWidth};
+    vk::DynamicState dynamic_states[] = {vk::DynamicState::eViewport, vk::DynamicState::eLineWidth};
 
-    vk::PipelineDynamicStateCreateInfo dynamicState;
-    dynamicState.dynamicStateCount = 2;
-    dynamicState.pDynamicStates = dynamicStates;
+    vk::PipelineDynamicStateCreateInfo dynamic_state;
+    dynamic_state.dynamicStateCount = 2;
+    dynamic_state.pDynamicStates = dynamic_states;
 
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
-    pipelineLayoutInfo.setLayoutCount = 0;             // Optional
-    pipelineLayoutInfo.pSetLayouts = nullptr;          // Optional
-    pipelineLayoutInfo.pushConstantRangeCount = 0;     // Optional
-    pipelineLayoutInfo.pPushConstantRanges = nullptr;  // Optional
-    pipeline_layout_ = device_.createPipelineLayout(pipelineLayoutInfo);
+    vk::PipelineLayoutCreateInfo pipeline_layout_info;
+    pipeline_layout_info.setLayoutCount = 0;             // Optional
+    pipeline_layout_info.pSetLayouts = nullptr;          // Optional
+    pipeline_layout_info.pushConstantRangeCount = 0;     // Optional
+    pipeline_layout_info.pPushConstantRanges = nullptr;  // Optional
+    pipeline_layout_ = device_.createPipelineLayout(pipeline_layout_info);
+
+    vk::GraphicsPipelineCreateInfo pipeline_info;
+    pipeline_info.stageCount = 2;
+    pipeline_info.pStages = shaderStages;
+    pipeline_info.pVertexInputState = &vertex_input_info;
+    pipeline_info.pInputAssemblyState = &input_assembly;
+    pipeline_info.pViewportState = &viewport_state;
+    pipeline_info.pRasterizationState = &rasterizer;
+    pipeline_info.pMultisampleState = &multisampling;
+    pipeline_info.pDepthStencilState = nullptr;  // Optional
+    pipeline_info.pColorBlendState = &colour_blending;
+    pipeline_info.pDynamicState = nullptr;  // Optional
+    pipeline_info.layout = pipeline_layout_;
+    pipeline_info.renderPass = render_pass_;
+    pipeline_info.subpass = 0;
+    pipeline_info.basePipelineHandle = vk::Pipeline{};  // Optional
+    pipeline_info.basePipelineIndex = -1;               // Optional
+
+    vk::ArrayProxy<const vk::GraphicsPipelineCreateInfo> pipeline_infos = pipeline_info;
+    auto graphics_pipelines = device_.createGraphicsPipelines(vk::PipelineCache{}, pipeline_infos);
+    graphics_pipeline_ = graphics_pipelines[0];
+}
+
+void VulkanRenderContext::createFramebuffers() {
+    swap_chain_framebuffers_.reserve(swap_chain_image_views_.size());
+    for (const auto& image_view : swap_chain_image_views_) {
+        vk::ImageView attachments[] = {image_view};
+
+        vk::FramebufferCreateInfo framebuffer_info;
+        framebuffer_info.renderPass = render_pass_;
+        framebuffer_info.attachmentCount = 1;
+        framebuffer_info.pAttachments = attachments;
+        framebuffer_info.width = swap_chain_extent_.width;
+        framebuffer_info.height = swap_chain_extent_.height;
+        framebuffer_info.layers = 1;
+        swap_chain_framebuffers_.push_back(device_.createFramebuffer(framebuffer_info));
+    }
+}
+
+void VulkanRenderContext::createCommandBuffers() {
+    QueueFamilyIndices queue_family_indices =
+        QueueFamilyIndices::fromPhysicalDevice(physical_device_, surface_);
+
+    vk::CommandPoolCreateInfo pool_info;
+    pool_info.queueFamilyIndex = queue_family_indices.graphics_family.value();
+    command_pool_ = device_.createCommandPool(pool_info);
+
+    vk::CommandBufferAllocateInfo allocate_info;
+    allocate_info.commandPool = command_pool_;
+    allocate_info.level = vk::CommandBufferLevel::ePrimary;
+    allocate_info.commandBufferCount = static_cast<u32>(swap_chain_framebuffers_.size());
+    command_buffers_ = device_.allocateCommandBuffers(allocate_info);
+
+    // Record the same commands to each command buffer (for each swap chain image), as we'll always
+    // be drawing one thing.
+    int i = 0;
+    for (auto& command_buffer : command_buffers_) {
+        vk::CommandBufferBeginInfo begin_info;
+        begin_info.flags = {};
+        command_buffer.begin(begin_info);
+
+        vk::RenderPassBeginInfo render_pass_info;
+        render_pass_info.renderPass = render_pass_;
+        render_pass_info.framebuffer = swap_chain_framebuffers_[i];
+        render_pass_info.renderArea.offset = vk::Offset2D{0, 0};
+        render_pass_info.renderArea.extent = swap_chain_extent_;
+
+        vk::ClearValue clearColor;
+        clearColor.color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
+        render_pass_info.clearValueCount = 1;
+        render_pass_info.pClearValues = &clearColor;
+
+        command_buffer.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
+        command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
+        command_buffer.draw(3, 1, 0, 0);
+        command_buffer.endRenderPass();
+        command_buffer.end();
+
+        i++;
+    }
+}
+
+void VulkanRenderContext::createSyncObjects() {
+    image_available_semaphores_.reserve(kMaxFramesInFlight);
+    render_finished_semaphores_.reserve(kMaxFramesInFlight);
+    in_flight_fences_.reserve(kMaxFramesInFlight);
+    for (int i = 0; i < kMaxFramesInFlight; ++i) {
+        image_available_semaphores_.push_back(device_.createSemaphore(vk::SemaphoreCreateInfo{}));
+        render_finished_semaphores_.push_back(device_.createSemaphore(vk::SemaphoreCreateInfo{}));
+
+        vk::FenceCreateInfo fence_create_info;
+        fence_create_info.flags = vk::FenceCreateFlagBits::eSignaled;
+        in_flight_fences_.push_back(device_.createFence(fence_create_info));
+    }
+}
+
+void VulkanRenderContext::drawFrame() {
+    device_.waitForFences(in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
+    device_.resetFences(in_flight_fences_[current_frame_]);
+
+    u32 image_index;
+    device_.acquireNextImageKHR(swap_chain_, UINT64_MAX,
+                                image_available_semaphores_[current_frame_], vk::Fence{},
+                                &image_index);
+
+    // Submit command buffer.
+    vk::SubmitInfo submit_info;
+    vk::Semaphore wait_semaphores[] = {image_available_semaphores_[current_frame_]};
+    vk::PipelineStageFlags wait_stages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
+    submit_info.waitSemaphoreCount = 1;
+    submit_info.pWaitSemaphores = wait_semaphores;
+    submit_info.pWaitDstStageMask = wait_stages;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffers_[image_index];
+    vk::Semaphore signal_semaphores[] = {render_finished_semaphores_[current_frame_]};
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores = signal_semaphores;
+    graphics_queue_.submit(submit_info, in_flight_fences_[current_frame_]);
+
+    // Present.
+    vk::PresentInfoKHR presentInfo;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signal_semaphores;
+    vk::SwapchainKHR swapChains[] = {swap_chain_};
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = swapChains;
+    presentInfo.pImageIndices = &image_index;
+    presentInfo.pResults = nullptr;  // Optional
+    present_queue_.presentKHR(presentInfo);
+
+    current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
 }
 
 void VulkanRenderContext::cleanup() {
+    vkDeviceWaitIdle(device_);
+
+    for (const auto& fence : in_flight_fences_) {
+        device_.destroy(fence);
+    }
+    for (const auto& semaphore : render_finished_semaphores_) {
+        device_.destroy(semaphore);
+    }
+    for (const auto& semaphore : image_available_semaphores_) {
+        device_.destroy(semaphore);
+    }
+
+    device_.destroy(command_pool_);
+    for (const auto& framebuffer : swap_chain_framebuffers_) {
+        device_.destroy(framebuffer);
+    }
+    device_.destroy(graphics_pipeline_);
     device_.destroy(pipeline_layout_);
+    device_.destroy(render_pass_);
     for (const auto& image_view : swap_chain_image_views_) {
         device_.destroy(image_view);
     }

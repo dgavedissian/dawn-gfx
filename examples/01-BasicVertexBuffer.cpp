@@ -10,6 +10,7 @@ public:
     ProgramHandle program_;
 
     void start() override {
+        /*
         // Load shaders.
         auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("shaders/basic_colour.vs"));
         auto fs =
@@ -36,17 +37,22 @@ public:
             .add(VertexDecl::Attribute::Colour, 4, VertexDecl::AttributeType::Uint8, true)
             .end();
         vb_ = r.createVertexBuffer(Memory(vertices, sizeof(vertices)), decl);
+         */
     }
 
     void render(float) override {
+        /*
         r.setRenderQueueClear({0.0f, 0.0f, 0.2f});
         r.setVertexBuffer(vb_);
         r.submit(program_, 3);
+         */
     }
 
     void stop() override {
+        /*
         r.deleteProgram(program_);
         r.deleteVertexBuffer(vb_);
+         */
     }
 };
 

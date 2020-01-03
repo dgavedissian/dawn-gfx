@@ -52,7 +52,19 @@ private:
     std::vector<vk::Image> swap_chain_images_;
     std::vector<vk::ImageView> swap_chain_image_views_;
 
+    vk::RenderPass render_pass_;
     vk::PipelineLayout pipeline_layout_;
+    vk::Pipeline graphics_pipeline_;
+
+    std::vector<vk::Framebuffer> swap_chain_framebuffers_;
+
+    vk::CommandPool command_pool_;
+    std::vector<vk::CommandBuffer> command_buffers_;
+
+    std::vector<vk::Semaphore> image_available_semaphores_;
+    std::vector<vk::Semaphore> render_finished_semaphores_;
+    std::vector<vk::Fence> in_flight_fences_;
+    std::size_t current_frame_;
 
     bool checkValidationLayerSupport();
     std::vector<const char*> getRequiredExtensions(bool enable_validation_layers);
@@ -61,7 +73,13 @@ private:
     void createDevice();
     void createSwapChain();
     void createImageViews();
+    void createRenderPass();
     void createGraphicsPipeline();
+    void createFramebuffers();
+    void createCommandBuffers();
+    void createSyncObjects();
+
+    void drawFrame();
 
     void cleanup();
 };
