@@ -69,8 +69,7 @@ struct SwapChainSupportDetails {
     std::vector<vk::SurfaceFormatKHR> formats;
     std::vector<vk::PresentModeKHR> present_modes;
 
-    static SwapChainSupportDetails querySwapChainSupport(vk::PhysicalDevice device,
-                                                         vk::SurfaceKHR surface) {
+    static SwapChainSupportDetails querySupport(vk::PhysicalDevice device, vk::SurfaceKHR surface) {
         SwapChainSupportDetails details;
         details.capabilities = device.getSurfaceCapabilitiesKHR(surface);
         details.formats = device.getSurfaceFormatsKHR(surface);
@@ -113,6 +112,82 @@ struct SwapChainSupportDetails {
                          std::min(capabilities.maxImageExtent.height, actualExtent.height));
             return actualExtent;
         }
+    }
+};
+
+struct VertexDeclVK {
+    vk::VertexInputBindingDescription binding_description;
+    std::vector<vk::VertexInputAttributeDescription> attribute_descriptions;
+
+    static vk::Format getVertexAttributeFormat(VertexDecl::AttributeType type, usize count,
+                                               bool normalised) {
+        switch (type) {
+            case VertexDecl::AttributeType::Float:
+                switch (count) {
+                    case 1:
+                        return vk::Format::eR32Sfloat;
+                    case 2:
+                        return vk::Format::eR32G32Sfloat;
+                    case 3:
+                        return vk::Format::eR32G32B32Sfloat;
+                    case 4:
+                        return vk::Format::eR32G32B32A32Sfloat;
+                    default:
+                        break;
+                }
+                break;
+            case VertexDecl::AttributeType::Uint8:
+                switch (count) {
+                    case 1:
+                        return normalised ? vk::Format::eR8Unorm : vk::Format::eR8Uint;
+                    case 2:
+                        return normalised ? vk::Format::eR8G8Unorm : vk::Format::eR8G8Uint;
+                    case 3:
+                        return normalised ? vk::Format::eR8G8B8Unorm : vk::Format::eR8G8B8Uint;
+                    case 4:
+                        return normalised ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8A8Uint;
+                    default:
+                        break;
+                }
+                break;
+            default:
+                break;
+        }
+        throw std::runtime_error(
+            fmt::format("Unknown vertex attribute type {} with {} elements (normalised: {})",
+                        static_cast<int>(type), count, normalised));
+    }
+
+    static VertexDeclVK fromVertexDecl(const VertexDecl& decl) {
+        VertexDeclVK decl_vk;
+
+        decl_vk.binding_description.binding = 0;
+        decl_vk.binding_description.stride = decl.stride();
+        decl_vk.binding_description.inputRate = vk::VertexInputRate::eVertex;
+
+        // Create vertex attribute description from VertexDecl.
+        decl_vk.attribute_descriptions.reserve(decl.attributes_.size());
+        for (usize i = 0; i < decl.attributes_.size(); ++i) {
+            const auto& attrib = decl.attributes_[i];
+
+            // Decode attribute.
+            VertexDecl::Attribute attribute;
+            usize count;
+            VertexDecl::AttributeType type;
+            bool normalised;
+            VertexDecl::decodeAttributes(attrib.first, attribute, count, type, normalised);
+
+            // Setup attribute description
+            vk::VertexInputAttributeDescription attribute_description;
+            attribute_description.binding = 0;
+            attribute_description.location = i;
+            attribute_description.format = getVertexAttributeFormat(type, count, normalised);
+            attribute_description.offset =
+                static_cast<u32>(reinterpret_cast<std::uintptr_t>(attrib.second));
+            decl_vk.attribute_descriptions.push_back(attribute_description);
+        }
+
+        return decl_vk;
     }
 };
 }  // namespace
@@ -207,19 +282,19 @@ bool RenderContextVK::frame(const Frame* frame) {
     device_.waitForFences(in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
 
     // Acquire next image.
-    u32 image_index;
+    u32 next_index;
     device_.acquireNextImageKHR(swap_chain_, UINT64_MAX,
                                 image_available_semaphores_[current_frame_], vk::Fence{},
-                                &image_index);
+                                &next_index);
 
     // Check if a previous frame is using this image (i.e. there is a fence to wait on).
-    if (images_in_flight_[image_index]) {
-        device_.waitForFences(images_in_flight_[image_index], VK_TRUE, UINT64_MAX);
+    if (images_in_flight_[next_index]) {
+        device_.waitForFences(images_in_flight_[next_index], VK_TRUE, UINT64_MAX);
     }
     // Mark this image as now being in use by this frame.
-    images_in_flight_[image_index] = in_flight_fences_[current_frame_];
+    images_in_flight_[next_index] = in_flight_fences_[current_frame_];
 
-    auto command_buffer = command_buffers_[image_index];
+    auto command_buffer = command_buffers_[next_index];
 
     // Write render queues to command buffer.
     vk::CommandBufferBeginInfo begin_info;
@@ -232,7 +307,7 @@ bool RenderContextVK::frame(const Frame* frame) {
             throw std::runtime_error("unimplemented");
         } else {
             // Bind to backbuffer.
-            target_framebuffer = swap_chain_framebuffers_[image_index];
+            target_framebuffer = swap_chain_framebuffers_[next_index];
         }
 
         // Begin render pass.
@@ -285,7 +360,7 @@ bool RenderContextVK::frame(const Frame* frame) {
     submit_info.pWaitSemaphores = wait_semaphores;
     submit_info.pWaitDstStageMask = wait_stages;
     submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &command_buffers_[image_index];
+    submit_info.pCommandBuffers = &command_buffers_[next_index];
     vk::Semaphore signal_semaphores[] = {render_finished_semaphores_[current_frame_]};
     submit_info.signalSemaphoreCount = 1;
     submit_info.pSignalSemaphores = signal_semaphores;
@@ -299,7 +374,7 @@ bool RenderContextVK::frame(const Frame* frame) {
     vk::SwapchainKHR swapChains[] = {swap_chain_};
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = swapChains;
-    presentInfo.pImageIndices = &image_index;
+    presentInfo.pImageIndices = &next_index;
     presentInfo.pResults = nullptr;  // Optional
     present_queue_.presentKHR(presentInfo);
 
@@ -308,6 +383,7 @@ bool RenderContextVK::frame(const Frame* frame) {
 }
 
 void RenderContextVK::operator()(const cmd::CreateVertexBuffer& c) {
+    auto vk_decl = VertexDeclVK::fromVertexDecl(c.decl);
 }
 
 void RenderContextVK::operator()(const cmd::UpdateVertexBuffer& c) {
@@ -506,7 +582,7 @@ void RenderContextVK::createDevice() {
 
         // Check that the swap chain is adequate.
         SwapChainSupportDetails swap_chain_support =
-            SwapChainSupportDetails::querySwapChainSupport(device, surface_);
+            SwapChainSupportDetails::querySupport(device, surface_);
         if (swap_chain_support.formats.empty() || swap_chain_support.present_modes.empty()) {
             return false;
         }
@@ -566,7 +642,7 @@ void RenderContextVK::createDevice() {
 
 void RenderContextVK::createSwapChain() {
     SwapChainSupportDetails swap_chain_support =
-        SwapChainSupportDetails::querySwapChainSupport(physical_device_, surface_);
+        SwapChainSupportDetails::querySupport(physical_device_, surface_);
     vk::SurfaceFormatKHR surface_format = swap_chain_support.chooseSurfaceFormat();
     vk::PresentModeKHR present_mode = swap_chain_support.choosePresentMode();
     vk::Extent2D extent = swap_chain_support.chooseSwapExtent(windowSize());

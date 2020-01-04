@@ -22,13 +22,15 @@ public:
     ~VertexDecl() = default;
 
     VertexDecl& begin();
+    // TODO: Combine type, count and normalised, so it's a compiler error if the user gets these wrong.
+    // TODO: Alternatively, combine type and normalised, and make count an enum.
     VertexDecl& add(Attribute attribute, usize count, AttributeType type, bool normalised = false);
     VertexDecl& end();
 
     u16 stride() const;
     bool empty() const;
 
-private:
+    // TODO: Remove this weird encoding magic. Not sure why it's like this.
     static u16 encodeAttributes(Attribute attribute, usize count, AttributeType type,
                                 bool normalised);
     static void decodeAttributes(u16 encoded_attribute, Attribute& attribute, usize& count,
@@ -41,10 +43,6 @@ private:
     // Normalised: 1
     std::vector<std::pair<u16, byte*>> attributes_;
     u16 stride_;
-
-    friend class Renderer;
-    friend class RenderContextGL;
 };
 }  // namespace gfx
 }  // namespace dw
-
