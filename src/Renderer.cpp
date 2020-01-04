@@ -5,9 +5,9 @@
 #include "Base.h"
 #include "Renderer.h"
 
-#include "gl/GLRenderContext.h"
-#include "null/NullRenderContext.h"
-#include "vulkan/VulkanRenderContext.h"
+#include "gl/RenderContextGL.h"
+#include "null/RenderContextNull.h"
+#include "vulkan/RenderContextVK.h"
 
 namespace dw {
 namespace gfx {
@@ -95,15 +95,15 @@ tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16
     switch (type) {
         case RendererType::Null:
             logger_.info("Using Null renderer.");
-            shared_render_context_ = std::make_unique<NullRenderContext>(logger_);
+            shared_render_context_ = std::make_unique<RenderContextNull>(logger_);
             break;
         case RendererType::OpenGL:
             logger_.info("Using OpenGL renderer.");
-            shared_render_context_ = std::make_unique<GLRenderContext>(logger_);
+            shared_render_context_ = std::make_unique<RenderContextGL>(logger_);
             break;
         case RendererType::Vulkan:
             logger_.info("Using Vulkan renderer.");
-            shared_render_context_ = std::make_unique<VulkanRenderContext>(logger_);
+            shared_render_context_ = std::make_unique<RenderContextVK>(logger_);
             break;
     }
     auto window_result =

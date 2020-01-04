@@ -2,7 +2,7 @@
  * Dawn Graphics
  * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
-#include "vulkan/VulkanRenderContext.h"
+#include "vulkan/RenderContextVK.h"
 #include <cstring>
 #include <set>
 #include <cstdint>
@@ -32,8 +32,8 @@ DebugMessageCallback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
 }
 
 struct QueueFamilyIndices {
-    std::optional<uint32_t> graphics_family;
-    std::optional<uint32_t> present_family;
+    std::optional<u32> graphics_family;
+    std::optional<u32> present_family;
 
     static QueueFamilyIndices fromPhysicalDevice(vk::PhysicalDevice device,
                                                  vk::SurfaceKHR surface) {
@@ -117,13 +117,12 @@ struct SwapChainSupportDetails {
 };
 }  // namespace
 
-VulkanRenderContext::VulkanRenderContext(Logger& logger)
-    : RenderContext{logger}, current_frame_(0) {
+RenderContextVK::RenderContextVK(Logger& logger) : RenderContext{logger}, current_frame_(0) {
 }
 
-tl::expected<void, std::string> VulkanRenderContext::createWindow(u16 width, u16 height,
-                                                                  const std::string& title,
-                                                                  InputCallbacks input_callbacks) {
+tl::expected<void, std::string> RenderContextVK::createWindow(u16 width, u16 height,
+                                                              const std::string& title,
+                                                              InputCallbacks input_callbacks) {
     glfwInit();
 
     // Select monitor.
@@ -149,7 +148,7 @@ tl::expected<void, std::string> VulkanRenderContext::createWindow(u16 width, u16
     createSwapChain();
     createImageViews();
     createRenderPass();
-    createGraphicsPipeline();
+    // createGraphicsPipeline();
     createFramebuffers();
     createCommandBuffers();
     createSyncObjects();
@@ -157,7 +156,7 @@ tl::expected<void, std::string> VulkanRenderContext::createWindow(u16 width, u16
     return {};
 }
 
-void VulkanRenderContext::destroyWindow() {
+void RenderContextVK::destroyWindow() {
     if (window_) {
         cleanup();
 
@@ -167,45 +166,224 @@ void VulkanRenderContext::destroyWindow() {
     }
 }
 
-void VulkanRenderContext::processEvents() {
+void RenderContextVK::processEvents() {
     glfwPollEvents();
 }
 
-bool VulkanRenderContext::isWindowClosed() const {
+bool RenderContextVK::isWindowClosed() const {
     return glfwWindowShouldClose(window_) != 0;
 }
 
-Vec2i VulkanRenderContext::windowSize() const {
+Vec2i RenderContextVK::windowSize() const {
     int window_width, window_height;
     glfwGetWindowSize(window_, &window_width, &window_height);
     return Vec2i{window_width, window_height};
 }
 
-Vec2 VulkanRenderContext::windowScale() const {
+Vec2 RenderContextVK::windowScale() const {
     return {1.0f, 1.0f};
 }
 
-Vec2i VulkanRenderContext::framebufferSize() const {
+Vec2i RenderContextVK::framebufferSize() const {
     int window_width, window_height;
     glfwGetFramebufferSize(window_, &window_width, &window_height);
     return Vec2i{window_width, window_height};
 }
 
-void VulkanRenderContext::startRendering() {
+void RenderContextVK::startRendering() {
 }
 
-void VulkanRenderContext::stopRendering() {
+void RenderContextVK::stopRendering() {
 }
 
-void VulkanRenderContext::processCommandList(std::vector<RenderCommand>&) {
+void RenderContextVK::processCommandList(std::vector<RenderCommand>& command_list) {
+    assert(window_);
+    for (auto& command : command_list) {
+        visit(*this, command);
+    }
 }
 
-bool VulkanRenderContext::frame(const Frame*) {
-    drawFrame();
+bool RenderContextVK::frame(const Frame* frame) {
+    device_.waitForFences(in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
+
+    // Acquire next image.
+    u32 image_index;
+    device_.acquireNextImageKHR(swap_chain_, UINT64_MAX,
+                                image_available_semaphores_[current_frame_], vk::Fence{},
+                                &image_index);
+
+    // Check if a previous frame is using this image (i.e. there is a fence to wait on).
+    if (images_in_flight_[image_index]) {
+        device_.waitForFences(images_in_flight_[image_index], VK_TRUE, UINT64_MAX);
+    }
+    // Mark this image as now being in use by this frame.
+    images_in_flight_[image_index] = in_flight_fences_[current_frame_];
+
+    auto command_buffer = command_buffers_[image_index];
+
+    // Write render queues to command buffer.
+    vk::CommandBufferBeginInfo begin_info;
+    begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+    command_buffer.begin(begin_info);
+
+    for (const auto& q : frame->render_queues) {
+        vk::Framebuffer target_framebuffer;
+        if (q.frame_buffer) {
+            throw std::runtime_error("unimplemented");
+        } else {
+            // Bind to backbuffer.
+            target_framebuffer = swap_chain_framebuffers_[image_index];
+        }
+
+        // Begin render pass.
+        vk::RenderPassBeginInfo render_pass_info;
+        render_pass_info.renderPass = render_pass_;
+        render_pass_info.framebuffer = target_framebuffer;
+        render_pass_info.renderArea.offset = vk::Offset2D{0, 0};
+        render_pass_info.renderArea.extent = swap_chain_extent_;
+
+        // If this render queue has clear parameters, start a new render pass.
+        if (q.clear_parameters.has_value()) {
+            // Note: using an array here to avoid the dynamic allocation overhead of std::vector.
+            vk::ClearValue clear_values[2];
+            int clear_value_count = 0;
+
+            if (q.clear_parameters->clear_colour) {
+                const auto& colour = q.clear_parameters.value().colour;
+                clear_values[clear_value_count++].color = {
+                    std::array<float, 4>{colour.r(), colour.g(), colour.b(), colour.a()}};
+            }
+
+            if (q.clear_parameters->clear_depth) {
+                clear_values[clear_value_count++].depthStencil = vk::ClearDepthStencilValue{};
+            }
+
+            render_pass_info.clearValueCount = clear_value_count;
+            render_pass_info.pClearValues = clear_values;
+        }
+
+        command_buffer.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
+
+        // Bind graphics pipeline (and build it if necessary).
+        for (const auto& ri : q.render_items) {
+            static auto graphics_pipeline = createGraphicsPipeline(ri);
+
+            // Bind pipeline and draw primitive.
+            command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline);
+            command_buffer.draw(3, 1, 0, 0);
+        }
+        command_buffer.endRenderPass();
+    }
+
+    command_buffer.end();
+
+    // Submit command buffer.
+    vk::SubmitInfo submit_info;
+    vk::Semaphore wait_semaphores[] = {image_available_semaphores_[current_frame_]};
+    vk::PipelineStageFlags wait_stages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
+    submit_info.waitSemaphoreCount = 1;
+    submit_info.pWaitSemaphores = wait_semaphores;
+    submit_info.pWaitDstStageMask = wait_stages;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffers_[image_index];
+    vk::Semaphore signal_semaphores[] = {render_finished_semaphores_[current_frame_]};
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores = signal_semaphores;
+    device_.resetFences(in_flight_fences_[current_frame_]);
+    graphics_queue_.submit(submit_info, in_flight_fences_[current_frame_]);
+
+    // Present.
+    vk::PresentInfoKHR presentInfo;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signal_semaphores;
+    vk::SwapchainKHR swapChains[] = {swap_chain_};
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = swapChains;
+    presentInfo.pImageIndices = &image_index;
+    presentInfo.pResults = nullptr;  // Optional
+    present_queue_.presentKHR(presentInfo);
+
+    current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
     return true;
 }
 
-bool VulkanRenderContext::checkValidationLayerSupport() {
+void RenderContextVK::operator()(const cmd::CreateVertexBuffer& c) {
+}
+
+void RenderContextVK::operator()(const cmd::UpdateVertexBuffer& c) {
+}
+
+void RenderContextVK::operator()(const cmd::DeleteVertexBuffer& c) {
+}
+
+void RenderContextVK::operator()(const cmd::CreateIndexBuffer& c) {
+}
+
+void RenderContextVK::operator()(const cmd::UpdateIndexBuffer& c) {
+}
+
+void RenderContextVK::operator()(const cmd::DeleteIndexBuffer& c) {
+}
+
+void RenderContextVK::operator()(const cmd::CreateShader& c) {
+    vk::ShaderModuleCreateInfo create_info;
+    create_info.pCode = reinterpret_cast<const u32*>(c.data.data());
+    create_info.codeSize = c.data.size();
+    shader_map_.emplace(c.handle,
+                        ShaderVK{device_.createShaderModule(create_info), c.stage, c.entry_point});
+}
+
+void RenderContextVK::operator()(const cmd::DeleteShader& c) {
+    assert(shader_map_.count(c.handle) > 0);
+    device_.destroy(shader_map_.at(c.handle).module);
+    shader_map_.erase(c.handle);
+}
+
+void RenderContextVK::operator()(const cmd::CreateProgram& c) {
+    program_map_.emplace(c.handle, ProgramVK{});
+}
+
+void RenderContextVK::operator()(const cmd::AttachShader& c) {
+    assert(program_map_.count(c.handle) > 0);
+    assert(shader_map_.count(c.shader_handle) > 0);
+
+    const auto& shader = shader_map_.at(c.shader_handle);
+
+    static const std::unordered_map<ShaderStage, vk::ShaderStageFlagBits> shader_stage_map = {
+        {ShaderStage::Vertex, vk::ShaderStageFlagBits::eVertex},
+        {ShaderStage::Geometry, vk::ShaderStageFlagBits::eGeometry},
+        {ShaderStage::Fragment, vk::ShaderStageFlagBits::eFragment},
+    };
+
+    vk::PipelineShaderStageCreateInfo stage_info;
+    stage_info.stage = shader_stage_map.at(shader.stage);
+    stage_info.module = shader.module;
+    stage_info.pName = shader.entry_point.c_str();
+
+    program_map_.at(c.handle).pipeline_stages.push_back(stage_info);
+}
+
+void RenderContextVK::operator()(const cmd::LinkProgram& c) {
+    // No-op. Vulkan "links" shader programs when a graphics pipeline is created.
+}
+
+void RenderContextVK::operator()(const cmd::DeleteProgram& c) {
+    program_map_.erase(c.handle);
+}
+
+void RenderContextVK::operator()(const cmd::CreateTexture2D& c) {
+}
+
+void RenderContextVK::operator()(const cmd::DeleteTexture& c) {
+}
+
+void RenderContextVK::operator()(const cmd::CreateFrameBuffer& c) {
+}
+
+void RenderContextVK::operator()(const cmd::DeleteFrameBuffer& c) {
+}
+
+bool RenderContextVK::checkValidationLayerSupport() {
     auto layer_properties_list = vk::enumerateInstanceLayerProperties();
     for (const char* layer_name : kValidationLayers) {
         bool layer_found = false;
@@ -222,9 +400,9 @@ bool VulkanRenderContext::checkValidationLayerSupport() {
     return true;
 }
 
-std::vector<const char*> VulkanRenderContext::getRequiredExtensions(bool enable_validation_layers) {
+std::vector<const char*> RenderContextVK::getRequiredExtensions(bool enable_validation_layers) {
     // Get required GLFW extensions.
-    uint32_t glfwExtensionCount = 0;
+    u32 glfwExtensionCount = 0;
     const char** glfwExtensions;
     glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
     std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
@@ -237,7 +415,7 @@ std::vector<const char*> VulkanRenderContext::getRequiredExtensions(bool enable_
     return extensions;
 }
 
-void VulkanRenderContext::createInstance(bool enable_validation_layers) {
+void RenderContextVK::createInstance(bool enable_validation_layers) {
     vk::DynamicLoader dl;
     auto vkGetInstanceProcAddr =
         dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
@@ -256,7 +434,7 @@ void VulkanRenderContext::createInstance(bool enable_validation_layers) {
     logger_.info(extension_list.str());
 
     vk::ApplicationInfo app_info;
-    app_info.pApplicationName = "VulkanRenderContext";
+    app_info.pApplicationName = "RenderContextVK";
     app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     app_info.pEngineName = "dawn-gfx";
     app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
@@ -267,7 +445,7 @@ void VulkanRenderContext::createInstance(bool enable_validation_layers) {
 
     // Enable required extensions.
     auto extensions = getRequiredExtensions(enable_validation_layers);
-    create_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+    create_info.enabledExtensionCount = static_cast<u32>(extensions.size());
     create_info.ppEnabledExtensionNames = extensions.data();
 
     // Enable validation layers if requested.
@@ -306,7 +484,7 @@ void VulkanRenderContext::createInstance(bool enable_validation_layers) {
     surface_ = c_surface;
 }
 
-void VulkanRenderContext::createDevice() {
+void RenderContextVK::createDevice() {
     // Pick a physical device.
     auto is_device_suitable = [this](vk::PhysicalDevice device) -> bool {
         auto indices = QueueFamilyIndices::fromPhysicalDevice(device, surface_);
@@ -352,10 +530,10 @@ void VulkanRenderContext::createDevice() {
 
     // Create a logical device.
     std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
-    std::set<uint32_t> unique_queues_families = {graphics_queue_family_index_,
-                                                 present_queue_family_index_};
+    std::set<u32> unique_queues_families = {graphics_queue_family_index_,
+                                            present_queue_family_index_};
     float queue_priority = 1.0f;
-    for (uint32_t queue_family : unique_queues_families) {
+    for (u32 queue_family : unique_queues_families) {
         vk::DeviceQueueCreateInfo queue_create_info;
         queue_create_info.queueFamilyIndex = queue_family;
         queue_create_info.queueCount = 1;
@@ -370,11 +548,11 @@ void VulkanRenderContext::createDevice() {
     create_info.queueCreateInfoCount = static_cast<u32>(queue_create_infos.size());
     create_info.pEnabledFeatures = &device_features;
     // No device specific extensions.
-    create_info.enabledExtensionCount = static_cast<uint32_t>(kRequiredDeviceExtensions.size());
+    create_info.enabledExtensionCount = static_cast<u32>(kRequiredDeviceExtensions.size());
     create_info.ppEnabledExtensionNames = kRequiredDeviceExtensions.data();
     // Technically unneeded, but worth doing anyway for old vulkan implementations.
     if (debug_messenger_) {
-        create_info.enabledLayerCount = static_cast<uint32_t>(kValidationLayers.size());
+        create_info.enabledLayerCount = static_cast<u32>(kValidationLayers.size());
         create_info.ppEnabledLayerNames = kValidationLayers.data();
     } else {
         create_info.enabledLayerCount = 0;
@@ -386,14 +564,14 @@ void VulkanRenderContext::createDevice() {
     present_queue_ = device_.getQueue(indices.present_family.value(), 0);
 }
 
-void VulkanRenderContext::createSwapChain() {
+void RenderContextVK::createSwapChain() {
     SwapChainSupportDetails swap_chain_support =
         SwapChainSupportDetails::querySwapChainSupport(physical_device_, surface_);
     vk::SurfaceFormatKHR surface_format = swap_chain_support.chooseSurfaceFormat();
     vk::PresentModeKHR present_mode = swap_chain_support.choosePresentMode();
     vk::Extent2D extent = swap_chain_support.chooseSwapExtent(windowSize());
 
-    std::uint32_t image_count = swap_chain_support.capabilities.minImageCount + 1;
+    u32 image_count = swap_chain_support.capabilities.minImageCount + 1;
     if (swap_chain_support.capabilities.maxImageCount > 0 &&
         image_count > swap_chain_support.capabilities.maxImageCount) {
         image_count = swap_chain_support.capabilities.maxImageCount;
@@ -408,10 +586,8 @@ void VulkanRenderContext::createSwapChain() {
     create_info.imageArrayLayers = 1;
     create_info.imageUsage = vk::ImageUsageFlagBits::eColorAttachment;
 
-    QueueFamilyIndices indices = QueueFamilyIndices::fromPhysicalDevice(physical_device_, surface_);
-    uint32_t queueFamilyIndices[] = {indices.graphics_family.value(),
-                                     indices.present_family.value()};
-    if (indices.graphics_family != indices.present_family) {
+    u32 queueFamilyIndices[] = {graphics_queue_family_index_, present_queue_family_index_};
+    if (graphics_queue_family_index_ != present_queue_family_index_) {
         create_info.imageSharingMode = vk::SharingMode::eConcurrent;
         create_info.queueFamilyIndexCount = 2;
         create_info.pQueueFamilyIndices = queueFamilyIndices;
@@ -433,7 +609,7 @@ void VulkanRenderContext::createSwapChain() {
     swap_chain_extent_ = create_info.imageExtent;
 }
 
-void VulkanRenderContext::createImageViews() {
+void RenderContextVK::createImageViews() {
     swap_chain_image_views_.reserve(swap_chain_images_.size());
     for (const auto& swap_chain_image : swap_chain_images_) {
         vk::ImageViewCreateInfo create_info;
@@ -453,11 +629,11 @@ void VulkanRenderContext::createImageViews() {
     }
 }
 
-void VulkanRenderContext::createRenderPass() {
+void RenderContextVK::createRenderPass() {
     vk::AttachmentDescription colour_attachment;
     colour_attachment.format = swap_chain_image_format_;
     colour_attachment.samples = vk::SampleCountFlagBits::e1;
-    colour_attachment.loadOp = vk::AttachmentLoadOp::eLoad;
+    colour_attachment.loadOp = vk::AttachmentLoadOp::eClear;
     colour_attachment.storeOp = vk::AttachmentStoreOp::eStore;
     colour_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
     colour_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
@@ -492,70 +668,8 @@ void VulkanRenderContext::createRenderPass() {
     render_pass_ = device_.createRenderPass(render_pass_info);
 }
 
-void VulkanRenderContext::createGraphicsPipeline() {
-    auto vertex_shader_result = compileGLSL(ShaderStage::Vertex, R"(
-        #version 450
-        #extension GL_ARB_separate_shader_objects : enable
-
-        layout(location = 0) out vec3 fragColor;
-
-        vec2 positions[3] = vec2[](
-            vec2(0.0, -0.5),
-            vec2(0.5, 0.5),
-            vec2(-0.5, 0.5)
-        );
-
-        vec3 colors[3] = vec3[](
-            vec3(1.0, 0.0, 0.0),
-            vec3(0.0, 1.0, 0.0),
-            vec3(0.0, 0.0, 1.0)
-        );
-
-        void main() {
-            gl_Position = vec4(positions[gl_VertexIndex], 0.0, 1.0);
-            fragColor = colors[gl_VertexIndex];
-        })");
-    auto fragment_shader_result = compileGLSL(ShaderStage::Fragment, R"(#version 450
-        #extension GL_ARB_separate_shader_objects : enable
-
-        layout(location = 0) in vec3 fragColor;
-
-        layout(location = 0) out vec4 outColor;
-
-        void main() {
-            outColor = vec4(fragColor, 1.0);
-        })");
-    if (!vertex_shader_result) {
-        throw std::runtime_error(vertex_shader_result.error().compile_error);
-    }
-    auto& vertex_shader = *vertex_shader_result;
-    if (!fragment_shader_result) {
-        throw std::runtime_error(fragment_shader_result.error().compile_error);
-    }
-    auto& fragment_shader = *fragment_shader_result;
-
-    // Create shader modules
-    vk::ShaderModuleCreateInfo vs_module_create_info;
-    vs_module_create_info.pCode = reinterpret_cast<const u32*>(vertex_shader.spirv.data());
-    vs_module_create_info.codeSize = vertex_shader.spirv.size() * 4;
-    auto vs_module = device_.createShaderModule(vs_module_create_info);
-    vk::ShaderModuleCreateInfo fs_module_create_info;
-    fs_module_create_info.pCode = reinterpret_cast<const u32*>(fragment_shader.spirv.data());
-    fs_module_create_info.codeSize = fragment_shader.spirv.size() * 4;
-    auto fs_module = device_.createShaderModule(fs_module_create_info);
-
-    // Create shader stages.
-    vk::PipelineShaderStageCreateInfo vs_stage_info;
-    vs_stage_info.stage = vk::ShaderStageFlagBits::eVertex;
-    vs_stage_info.module = vs_module;
-    vs_stage_info.pName = vertex_shader.entry_point.c_str();
-    vk::PipelineShaderStageCreateInfo fs_stage_info;
-    fs_stage_info.stage = vk::ShaderStageFlagBits::eFragment;
-    fs_stage_info.module = fs_module;
-    fs_stage_info.pName = fragment_shader.entry_point.c_str();
-    vk::PipelineShaderStageCreateInfo shaderStages[] = {vs_stage_info, fs_stage_info};
-
-    // Create fixed function stages.
+vk::Pipeline RenderContextVK::createGraphicsPipeline(const RenderItem& render_item) {
+    // Create fixed function pipeline stages.
     vk::PipelineVertexInputStateCreateInfo vertex_input_info;
     vertex_input_info.vertexBindingDescriptionCount = 0;
     vertex_input_info.pVertexBindingDescriptions = nullptr;  // Optional
@@ -605,9 +719,11 @@ void VulkanRenderContext::createGraphicsPipeline() {
     multisampling.alphaToOneEnable = VK_FALSE;       // Optional
 
     vk::PipelineColorBlendAttachmentState colour_blend_attachment;
-    colour_blend_attachment.colorWriteMask =
-        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-        vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+    if (render_item.colour_write) {
+        colour_blend_attachment.colorWriteMask =
+            vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+            vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+    }
     colour_blend_attachment.blendEnable = VK_FALSE;
     colour_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eOne;   // Optional
     colour_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eZero;  // Optional
@@ -639,7 +755,7 @@ void VulkanRenderContext::createGraphicsPipeline() {
     vk::DynamicState dynamic_states[] = {vk::DynamicState::eViewport, vk::DynamicState::eLineWidth};
 
     vk::PipelineDynamicStateCreateInfo dynamic_state;
-    dynamic_state.dynamicStateCount = 2;
+    dynamic_state.dynamicStateCount = 0;
     dynamic_state.pDynamicStates = dynamic_states;
 
     vk::PipelineLayoutCreateInfo pipeline_layout_info;
@@ -649,9 +765,12 @@ void VulkanRenderContext::createGraphicsPipeline() {
     pipeline_layout_info.pPushConstantRanges = nullptr;  // Optional
     pipeline_layout_ = device_.createPipelineLayout(pipeline_layout_info);
 
+    // Look up shader program.
+    const auto& shader_stages = program_map_.at(*render_item.program);
+
     vk::GraphicsPipelineCreateInfo pipeline_info;
-    pipeline_info.stageCount = 2;
-    pipeline_info.pStages = shaderStages;
+    pipeline_info.stageCount = shader_stages.pipeline_stages.size();
+    pipeline_info.pStages = shader_stages.pipeline_stages.data();
     pipeline_info.pVertexInputState = &vertex_input_info;
     pipeline_info.pInputAssemblyState = &input_assembly;
     pipeline_info.pViewportState = &viewport_state;
@@ -666,12 +785,10 @@ void VulkanRenderContext::createGraphicsPipeline() {
     pipeline_info.basePipelineHandle = vk::Pipeline{};  // Optional
     pipeline_info.basePipelineIndex = -1;               // Optional
 
-    vk::ArrayProxy<const vk::GraphicsPipelineCreateInfo> pipeline_infos = pipeline_info;
-    auto graphics_pipelines = device_.createGraphicsPipelines(vk::PipelineCache{}, pipeline_infos);
-    graphics_pipeline_ = graphics_pipelines[0];
+    return device_.createGraphicsPipelines(vk::PipelineCache{}, pipeline_info)[0];
 }
 
-void VulkanRenderContext::createFramebuffers() {
+void RenderContextVK::createFramebuffers() {
     swap_chain_framebuffers_.reserve(swap_chain_image_views_.size());
     for (const auto& image_view : swap_chain_image_views_) {
         vk::ImageView attachments[] = {image_view};
@@ -687,12 +804,10 @@ void VulkanRenderContext::createFramebuffers() {
     }
 }
 
-void VulkanRenderContext::createCommandBuffers() {
-    QueueFamilyIndices queue_family_indices =
-        QueueFamilyIndices::fromPhysicalDevice(physical_device_, surface_);
-
+void RenderContextVK::createCommandBuffers() {
     vk::CommandPoolCreateInfo pool_info;
-    pool_info.queueFamilyIndex = queue_family_indices.graphics_family.value();
+    pool_info.queueFamilyIndex = graphics_queue_family_index_;
+    pool_info.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
     command_pool_ = device_.createCommandPool(pool_info);
 
     vk::CommandBufferAllocateInfo allocate_info;
@@ -700,37 +815,9 @@ void VulkanRenderContext::createCommandBuffers() {
     allocate_info.level = vk::CommandBufferLevel::ePrimary;
     allocate_info.commandBufferCount = static_cast<u32>(swap_chain_framebuffers_.size());
     command_buffers_ = device_.allocateCommandBuffers(allocate_info);
-
-    // Record the same commands to each command buffer (for each swap chain image), as we'll always
-    // be drawing one thing.
-    int i = 0;
-    for (auto& command_buffer : command_buffers_) {
-        vk::CommandBufferBeginInfo begin_info;
-        begin_info.flags = {};
-        command_buffer.begin(begin_info);
-
-        vk::RenderPassBeginInfo render_pass_info;
-        render_pass_info.renderPass = render_pass_;
-        render_pass_info.framebuffer = swap_chain_framebuffers_[i];
-        render_pass_info.renderArea.offset = vk::Offset2D{0, 0};
-        render_pass_info.renderArea.extent = swap_chain_extent_;
-
-        vk::ClearValue clearColor;
-        clearColor.color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
-        render_pass_info.clearValueCount = 1;
-        render_pass_info.pClearValues = &clearColor;
-
-        command_buffer.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
-        command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
-        command_buffer.draw(3, 1, 0, 0);
-        command_buffer.endRenderPass();
-        command_buffer.end();
-
-        i++;
-    }
 }
 
-void VulkanRenderContext::createSyncObjects() {
+void RenderContextVK::createSyncObjects() {
     image_available_semaphores_.reserve(kMaxFramesInFlight);
     render_finished_semaphores_.reserve(kMaxFramesInFlight);
     in_flight_fences_.reserve(kMaxFramesInFlight);
@@ -746,51 +833,7 @@ void VulkanRenderContext::createSyncObjects() {
     images_in_flight_.resize(swap_chain_images_.size());
 }
 
-void VulkanRenderContext::drawFrame() {
-    device_.waitForFences(in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
-
-    u32 image_index;
-    device_.acquireNextImageKHR(swap_chain_, UINT64_MAX,
-                                image_available_semaphores_[current_frame_], vk::Fence{},
-                                &image_index);
-
-    // Check if a previous frame is using this image (i.e. there is a fence to wait on).
-    if (images_in_flight_[image_index]) {
-        device_.waitForFences(images_in_flight_[image_index], VK_TRUE, UINT64_MAX);
-    }
-    // Mark this image as now being in use by this frame.
-    images_in_flight_[image_index] = in_flight_fences_[current_frame_];
-
-    // Submit command buffer.
-    vk::SubmitInfo submit_info;
-    vk::Semaphore wait_semaphores[] = {image_available_semaphores_[current_frame_]};
-    vk::PipelineStageFlags wait_stages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
-    submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = wait_semaphores;
-    submit_info.pWaitDstStageMask = wait_stages;
-    submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &command_buffers_[image_index];
-    vk::Semaphore signal_semaphores[] = {render_finished_semaphores_[current_frame_]};
-    submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = signal_semaphores;
-    device_.resetFences(in_flight_fences_[current_frame_]);
-    graphics_queue_.submit(submit_info, in_flight_fences_[current_frame_]);
-
-    // Present.
-    vk::PresentInfoKHR presentInfo;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = signal_semaphores;
-    vk::SwapchainKHR swapChains[] = {swap_chain_};
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = swapChains;
-    presentInfo.pImageIndices = &image_index;
-    presentInfo.pResults = nullptr;  // Optional
-    present_queue_.presentKHR(presentInfo);
-
-    current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
-}
-
-void VulkanRenderContext::cleanup() {
+void RenderContextVK::cleanup() {
     vkDeviceWaitIdle(device_);
 
     for (const auto& fence : in_flight_fences_) {
@@ -821,5 +864,6 @@ void VulkanRenderContext::cleanup() {
     }
     instance_.destroy();
 }
+
 }  // namespace gfx
 }  // namespace dw

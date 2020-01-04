@@ -163,7 +163,7 @@ inline ShaderHandle loadShader(Renderer& r, ShaderStage type, const std::string&
                               std::istreambuf_iterator<char>());
     auto spv_result = compileGLSL(type, shader_source);
     if (!spv_result) {
-        throw std::runtime_error("Compile error: " + spv_result.error().compile_error);
+        throw std::runtime_error("Compile error whilst loading " + source_file + ": " + spv_result.error().compile_error);
     }
     return r.createShader(type, spv_result.value().entry_point,
                           Memory(std::move(spv_result.value().spirv)));

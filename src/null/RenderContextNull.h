@@ -9,10 +9,10 @@
 
 namespace dw {
 namespace gfx {
-class NullRenderContext : public RenderContext {
+class RenderContextNull : public RenderContext {
 public:
-    explicit NullRenderContext(Logger& logger);
-    ~NullRenderContext() override = default;
+    explicit RenderContextNull(Logger& logger);
+    ~RenderContextNull() override = default;
 
     // Window management. Executed on the main thread.
     tl::expected<void, std::string> createWindow(u16 width, u16 height,

@@ -43,7 +43,7 @@ private:
     u16 stride_;
 
     friend class Renderer;
-    friend class GLRenderContext;
+    friend class RenderContextGL;
 };
 }  // namespace gfx
 }  // namespace dw

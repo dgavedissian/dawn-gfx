@@ -13,10 +13,20 @@
 
 namespace dw {
 namespace gfx {
-class VulkanRenderContext : public RenderContext {
+struct ShaderVK {
+    vk::ShaderModule module;
+    ShaderStage stage;
+    std::string entry_point;
+};
+
+struct ProgramVK {
+    std::vector<vk::PipelineShaderStageCreateInfo> pipeline_stages;
+};
+
+class RenderContextVK : public RenderContext {
 public:
-    explicit VulkanRenderContext(Logger& logger);
-    ~VulkanRenderContext() override = default;
+    explicit RenderContextVK(Logger& logger);
+    ~RenderContextVK() override = default;
 
     // Window management. Executed on the main thread.
     tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title,
@@ -33,6 +43,27 @@ public:
     void stopRendering() override;
     void processCommandList(std::vector<RenderCommand>& command_list) override;
     bool frame(const Frame* frame) override;
+
+    // Variant walker methods. Executed on the render thread.
+    void operator()(const cmd::CreateVertexBuffer& c);
+    void operator()(const cmd::UpdateVertexBuffer& c);
+    void operator()(const cmd::DeleteVertexBuffer& c);
+    void operator()(const cmd::CreateIndexBuffer& c);
+    void operator()(const cmd::UpdateIndexBuffer& c);
+    void operator()(const cmd::DeleteIndexBuffer& c);
+    void operator()(const cmd::CreateShader& c);
+    void operator()(const cmd::DeleteShader& c);
+    void operator()(const cmd::CreateProgram& c);
+    void operator()(const cmd::AttachShader& c);
+    void operator()(const cmd::LinkProgram& c);
+    void operator()(const cmd::DeleteProgram& c);
+    void operator()(const cmd::CreateTexture2D& c);
+    void operator()(const cmd::DeleteTexture& c);
+    void operator()(const cmd::CreateFrameBuffer& c);
+    void operator()(const cmd::DeleteFrameBuffer& c);
+    template <typename T> void operator()(const T& c) {
+        static_assert(!std::is_same<T, T>::value, "Unimplemented RenderCommand");
+    }
 
 private:
     GLFWwindow* window_;
@@ -70,6 +101,11 @@ private:
     std::vector<vk::Fence> images_in_flight_;
     std::size_t current_frame_;
 
+    // Resource maps.
+    // Note: Pointers to ShaderVK objects should be stable.
+    std::unordered_map<ShaderHandle, ShaderVK> shader_map_;
+    std::unordered_map<ProgramHandle, ProgramVK> program_map_;
+
     bool checkValidationLayerSupport();
     std::vector<const char*> getRequiredExtensions(bool enable_validation_layers);
 
@@ -78,12 +114,10 @@ private:
     void createSwapChain();
     void createImageViews();
     void createRenderPass();
-    void createGraphicsPipeline();
+    vk::Pipeline createGraphicsPipeline(const RenderItem& render_item);
     void createFramebuffers();
     void createCommandBuffers();
     void createSyncObjects();
-
-    void drawFrame();
 
     void cleanup();
 };

@@ -13,7 +13,7 @@
 
 namespace dw {
 namespace gfx {
-class GLSamplerCache {
+class SamplerCacheGL {
 public:
     void setMaxSupportedAnisotropy(float max_supported_anisotropy);
 
@@ -28,10 +28,10 @@ private:
     float max_supported_anisotropy_;
 };
 
-class GLRenderContext : public RenderContext {
+class RenderContextGL : public RenderContext {
 public:
-    explicit GLRenderContext(Logger& logger);
-    ~GLRenderContext() override;
+    explicit RenderContextGL(Logger& logger);
+    ~RenderContextGL() override;
 
     // Window management. Executed on the main thread.
     tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title,
@@ -115,7 +115,7 @@ private:
 
     // Textures.
     std::unordered_map<TextureHandle, GLuint> texture_map_;
-    GLSamplerCache sampler_cache_;
+    SamplerCacheGL sampler_cache_;
 
     // Frame buffers.
     struct FrameBufferData {

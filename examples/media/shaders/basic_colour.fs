@@ -1,6 +1,8 @@
 #version 330 core
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_ARB_enhanced_layouts : enable
 
-in VertexData {
+layout(location = 0) in VertexData {
     vec3 colour;
 } i;
 

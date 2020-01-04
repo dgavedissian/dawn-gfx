@@ -4,7 +4,7 @@
  */
 #include "Base.h"
 #include "SPIRV.h"
-#include "gl/GLRenderContext.h"
+#include "gl/RenderContextGL.h"
 #include "Input.h"
 
 #include <dga/string_algorithms.h>
@@ -14,7 +14,7 @@
 #include <codecvt>
 
 /**
- * GLRenderContext. A render context implementation which targets GL
+ * RenderContextGL. A render context implementation which targets GL
 #define DW_GL_410 1 4.0 on desktop platforms,
  * and WebGL 2 on HTML5.
  */
@@ -371,11 +371,11 @@ template <class T> inline void hash_combine(std::size_t& seed, const T& v) {
     seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 }
 
-void GLSamplerCache::setMaxSupportedAnisotropy(float max_anisotropy) {
+void SamplerCacheGL::setMaxSupportedAnisotropy(float max_anisotropy) {
     max_supported_anisotropy_ = max_anisotropy;
 }
 
-GLuint GLSamplerCache::findOrCreate(u32 sampler_flags, float max_anisotropy) {
+GLuint SamplerCacheGL::findOrCreate(u32 sampler_flags, float max_anisotropy) {
     std::size_t hash = 0;
     hash_combine(hash, sampler_flags);
     hash_combine(hash, max_anisotropy);
@@ -427,22 +427,22 @@ GLuint GLSamplerCache::findOrCreate(u32 sampler_flags, float max_anisotropy) {
     return sampler_object;
 }
 
-void GLSamplerCache::clear() {
+void SamplerCacheGL::clear() {
     for (const auto& sampler : cache_) {
         GL_CHECK(glDeleteSamplers(1, &sampler.second));
     }
     cache_.clear();
 }
 
-GLRenderContext::GLRenderContext(Logger& logger)
+RenderContextGL::RenderContextGL(Logger& logger)
     : RenderContext(logger), max_supported_anisotropy_(0.0f) {
 }
 
-GLRenderContext::~GLRenderContext() {
+RenderContextGL::~RenderContextGL() {
     // TODO: detect resource leaks.
 }
 
-tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 height,
+tl::expected<void, std::string> RenderContextGL::createWindow(u16 width, u16 height,
                                                               const std::string& title,
                                                               InputCallbacks input_callbacks) {
     logger_.info("Creating window.");
@@ -522,7 +522,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
     on_mouse_move_ = input_callbacks.on_mouse_move;
     on_mouse_scroll_ = input_callbacks.on_mouse_scroll;
     glfwSetKeyCallback(window_, [](GLFWwindow* window, int key, int, int action, int) {
-        auto& ctx = *static_cast<GLRenderContext*>(glfwGetWindowUserPointer(window));
+        auto& ctx = *static_cast<RenderContextGL*>(glfwGetWindowUserPointer(window));
         if (!ctx.on_key_) {
             return;
         }
@@ -546,7 +546,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
         }
     });
     glfwSetCharCallback(window_, [](GLFWwindow* window, unsigned int c) {
-        auto& ctx = *static_cast<GLRenderContext*>(glfwGetWindowUserPointer(window));
+        auto& ctx = *static_cast<RenderContextGL*>(glfwGetWindowUserPointer(window));
         if (!ctx.on_char_input_) {
             return;
         }
@@ -558,7 +558,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
         ctx.on_char_input_(conv.to_bytes(static_cast<char32_t>(c)));
     });
     glfwSetMouseButtonCallback(window_, [](GLFWwindow* window, int button, int action, int) {
-        auto& ctx = *static_cast<GLRenderContext*>(glfwGetWindowUserPointer(window));
+        auto& ctx = *static_cast<RenderContextGL*>(glfwGetWindowUserPointer(window));
         if (!ctx.on_mouse_button_) {
             return;
         }
@@ -575,7 +575,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
         }
     });
     glfwSetCursorPosCallback(window_, [](GLFWwindow* window, double x, double y) {
-        auto& ctx = *static_cast<GLRenderContext*>(glfwGetWindowUserPointer(window));
+        auto& ctx = *static_cast<RenderContextGL*>(glfwGetWindowUserPointer(window));
         if (!ctx.on_mouse_move_) {
             return;
         }
@@ -583,7 +583,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
         ctx.on_mouse_move_({static_cast<int>(x), static_cast<int>(y)});
     });
     glfwSetScrollCallback(window_, [](GLFWwindow* window, double xoffset, double yoffset) {
-        auto& ctx = *static_cast<GLRenderContext*>(glfwGetWindowUserPointer(window));
+        auto& ctx = *static_cast<RenderContextGL*>(glfwGetWindowUserPointer(window));
         if (!ctx.on_mouse_scroll_) {
             return;
         }
@@ -625,7 +625,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
     return {};
 }
 
-void GLRenderContext::destroyWindow() {
+void RenderContextGL::destroyWindow() {
     if (window_) {
         sampler_cache_.clear();
 
@@ -635,50 +635,50 @@ void GLRenderContext::destroyWindow() {
     }
 }
 
-void GLRenderContext::processEvents() {
+void RenderContextGL::processEvents() {
     glfwPollEvents();
 }
 
-bool GLRenderContext::isWindowClosed() const {
+bool RenderContextGL::isWindowClosed() const {
     return glfwWindowShouldClose(window_) != 0;
 }
 
-Vec2i GLRenderContext::windowSize() const {
+Vec2i RenderContextGL::windowSize() const {
     int window_width, window_height;
     glfwGetWindowSize(window_, &window_width, &window_height);
     return Vec2i{window_width, window_height};
 }
 
-Vec2 GLRenderContext::windowScale() const {
+Vec2 RenderContextGL::windowScale() const {
     return window_scale_;
 }
 
-Vec2i GLRenderContext::framebufferSize() const {
+Vec2i RenderContextGL::framebufferSize() const {
     int fb_width, fb_height;
     glfwGetFramebufferSize(window_, &fb_width, &fb_height);
     return Vec2i{fb_width, fb_height};
 }
 
-void GLRenderContext::startRendering() {
+void RenderContextGL::startRendering() {
     glfwMakeContextCurrent(window_);
 
     GL_CHECK(glGenVertexArrays(1, &vao_));
     GL_CHECK(glBindVertexArray(vao_));
 }
 
-void GLRenderContext::stopRendering() {
+void RenderContextGL::stopRendering() {
     GL_CHECK(glBindVertexArray(0));
     GL_CHECK(glDeleteVertexArrays(1, &vao_));
 }
 
-void GLRenderContext::processCommandList(std::vector<RenderCommand>& command_list) {
+void RenderContextGL::processCommandList(std::vector<RenderCommand>& command_list) {
     assert(window_);
     for (auto& command : command_list) {
         visit(*this, command);
     }
 }
 
-bool GLRenderContext::frame(const Frame* frame) {
+bool RenderContextGL::frame(const Frame* frame) {
     assert(window_);
 
     // Upload transient vertex/element buffer data.
@@ -911,7 +911,7 @@ bool GLRenderContext::frame(const Frame* frame) {
     return true;
 }
 
-void GLRenderContext::operator()(const cmd::CreateVertexBuffer& c) {
+void RenderContextGL::operator()(const cmd::CreateVertexBuffer& c) {
     // Create vertex buffer object.
     GLenum usage = mapBufferUsage(c.usage);
     GLuint vbo;
@@ -925,7 +925,7 @@ void GLRenderContext::operator()(const cmd::CreateVertexBuffer& c) {
     vertex_buffer_map_.insert({c.handle, VertexBufferData{vbo, c.decl, usage, c.size}});
 }
 
-void GLRenderContext::operator()(const cmd::UpdateVertexBuffer& c) {
+void RenderContextGL::operator()(const cmd::UpdateVertexBuffer& c) {
     auto& vb_data = vertex_buffer_map_.at(c.handle);
     GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, vb_data.vertex_buffer));
     if (c.data.size() > vb_data.size) {
@@ -936,13 +936,13 @@ void GLRenderContext::operator()(const cmd::UpdateVertexBuffer& c) {
     }
 }
 
-void GLRenderContext::operator()(const cmd::DeleteVertexBuffer& c) {
+void RenderContextGL::operator()(const cmd::DeleteVertexBuffer& c) {
     auto it = vertex_buffer_map_.find(c.handle);
     GL_CHECK(glDeleteBuffers(1, &it->second.vertex_buffer));
     vertex_buffer_map_.erase(it);
 }
 
-void GLRenderContext::operator()(const cmd::CreateIndexBuffer& c) {
+void RenderContextGL::operator()(const cmd::CreateIndexBuffer& c) {
     // Create element buffer object.
     GLenum usage = mapBufferUsage(c.usage);
     GLuint ebo;
@@ -961,7 +961,7 @@ void GLRenderContext::operator()(const cmd::CreateIndexBuffer& c) {
                          usage, c.size}});
 }
 
-void GLRenderContext::operator()(const cmd::UpdateIndexBuffer& c) {
+void RenderContextGL::operator()(const cmd::UpdateIndexBuffer& c) {
     auto& ib_data = index_buffer_map_.at(c.handle);
     GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ib_data.element_buffer));
     if (c.data.size() > ib_data.size) {
@@ -973,13 +973,13 @@ void GLRenderContext::operator()(const cmd::UpdateIndexBuffer& c) {
     }
 }
 
-void GLRenderContext::operator()(const cmd::DeleteIndexBuffer& c) {
+void RenderContextGL::operator()(const cmd::DeleteIndexBuffer& c) {
     auto it = index_buffer_map_.find(c.handle);
     GL_CHECK(glDeleteBuffers(1, &it->second.element_buffer));
     index_buffer_map_.erase(it);
 }
 
-void GLRenderContext::operator()(const cmd::CreateShader& c) {
+void RenderContextGL::operator()(const cmd::CreateShader& c) {
     static std::unordered_map<ShaderStage, GLenum> shader_type_map = {
         {ShaderStage::Vertex, GL_VERTEX_SHADER}, {ShaderStage::Fragment, GL_FRAGMENT_SHADER}};
     GLuint shader = 0;
@@ -1052,24 +1052,24 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
     shader_map_.emplace(c.handle, shader);
 }
 
-void GLRenderContext::operator()(const cmd::DeleteShader& c) {
+void RenderContextGL::operator()(const cmd::DeleteShader& c) {
     auto it = shader_map_.find(c.handle);
     GL_CHECK(glDeleteShader(it->second));
     shader_map_.erase(it);
 }
 
-void GLRenderContext::operator()(const cmd::CreateProgram& c) {
+void RenderContextGL::operator()(const cmd::CreateProgram& c) {
     ProgramData program_data;
     program_data.program = glCreateProgram();
     assert(program_data.program != 0);
     program_map_.emplace(c.handle, program_data);
 }
 
-void GLRenderContext::operator()(const cmd::AttachShader& c) {
+void RenderContextGL::operator()(const cmd::AttachShader& c) {
     GL_CHECK(glAttachShader(program_map_.at(c.handle).program, shader_map_.at(c.shader_handle)));
 }
 
-void GLRenderContext::operator()(const cmd::LinkProgram& c) {
+void RenderContextGL::operator()(const cmd::LinkProgram& c) {
     GLuint program = program_map_.at(c.handle).program;
     GL_CHECK(glLinkProgram(program));
 
@@ -1085,7 +1085,7 @@ void GLRenderContext::operator()(const cmd::LinkProgram& c) {
     }
 }
 
-void GLRenderContext::operator()(const cmd::DeleteProgram& c) {
+void RenderContextGL::operator()(const cmd::DeleteProgram& c) {
     auto it = program_map_.find(c.handle);
     if (it != program_map_.end()) {
         GL_CHECK(glDeleteProgram(it->second.program));
@@ -1095,7 +1095,7 @@ void GLRenderContext::operator()(const cmd::DeleteProgram& c) {
     }
 }
 
-void GLRenderContext::operator()(const cmd::CreateTexture2D& c) {
+void RenderContextGL::operator()(const cmd::CreateTexture2D& c) {
     GLuint texture;
     GL_CHECK(glGenTextures(1, &texture));
     GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture));
@@ -1119,13 +1119,13 @@ void GLRenderContext::operator()(const cmd::CreateTexture2D& c) {
     texture_map_.emplace(c.handle, texture);
 }
 
-void GLRenderContext::operator()(const cmd::DeleteTexture& c) {
+void RenderContextGL::operator()(const cmd::DeleteTexture& c) {
     auto it = texture_map_.find(c.handle);
     GL_CHECK(glDeleteTextures(1, &it->second));
     texture_map_.erase(it);
 }
 
-void GLRenderContext::operator()(const cmd::CreateFrameBuffer& c) {
+void RenderContextGL::operator()(const cmd::CreateFrameBuffer& c) {
     FrameBufferData fb_data;
     fb_data.textures = c.textures;
     fb_data.width = c.width;
@@ -1167,11 +1167,11 @@ void GLRenderContext::operator()(const cmd::CreateFrameBuffer& c) {
     frame_buffer_map_.emplace(c.handle, fb_data);
 }
 
-void GLRenderContext::operator()(const cmd::DeleteFrameBuffer&) {
+void RenderContextGL::operator()(const cmd::DeleteFrameBuffer&) {
     // TODO: unimplemented.
 }
 
-void GLRenderContext::setupVertexArrayAttributes(const VertexDecl& decl, uint vb_offset) {
+void RenderContextGL::setupVertexArrayAttributes(const VertexDecl& decl, uint vb_offset) {
     static std::unordered_map<VertexDecl::AttributeType, GLenum> attribute_type_map = {
         {VertexDecl::AttributeType::Float, GL_FLOAT},
         {VertexDecl::AttributeType::Uint8, GL_UNSIGNED_BYTE}};

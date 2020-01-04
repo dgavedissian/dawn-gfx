@@ -134,12 +134,12 @@ add_library(dawn-gfx
     include/dawn-gfx/TriangleBuffer.h
     include/dawn-gfx/VertexDecl.h
     src/gl/GL.h
-    src/gl/GLRenderContext.cpp
-    src/gl/GLRenderContext.h
-    src/null/NullRenderContext.cpp
-    src/null/NullRenderContext.h
-    src/vulkan/VulkanRenderContext.cpp
-    src/vulkan/VulkanRenderContext.h
+    src/gl/RenderContextGL.cpp
+    src/gl/RenderContextGL.h
+    src/null/RenderContextNull.cpp
+    src/null/RenderContextNull.h
+    src/vulkan/RenderContextVK.cpp
+    src/vulkan/RenderContextVK.h
     src/Colour.cpp
     src/Glslang.h
     src/Memory.cpp
