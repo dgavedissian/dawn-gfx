@@ -9,6 +9,8 @@
 
 #include "dawn-gfx/Shader.h"
 
+#include <spirv_cross.hpp>
+
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE;
 
 namespace dw {
@@ -112,6 +114,17 @@ struct SwapChainSupportDetails {
                          std::min(capabilities.maxImageExtent.height, actualExtent.height));
             return actualExtent;
         }
+    }
+};
+
+struct VariantSpan {
+    const byte* data;
+    usize size;
+};
+
+struct VariantToBytesHelper {
+    template <typename T> VariantSpan operator()(const T& data) {
+        return VariantSpan{reinterpret_cast<const byte*>(&data), sizeof(T)};
     }
 };
 }  // namespace
@@ -221,6 +234,7 @@ tl::expected<void, std::string> RenderContextVK::createWindow(u16 width, u16 hei
     createRenderPass();
     createFramebuffers();
     createCommandBuffers();
+    createDescriptorPool();
     createSyncObjects();
 
     return {};
@@ -333,14 +347,68 @@ bool RenderContextVK::frame(const Frame* frame) {
         }
 
         command_buffer.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
-
-        // Bind graphics pipeline (and build it if necessary).
         for (const auto& ri : q.render_items) {
-            static auto graphics_pipeline = createGraphicsPipeline(ri);
-            command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline);
+            const auto& vb = vertex_buffer_map_.at(*ri.vb);
+            const auto& program = program_map_.at(*ri.program);
 
-            command_buffer.bindVertexBuffers(0, vertex_buffer_map_.at(*ri.vb).buffer, ri.vb_offset);
+            // Update uniforms.
+            for (const auto& shader_stage : program.stages) {
+                std::vector<byte*> ubo_data;
+                std::vector<bool> ubo_updated(shader_stage.second.uniform_buffers.size(), false);
+                ubo_data.reserve(shader_stage.second.uniform_buffers.size());
+                for (const auto& ubo : shader_stage.second.uniform_buffers) {
+                    void* mapped_memory = device_.mapMemory(ubo.buffers_memory[0], 0, ubo.size);
+                    ubo_data.push_back(reinterpret_cast<byte*>(mapped_memory));
+                }
+                for (const auto& uniform_pair : ri.uniforms) {
+                    // Find uniform binding
+                    auto uniform_it =
+                        shader_stage.second.uniform_locations.find(uniform_pair.first);
+                    if (uniform_it == shader_stage.second.uniform_locations.end()) {
+                        continue;
+                    }
+                    auto& uniform_location = uniform_it->second;
+                    if (!uniform_location.ubo_location.has_value()) {
+                        logger_.warn("Push constants not implemented yet.");
+                        continue;
+                    }
 
+                    // Write to memory.
+                    auto variant_bytes = std::visit(VariantToBytesHelper{}, uniform_pair.second);
+                    byte* data_dst =
+                        ubo_data[*uniform_location.ubo_location] + uniform_location.offset;
+                    ubo_updated[*uniform_location.ubo_location] = true;
+                    std::memcpy(data_dst, variant_bytes.data, variant_bytes.size);
+
+                    /*
+                    logger_.info("Writing {} (size {}) to offset {} in UBO {}", uniform_pair.first,
+                                 variant_bytes.size, uniform_location.offset,
+                                 *uniform_location.ubo_location);
+                    */
+                }
+                for (usize i = 0; i < shader_stage.second.uniform_buffers.size(); ++i) {
+                    const auto& ubo = shader_stage.second.uniform_buffers[i];
+
+                    device_.unmapMemory(ubo.buffers_memory[0]);
+
+                    // Copy buffer to the "real" buffer.
+                    // TODO: Implement dirty flags.
+                    copyBuffer(ubo.buffers[0], ubo.buffers[1 + next_index], ubo.size);
+                }
+            }
+
+            // Bind (and create) graphics pipeline.
+            auto graphics_pipeline = createGraphicsPipeline(ri, vb, program);
+            command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                        graphics_pipeline.pipeline);
+
+            // Bind descriptor set.
+            command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                              graphics_pipeline.layout, 0,
+                                              program.descriptor_sets[next_index], nullptr);
+
+            // Bind vertex/index buffers and draw.
+            command_buffer.bindVertexBuffers(0, vb.buffer, ri.vb_offset);
             if (ri.ib) {
                 const auto& ib = index_buffer_map_.at(*ri.ib);
                 command_buffer.bindIndexBuffer(ib.buffer, ri.ib_offset, ib.type);
@@ -465,11 +533,61 @@ void RenderContextVK::operator()(const cmd::DeleteIndexBuffer& c) {
 }
 
 void RenderContextVK::operator()(const cmd::CreateShader& c) {
+    ShaderVK shader;
+    shader.stage = c.stage;
+    shader.entry_point = c.entry_point;
+
+    // Create shader module.
     vk::ShaderModuleCreateInfo create_info;
     create_info.pCode = reinterpret_cast<const u32*>(c.data.data());
     create_info.codeSize = c.data.size();
-    shader_map_.emplace(c.handle,
-                        ShaderVK{device_.createShaderModule(create_info), c.stage, c.entry_point});
+    shader.module = device_.createShaderModule(create_info);
+
+    // Generate reflection data and create UBOs.
+    spirv_cross::Compiler comp(reinterpret_cast<const u32*>(c.data.data()),
+                               c.data.size() / sizeof(u32));
+    spirv_cross::ShaderResources res = comp.get_shader_resources();
+    for (const auto& ubo_resource : res.uniform_buffers) {
+        const spirv_cross::SPIRType& type = comp.get_type(ubo_resource.base_type_id);
+        usize size = comp.get_declared_struct_size(type);
+        const auto& name = comp.get_name(ubo_resource.id);
+        logger_.info("UBO resource {} (named {}) is {} bytes", ubo_resource.name, name, size);
+        usize member_count = type.member_types.size();
+        for (usize i = 0; i < member_count; ++i) {
+            ShaderVK::UniformLocation location;
+            location.size = comp.get_declared_struct_member_size(type, i);
+            location.offset = comp.type_struct_member_offset(type, i);
+
+            const auto& member_type = comp.get_type(type.member_types[i]);
+            const auto& member_name = comp.get_member_name(type.self, i);
+
+            logger_.info("- member {} is {} bytes and has an offset of {}", member_name,
+                         location.size, location.offset);
+
+            location.ubo_location = shader.uniform_buffers.size();
+            shader.uniform_locations.emplace(name + "." + member_name, location);
+        }
+
+        // Allocate a UBO and memory for each swap chain image, plus a "staging" buffer at index 0.
+        ShaderVK::AutoUniformBuffer ubo;
+        ubo.buffers.resize(swap_chain_images_.size() + 1);
+        ubo.buffers_memory.resize(swap_chain_images_.size() + 1);
+        createBuffer(
+            size, vk::BufferUsageFlagBits::eTransferSrc,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            ubo.buffers[0], ubo.buffers_memory[0]);
+        for (usize i = 0; i < swap_chain_images_.size(); ++i) {
+            createBuffer(
+                size,
+                vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eUniformBuffer,
+                vk::MemoryPropertyFlagBits::eDeviceLocal, ubo.buffers[i + 1],
+                ubo.buffers_memory[i + 1]);
+        }
+        ubo.size = size;
+        shader.uniform_buffers.push_back(std::move(ubo));
+    }
+
+    shader_map_.emplace(c.handle, std::move(shader));
 }
 
 void RenderContextVK::operator()(const cmd::DeleteShader& c) {
@@ -499,11 +617,55 @@ void RenderContextVK::operator()(const cmd::AttachShader& c) {
     stage_info.module = shader.module;
     stage_info.pName = shader.entry_point.c_str();
 
-    program_map_.at(c.handle).pipeline_stages.push_back(stage_info);
+    auto& program = program_map_.at(c.handle);
+    program.stages[shader.stage] = shader;
+    program.pipeline_stages.push_back(stage_info);
 }
 
 void RenderContextVK::operator()(const cmd::LinkProgram& c) {
-    // No-op. Vulkan "links" shader programs when a graphics pipeline is created.
+    auto& program = program_map_.at(c.handle);
+
+    // TODO: Figure this out from the shader.
+    vk::DescriptorSetLayoutBinding uboLayoutBinding;
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = vk::DescriptorType::eUniformBuffer;
+    uboLayoutBinding.descriptorCount = 1;
+    uboLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eVertex;
+    uboLayoutBinding.pImmutableSamplers = nullptr;  // Optional
+
+    vk::DescriptorSetLayoutCreateInfo layoutInfo;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &uboLayoutBinding;
+    program.descriptor_set_layout = device_.createDescriptorSetLayout(layoutInfo);
+
+    // Allocate descriptor sets.
+    std::vector<vk::DescriptorSetLayout> layouts(swap_chain_images_.size(),
+                                                 program.descriptor_set_layout);
+    vk::DescriptorSetAllocateInfo allocInfo;
+    allocInfo.descriptorPool = descriptor_pool_;
+    allocInfo.descriptorSetCount = layouts.size();
+    allocInfo.pSetLayouts = layouts.data();
+    program.descriptor_sets = device_.allocateDescriptorSets(allocInfo);
+
+    // Write to them.
+    for (usize i = 0; i < swap_chain_images_.size(); ++i) {
+        vk::DescriptorBufferInfo bufferInfo;
+        bufferInfo.buffer = program.stages.at(ShaderStage::Vertex).uniform_buffers[0].buffers[i];
+        bufferInfo.offset = 0;
+        bufferInfo.range = VK_WHOLE_SIZE;
+
+        vk::WriteDescriptorSet descriptorWrite;
+        descriptorWrite.dstSet = program.descriptor_sets[i];
+        descriptorWrite.dstBinding = 0;  // layout(binding = 0)
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = vk::DescriptorType::eUniformBuffer;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pBufferInfo = &bufferInfo;
+        descriptorWrite.pImageInfo = nullptr;        // Optional
+        descriptorWrite.pTexelBufferView = nullptr;  // Optional
+
+        device_.updateDescriptorSets(descriptorWrite, {});
+    }
 }
 
 void RenderContextVK::operator()(const cmd::DeleteProgram& c) {
@@ -807,8 +969,10 @@ void RenderContextVK::createRenderPass() {
     render_pass_ = device_.createRenderPass(render_pass_info);
 }
 
-vk::Pipeline RenderContextVK::createGraphicsPipeline(const RenderItem& render_item) {
-    const auto& vb = vertex_buffer_map_.at(*render_item.vb);
+PipelineVK RenderContextVK::createGraphicsPipeline(const RenderItem& render_item,
+                                                   const VertexBufferVK& vb,
+                                                   const ProgramVK& program) {
+    PipelineVK graphics_pipeline;
 
     // Create fixed function pipeline stages.
     vk::PipelineVertexInputStateCreateInfo vertex_input_info;
@@ -845,7 +1009,7 @@ vk::Pipeline RenderContextVK::createGraphicsPipeline(const RenderItem& render_it
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = vk::PolygonMode::eFill;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = vk::CullModeFlagBits::eBack;
+    rasterizer.cullMode = vk::CullModeFlagBits::eNone;
     rasterizer.frontFace = vk::FrontFace::eClockwise;
     rasterizer.depthBiasEnable = VK_FALSE;
     rasterizer.depthBiasConstantFactor = 0.0f;  // Optional
@@ -896,16 +1060,16 @@ vk::Pipeline RenderContextVK::createGraphicsPipeline(const RenderItem& render_it
 
     vk::DynamicState dynamic_states[] = {vk::DynamicState::eViewport, vk::DynamicState::eLineWidth};
 
-    vk::PipelineDynamicStateCreateInfo dynamic_state;
-    dynamic_state.dynamicStateCount = 0;
-    dynamic_state.pDynamicStates = dynamic_states;
+    //    vk::PipelineDynamicStateCreateInfo dynamic_state;
+    //    dynamic_state.dynamicStateCount = 0;
+    //    dynamic_state.pDynamicStates = dynamic_states;
 
     vk::PipelineLayoutCreateInfo pipeline_layout_info;
-    pipeline_layout_info.setLayoutCount = 0;             // Optional
-    pipeline_layout_info.pSetLayouts = nullptr;          // Optional
-    pipeline_layout_info.pushConstantRangeCount = 0;     // Optional
-    pipeline_layout_info.pPushConstantRanges = nullptr;  // Optional
-    pipeline_layout_ = device_.createPipelineLayout(pipeline_layout_info);
+    pipeline_layout_info.setLayoutCount = 1;
+    pipeline_layout_info.pSetLayouts = &program.descriptor_set_layout;
+    pipeline_layout_info.pushConstantRangeCount = 0;
+    pipeline_layout_info.pPushConstantRanges = nullptr;
+    graphics_pipeline.layout = device_.createPipelineLayout(pipeline_layout_info);
 
     // Look up shader program.
     const auto& shader_stages = program_map_.at(*render_item.program);
@@ -921,13 +1085,16 @@ vk::Pipeline RenderContextVK::createGraphicsPipeline(const RenderItem& render_it
     pipeline_info.pDepthStencilState = nullptr;  // Optional
     pipeline_info.pColorBlendState = &colour_blending;
     pipeline_info.pDynamicState = nullptr;  // Optional
-    pipeline_info.layout = pipeline_layout_;
+    pipeline_info.layout = graphics_pipeline.layout;
     pipeline_info.renderPass = render_pass_;
     pipeline_info.subpass = 0;
     pipeline_info.basePipelineHandle = vk::Pipeline{};  // Optional
     pipeline_info.basePipelineIndex = -1;               // Optional
 
-    return device_.createGraphicsPipelines(vk::PipelineCache{}, pipeline_info)[0];
+    graphics_pipeline.pipeline =
+        device_.createGraphicsPipelines(vk::PipelineCache{}, pipeline_info)[0];
+
+    return graphics_pipeline;
 }
 
 void RenderContextVK::createFramebuffers() {
@@ -957,6 +1124,18 @@ void RenderContextVK::createCommandBuffers() {
     allocate_info.level = vk::CommandBufferLevel::ePrimary;
     allocate_info.commandBufferCount = static_cast<u32>(swap_chain_framebuffers_.size());
     command_buffers_ = device_.allocateCommandBuffers(allocate_info);
+}
+
+void RenderContextVK::createDescriptorPool() {
+    vk::DescriptorPoolSize poolSize;
+    poolSize.descriptorCount = static_cast<u32>(swap_chain_images_.size());
+
+    vk::DescriptorPoolCreateInfo poolInfo;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.maxSets = static_cast<u32>(swap_chain_images_.size());
+
+    descriptor_pool_ = device_.createDescriptorPool(poolInfo);
 }
 
 void RenderContextVK::createSyncObjects() {
@@ -1048,12 +1227,12 @@ void RenderContextVK::cleanup() {
         device_.destroy(semaphore);
     }
 
+    device_.destroy(descriptor_pool_);
+
     device_.destroy(command_pool_);
     for (const auto& framebuffer : swap_chain_framebuffers_) {
         device_.destroy(framebuffer);
     }
-    device_.destroy(graphics_pipeline_);
-    device_.destroy(pipeline_layout_);
     device_.destroy(render_pass_);
     for (const auto& image_view : swap_chain_image_views_) {
         device_.destroy(image_view);

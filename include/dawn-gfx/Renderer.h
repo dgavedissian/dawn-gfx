@@ -54,6 +54,7 @@ DEFINE_HANDLE_TYPE(IndexBufferHandle)
 DEFINE_HANDLE_TYPE(TransientIndexBufferHandle)
 DEFINE_HANDLE_TYPE(ShaderHandle)
 DEFINE_HANDLE_TYPE(ProgramHandle)
+DEFINE_HANDLE_TYPE(UniformBufferHandle)
 DEFINE_HANDLE_TYPE(TextureHandle)
 DEFINE_HANDLE_TYPE(FrameBufferHandle)
 

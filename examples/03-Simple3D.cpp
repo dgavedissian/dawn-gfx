@@ -13,7 +13,7 @@ public:
     void start() override {
         // Load shaders.
         auto vs =
-            util::loadShader(r, ShaderStage::Vertex, util::media("shaders/basic_colour.vert"));
+            util::loadShader(r, ShaderStage::Vertex, util::media("shaders/basic_colour_3d.vert"));
         auto fs =
             util::loadShader(r, ShaderStage::Fragment, util::media("shaders/basic_colour.frag"));
         program_ = r.createProgram();
@@ -38,8 +38,20 @@ public:
         ib_ = r.createIndexBuffer(Memory(elements, sizeof(elements)), IndexBufferType::U32);
     }
 
-    void render(float) override {
+    void render(float dt) override {
         r.setRenderQueueClear({0.0f, 0.0f, 0.2f});
+
+        // Calculate matrices.
+        static float angle = 0.0f;
+        angle += M_PI / 4.0f * dt;  // 45 degrees per second.
+        Mat4 model = Mat4::Translate(Vec3{0.0f, 0.0f, -2.0f}).ToFloat4x4() * Mat4::RotateY(angle);
+        static Mat4 view = Mat4::identity;
+        Mat4 proj = util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
+        Vec2 test = {-0.5f, 0.5f};
+        Mat4 mvp = proj * view * model;
+        Vec4 transformed = mvp.Transform(Vec4{test,  20.0f,1.0});
+        r.setUniform("ubo.mvp", mvp.Transposed());
+
         r.setVertexBuffer(vb_);
         r.setIndexBuffer(ib_);
         r.submit(program_, 6);

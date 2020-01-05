@@ -35,10 +35,35 @@ struct ShaderVK {
     vk::ShaderModule module;
     ShaderStage stage;
     std::string entry_point;
+
+    // Reflection data.
+    struct UniformLocation {
+        // Null optional indicates a push_constant buffer.
+        std::optional<u32> ubo_location;
+        usize offset;
+        usize size;
+    };
+    std::unordered_map<std::string, UniformLocation> uniform_locations;
+
+    // Uniform buffers.
+    struct AutoUniformBuffer {
+        std::vector<vk::Buffer> buffers;
+        std::vector<vk::DeviceMemory> buffers_memory;
+        usize size;
+    };
+    std::vector<AutoUniformBuffer> uniform_buffers;
 };
 
 struct ProgramVK {
+    std::unordered_map<ShaderStage, ShaderVK> stages;
     std::vector<vk::PipelineShaderStageCreateInfo> pipeline_stages;
+    vk::DescriptorSetLayout descriptor_set_layout;
+    std::vector<vk::DescriptorSet> descriptor_sets;
+};
+
+struct PipelineVK {
+    vk::PipelineLayout layout;
+    vk::Pipeline pipeline;
 };
 
 class RenderContextVK : public RenderContext {
@@ -105,13 +130,13 @@ private:
     std::vector<vk::ImageView> swap_chain_image_views_;
 
     vk::RenderPass render_pass_;
-    vk::PipelineLayout pipeline_layout_;
-    vk::Pipeline graphics_pipeline_;
 
     std::vector<vk::Framebuffer> swap_chain_framebuffers_;
 
     vk::CommandPool command_pool_;
     std::vector<vk::CommandBuffer> command_buffers_;
+
+    vk::DescriptorPool descriptor_pool_;
 
     std::vector<vk::Semaphore> image_available_semaphores_;
     std::vector<vk::Semaphore> render_finished_semaphores_;
@@ -134,9 +159,10 @@ private:
     void createSwapChain();
     void createImageViews();
     void createRenderPass();
-    vk::Pipeline createGraphicsPipeline(const RenderItem& render_item);
+    PipelineVK createGraphicsPipeline(const RenderItem& render_item, const VertexBufferVK& vb, const ProgramVK& program);
     void createFramebuffers();
     void createCommandBuffers();
+    void createDescriptorPool();
     void createSyncObjects();
 
     u32 findMemoryType(u32 type_filter, vk::MemoryPropertyFlags properties);
