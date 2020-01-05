@@ -13,6 +13,24 @@
 
 namespace dw {
 namespace gfx {
+struct VertexBufferVK {
+    vk::VertexInputBindingDescription binding_description;
+    std::vector<vk::VertexInputAttributeDescription> attribute_descriptions;
+    vk::Buffer buffer;
+    vk::DeviceMemory buffer_memory;
+
+    void initVertexInputDescriptions(const VertexDecl& decl);
+
+    static vk::Format getVertexAttributeFormat(VertexDecl::AttributeType type, usize count,
+                                               bool normalised);
+};
+
+struct IndexBufferVK {
+    vk::IndexType type;
+    vk::Buffer buffer;
+    vk::DeviceMemory buffer_memory;
+};
+
 struct ShaderVK {
     vk::ShaderModule module;
     ShaderStage stage;
@@ -102,6 +120,8 @@ private:
     std::size_t current_frame_;
 
     // Resource maps.
+    std::unordered_map<VertexBufferHandle, VertexBufferVK> vertex_buffer_map_;
+    std::unordered_map<IndexBufferHandle, IndexBufferVK> index_buffer_map_;
     // Note: Pointers to ShaderVK objects should be stable.
     std::unordered_map<ShaderHandle, ShaderVK> shader_map_;
     std::unordered_map<ProgramHandle, ProgramVK> program_map_;
@@ -118,6 +138,12 @@ private:
     void createFramebuffers();
     void createCommandBuffers();
     void createSyncObjects();
+
+    u32 findMemoryType(u32 type_filter, vk::MemoryPropertyFlags properties);
+    void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
+                      vk::MemoryPropertyFlags properties, vk::Buffer& buffer,
+                      vk::DeviceMemory& buffer_memory);
+    void copyBuffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size);
 
     void cleanup();
 };

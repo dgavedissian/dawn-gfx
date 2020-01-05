@@ -19,7 +19,7 @@ const std::vector<const char*> kRequiredDeviceExtensions = {VK_KHR_SWAPCHAIN_EXT
 constexpr auto kMaxFramesInFlight = 2;
 
 VKAPI_ATTR VkBool32 VKAPI_CALL
-DebugMessageCallback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
+debugMessageCallback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
                      VkDebugUtilsMessageTypeFlagsEXT message_types,
                      const VkDebugUtilsMessengerCallbackDataEXT* callback_data, void* user_data) {
     const auto& logger = *static_cast<const Logger*>(user_data);
@@ -114,83 +114,74 @@ struct SwapChainSupportDetails {
         }
     }
 };
-
-struct VertexDeclVK {
-    vk::VertexInputBindingDescription binding_description;
-    std::vector<vk::VertexInputAttributeDescription> attribute_descriptions;
-
-    static vk::Format getVertexAttributeFormat(VertexDecl::AttributeType type, usize count,
-                                               bool normalised) {
-        switch (type) {
-            case VertexDecl::AttributeType::Float:
-                switch (count) {
-                    case 1:
-                        return vk::Format::eR32Sfloat;
-                    case 2:
-                        return vk::Format::eR32G32Sfloat;
-                    case 3:
-                        return vk::Format::eR32G32B32Sfloat;
-                    case 4:
-                        return vk::Format::eR32G32B32A32Sfloat;
-                    default:
-                        break;
-                }
-                break;
-            case VertexDecl::AttributeType::Uint8:
-                switch (count) {
-                    case 1:
-                        return normalised ? vk::Format::eR8Unorm : vk::Format::eR8Uint;
-                    case 2:
-                        return normalised ? vk::Format::eR8G8Unorm : vk::Format::eR8G8Uint;
-                    case 3:
-                        return normalised ? vk::Format::eR8G8B8Unorm : vk::Format::eR8G8B8Uint;
-                    case 4:
-                        return normalised ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8A8Uint;
-                    default:
-                        break;
-                }
-                break;
-            default:
-                break;
-        }
-        throw std::runtime_error(
-            fmt::format("Unknown vertex attribute type {} with {} elements (normalised: {})",
-                        static_cast<int>(type), count, normalised));
-    }
-
-    static VertexDeclVK fromVertexDecl(const VertexDecl& decl) {
-        VertexDeclVK decl_vk;
-
-        decl_vk.binding_description.binding = 0;
-        decl_vk.binding_description.stride = decl.stride();
-        decl_vk.binding_description.inputRate = vk::VertexInputRate::eVertex;
-
-        // Create vertex attribute description from VertexDecl.
-        decl_vk.attribute_descriptions.reserve(decl.attributes_.size());
-        for (usize i = 0; i < decl.attributes_.size(); ++i) {
-            const auto& attrib = decl.attributes_[i];
-
-            // Decode attribute.
-            VertexDecl::Attribute attribute;
-            usize count;
-            VertexDecl::AttributeType type;
-            bool normalised;
-            VertexDecl::decodeAttributes(attrib.first, attribute, count, type, normalised);
-
-            // Setup attribute description
-            vk::VertexInputAttributeDescription attribute_description;
-            attribute_description.binding = 0;
-            attribute_description.location = i;
-            attribute_description.format = getVertexAttributeFormat(type, count, normalised);
-            attribute_description.offset =
-                static_cast<u32>(reinterpret_cast<std::uintptr_t>(attrib.second));
-            decl_vk.attribute_descriptions.push_back(attribute_description);
-        }
-
-        return decl_vk;
-    }
-};
 }  // namespace
+
+void VertexBufferVK::initVertexInputDescriptions(const VertexDecl& decl) {
+    binding_description.binding = 0;
+    binding_description.stride = decl.stride();
+    binding_description.inputRate = vk::VertexInputRate::eVertex;
+
+    // Create vertex attribute description from VertexDecl.
+    attribute_descriptions.reserve(decl.attributes_.size());
+    for (usize i = 0; i < decl.attributes_.size(); ++i) {
+        const auto& attrib = decl.attributes_[i];
+
+        // Decode attribute.
+        VertexDecl::Attribute attribute;
+        usize count;
+        VertexDecl::AttributeType type;
+        bool normalised;
+        VertexDecl::decodeAttributes(attrib.first, attribute, count, type, normalised);
+
+        // Setup attribute description
+        vk::VertexInputAttributeDescription attribute_description;
+        attribute_description.binding = 0;
+        attribute_description.location = i;
+        attribute_description.format = getVertexAttributeFormat(type, count, normalised);
+        attribute_description.offset =
+            static_cast<u32>(reinterpret_cast<std::uintptr_t>(attrib.second));
+        attribute_descriptions.push_back(attribute_description);
+    }
+}
+
+vk::Format VertexBufferVK::getVertexAttributeFormat(VertexDecl::AttributeType type, usize count,
+                                                    bool normalised) {
+    switch (type) {
+        case VertexDecl::AttributeType::Float:
+            switch (count) {
+                case 1:
+                    return vk::Format::eR32Sfloat;
+                case 2:
+                    return vk::Format::eR32G32Sfloat;
+                case 3:
+                    return vk::Format::eR32G32B32Sfloat;
+                case 4:
+                    return vk::Format::eR32G32B32A32Sfloat;
+                default:
+                    break;
+            }
+            break;
+        case VertexDecl::AttributeType::Uint8:
+            switch (count) {
+                case 1:
+                    return normalised ? vk::Format::eR8Unorm : vk::Format::eR8Uint;
+                case 2:
+                    return normalised ? vk::Format::eR8G8Unorm : vk::Format::eR8G8Uint;
+                case 3:
+                    return normalised ? vk::Format::eR8G8B8Unorm : vk::Format::eR8G8B8Uint;
+                case 4:
+                    return normalised ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8A8Uint;
+                default:
+                    break;
+            }
+            break;
+        default:
+            break;
+    }
+    throw std::runtime_error(
+        fmt::format("Unknown vertex attribute type {} with {} elements (normalised: {})",
+                    static_cast<int>(type), count, normalised));
+}
 
 RenderContextVK::RenderContextVK(Logger& logger) : RenderContext{logger}, current_frame_(0) {
 }
@@ -218,12 +209,16 @@ tl::expected<void, std::string> RenderContextVK::createWindow(u16 width, u16 hei
                                static_cast<int>(height * window_scale_.y), title.c_str(), nullptr,
                                nullptr);
 
+#ifdef NDEBUG
+    createInstance(false);
+#else
     createInstance(true);
+#endif
+
     createDevice();
     createSwapChain();
     createImageViews();
     createRenderPass();
-    // createGraphicsPipeline();
     createFramebuffers();
     createCommandBuffers();
     createSyncObjects();
@@ -342,10 +337,17 @@ bool RenderContextVK::frame(const Frame* frame) {
         // Bind graphics pipeline (and build it if necessary).
         for (const auto& ri : q.render_items) {
             static auto graphics_pipeline = createGraphicsPipeline(ri);
-
-            // Bind pipeline and draw primitive.
             command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline);
-            command_buffer.draw(3, 1, 0, 0);
+
+            command_buffer.bindVertexBuffers(0, vertex_buffer_map_.at(*ri.vb).buffer, ri.vb_offset);
+
+            if (ri.ib) {
+                const auto& ib = index_buffer_map_.at(*ri.ib);
+                command_buffer.bindIndexBuffer(ib.buffer, ri.ib_offset, ib.type);
+                command_buffer.drawIndexed(ri.primitive_count * 3, 1, 0, 0, 0);
+            } else {
+                command_buffer.draw(ri.primitive_count * 3, 1, 0, 0);
+            }
         }
         command_buffer.endRenderPass();
     }
@@ -383,22 +385,83 @@ bool RenderContextVK::frame(const Frame* frame) {
 }
 
 void RenderContextVK::operator()(const cmd::CreateVertexBuffer& c) {
-    auto vk_decl = VertexDeclVK::fromVertexDecl(c.decl);
+    VertexBufferVK vb;
+    vb.initVertexInputDescriptions(c.decl);
+
+    vk::DeviceSize buffer_size = c.data.size();
+
+    vk::Buffer staging_buffer;
+    vk::DeviceMemory staging_buffer_memory;
+    createBuffer(
+        buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        staging_buffer, staging_buffer_memory);
+
+    void* data = device_.mapMemory(staging_buffer_memory, 0, buffer_size);
+    memcpy(data, c.data.data(), static_cast<std::size_t>(buffer_size));
+    device_.unmapMemory(staging_buffer_memory);
+
+    createBuffer(buffer_size,
+                 vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
+                 vk::MemoryPropertyFlagBits::eDeviceLocal, vb.buffer, vb.buffer_memory);
+
+    copyBuffer(staging_buffer, vb.buffer, buffer_size);
+
+    device_.destroy(staging_buffer);
+    device_.free(staging_buffer_memory);
+
+    vertex_buffer_map_.emplace(c.handle, std::move(vb));
 }
 
 void RenderContextVK::operator()(const cmd::UpdateVertexBuffer& c) {
 }
 
 void RenderContextVK::operator()(const cmd::DeleteVertexBuffer& c) {
+    assert(vertex_buffer_map_.count(c.handle) > 0);
+    auto it = vertex_buffer_map_.find(c.handle);
+    device_.free(it->second.buffer_memory);
+    device_.destroy(it->second.buffer);
+    vertex_buffer_map_.erase(it);
 }
 
 void RenderContextVK::operator()(const cmd::CreateIndexBuffer& c) {
+    IndexBufferVK ib;
+    ib.type = c.type == IndexBufferType::U16 ? vk::IndexType::eUint16 : vk::IndexType::eUint32;
+
+    vk::DeviceSize buffer_size = c.data.size();
+
+    vk::Buffer staging_buffer;
+    vk::DeviceMemory staging_buffer_memory;
+    createBuffer(
+        buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        staging_buffer, staging_buffer_memory);
+
+    void* data = device_.mapMemory(staging_buffer_memory, 0, buffer_size);
+    memcpy(data, c.data.data(), static_cast<std::size_t>(buffer_size));
+    device_.unmapMemory(staging_buffer_memory);
+
+    createBuffer(buffer_size,
+                 vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
+                 vk::MemoryPropertyFlagBits::eDeviceLocal, ib.buffer, ib.buffer_memory);
+
+    copyBuffer(staging_buffer, ib.buffer, buffer_size);
+
+    device_.destroy(staging_buffer);
+    device_.free(staging_buffer_memory);
+
+    index_buffer_map_.emplace(c.handle, std::move(ib));
 }
 
 void RenderContextVK::operator()(const cmd::UpdateIndexBuffer& c) {
 }
 
 void RenderContextVK::operator()(const cmd::DeleteIndexBuffer& c) {
+    assert(index_buffer_map_.count(c.handle) > 0);
+    auto it = index_buffer_map_.find(c.handle);
+    device_.free(it->second.buffer_memory);
+    device_.destroy(it->second.buffer);
+    index_buffer_map_.erase(it);
 }
 
 void RenderContextVK::operator()(const cmd::CreateShader& c) {
@@ -546,7 +609,7 @@ void RenderContextVK::createInstance(bool enable_validation_layers) {
         debug_messenger_info.messageType = /*vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |*/
             vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
             vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance;
-        debug_messenger_info.pfnUserCallback = DebugMessageCallback;
+        debug_messenger_info.pfnUserCallback = debugMessageCallback;
         debug_messenger_info.pUserData = &logger_;
         debug_messenger_ = instance_.createDebugUtilsMessengerEXT(debug_messenger_info);
     }
@@ -745,12 +808,15 @@ void RenderContextVK::createRenderPass() {
 }
 
 vk::Pipeline RenderContextVK::createGraphicsPipeline(const RenderItem& render_item) {
+    const auto& vb = vertex_buffer_map_.at(*render_item.vb);
+
     // Create fixed function pipeline stages.
     vk::PipelineVertexInputStateCreateInfo vertex_input_info;
-    vertex_input_info.vertexBindingDescriptionCount = 0;
-    vertex_input_info.pVertexBindingDescriptions = nullptr;  // Optional
-    vertex_input_info.vertexAttributeDescriptionCount = 0;
-    vertex_input_info.pVertexAttributeDescriptions = nullptr;  // Optional
+    vertex_input_info.vertexBindingDescriptionCount = 1;
+    vertex_input_info.vertexAttributeDescriptionCount =
+        static_cast<u32>(vb.attribute_descriptions.size());
+    vertex_input_info.pVertexBindingDescriptions = &vb.binding_description;
+    vertex_input_info.pVertexAttributeDescriptions = vb.attribute_descriptions.data();
 
     vk::PipelineInputAssemblyStateCreateInfo input_assembly;
     input_assembly.topology = vk::PrimitiveTopology::eTriangleList;
@@ -909,8 +975,68 @@ void RenderContextVK::createSyncObjects() {
     images_in_flight_.resize(swap_chain_images_.size());
 }
 
+u32 RenderContextVK::findMemoryType(u32 type_filter, vk::MemoryPropertyFlags properties) {
+    auto mem_properties = physical_device_.getMemoryProperties();
+    for (u32 i = 0; i < mem_properties.memoryTypeCount; i++) {
+        if ((type_filter & (1u << i)) &&
+            (mem_properties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+
+    throw std::runtime_error("failed to find a suitable memory type.");
+}
+
+void RenderContextVK::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
+                                   vk::MemoryPropertyFlags properties, vk::Buffer& buffer,
+                                   vk::DeviceMemory& buffer_memory) {
+    vk::BufferCreateInfo bufferInfo;
+    bufferInfo.size = size;
+    bufferInfo.usage = usage;
+    bufferInfo.sharingMode = vk::SharingMode::eExclusive;
+    buffer = device_.createBuffer(bufferInfo);
+
+    vk::MemoryRequirements mem_requirements = device_.getBufferMemoryRequirements(buffer);
+    vk::MemoryAllocateInfo alloc_info;
+    alloc_info.allocationSize = mem_requirements.size;
+    alloc_info.memoryTypeIndex = findMemoryType(mem_requirements.memoryTypeBits, properties);
+    buffer_memory = device_.allocateMemory(alloc_info);
+
+    device_.bindBufferMemory(buffer, buffer_memory, 0);
+}
+
+void RenderContextVK::copyBuffer(vk::Buffer src_buffer, vk::Buffer dst_buffer,
+                                 vk::DeviceSize size) {
+    vk::CommandBufferAllocateInfo alloc_info;
+    alloc_info.level = vk::CommandBufferLevel::ePrimary;
+    alloc_info.commandPool = command_pool_;
+    alloc_info.commandBufferCount = 1;
+
+    vk::CommandBuffer command_buffer;
+    command_buffer = device_.allocateCommandBuffers(alloc_info)[0];
+
+    vk::CommandBufferBeginInfo begin_info;
+    begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+    command_buffer.begin(begin_info);
+
+    vk::BufferCopy copyRegion;
+    copyRegion.size = size;
+    command_buffer.copyBuffer(src_buffer, dst_buffer, copyRegion);
+
+    command_buffer.end();
+
+    vk::SubmitInfo submit_info;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffer;
+
+    graphics_queue_.submit(submit_info, vk::Fence{});
+    graphics_queue_.waitIdle();
+
+    device_.freeCommandBuffers(command_pool_, command_buffer);
+}
+
 void RenderContextVK::cleanup() {
-    vkDeviceWaitIdle(device_);
+    device_.waitIdle();
 
     for (const auto& fence : in_flight_fences_) {
         device_.destroy(fence);
@@ -940,6 +1066,5 @@ void RenderContextVK::cleanup() {
     }
     instance_.destroy();
 }
-
 }  // namespace gfx
 }  // namespace dw
