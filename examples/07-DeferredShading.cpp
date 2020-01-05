@@ -36,9 +36,9 @@ public:
 
             // Load shaders.
             auto vs =
-                util::loadShader(r, ShaderStage::Vertex, util::media("shaders/light_pass.vs"));
+                util::loadShader(r, ShaderStage::Vertex, util::media("shaders/light_pass.vert"));
             auto fs = util::loadShader(r, ShaderStage::Fragment,
-                                       util::media("shaders/point_light_pass.fs"));
+                                       util::media("shaders/point_light_pass.frag"));
             program_ = r.createProgram();
             r.attachShader(program_, vs);
             r.attachShader(program_, fs);
@@ -122,9 +122,9 @@ public:
 
         // Load shaders.
         auto vs =
-            util::loadShader(r, ShaderStage::Vertex, util::media("shaders/object_gbuffer.vs"));
+            util::loadShader(r, ShaderStage::Vertex, util::media("shaders/object_gbuffer.vert"));
         auto fs =
-            util::loadShader(r, ShaderStage::Fragment, util::media("shaders/object_gbuffer.fs"));
+            util::loadShader(r, ShaderStage::Fragment, util::media("shaders/object_gbuffer.frag"));
         ground_program_ = r.createProgram();
         r.attachShader(ground_program_, vs);
         r.attachShader(ground_program_, fs);
@@ -162,9 +162,9 @@ public:
 
         // Load post process shader.
         auto pp_vs =
-            util::loadShader(r, ShaderStage::Vertex, util::media("shaders/post_process.vs"));
+            util::loadShader(r, ShaderStage::Vertex, util::media("shaders/post_process.vert"));
         auto pp_fs = util::loadShader(r, ShaderStage::Fragment,
-                                      util::media("shaders/deferred_ambient_light_pass.fs"));
+                                      util::media("shaders/deferred_ambient_light_pass.frag"));
         post_process_ = r.createProgram();
         r.attachShader(post_process_, pp_vs);
         r.attachShader(post_process_, pp_fs);

@@ -14,9 +14,9 @@ public:
     void start() override {
         // Load shaders.
         auto vs = util::loadShader(r, ShaderStage::Vertex,
-                                   util::media("shaders/cube_textured_normal_map.vs"));
+                                   util::media("shaders/cube_textured_normal_map.vert"));
         auto fs = util::loadShader(r, ShaderStage::Fragment,
-                                   util::media("shaders/cube_textured_normal_map.fs"));
+                                   util::media("shaders/cube_textured_normal_map.frag"));
         program_ = r.createProgram();
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);

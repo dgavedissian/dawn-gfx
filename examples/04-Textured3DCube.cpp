@@ -12,9 +12,10 @@ public:
 
     void start() override {
         // Load shaders.
-        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("shaders/cube_textured.vs"));
+        auto vs =
+            util::loadShader(r, ShaderStage::Vertex, util::media("shaders/cube_textured.vert"));
         auto fs =
-            util::loadShader(r, ShaderStage::Fragment, util::media("shaders/cube_textured.fs"));
+            util::loadShader(r, ShaderStage::Fragment, util::media("shaders/cube_textured.frag"));
         program_ = r.createProgram();
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);

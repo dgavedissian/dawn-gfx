@@ -15,8 +15,9 @@ public:
 
     void start() override {
         // Load shaders.
-        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("shaders/cube_solid.vs"));
-        auto fs = util::loadShader(r, ShaderStage::Fragment, util::media("shaders/cube_solid.fs"));
+        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("shaders/cube_solid.vert"));
+        auto fs =
+            util::loadShader(r, ShaderStage::Fragment, util::media("shaders/cube_solid.frag"));
         box_program_ = r.createProgram();
         r.attachShader(box_program_, vs);
         r.attachShader(box_program_, fs);
@@ -35,9 +36,9 @@ public:
 
         // Load post process shader.
         auto pp_vs =
-            util::loadShader(r, ShaderStage::Vertex, util::media("shaders/post_process.vs"));
+            util::loadShader(r, ShaderStage::Vertex, util::media("shaders/post_process.vert"));
         auto pp_fs =
-            util::loadShader(r, ShaderStage::Fragment, util::media("shaders/post_process.fs"));
+            util::loadShader(r, ShaderStage::Fragment, util::media("shaders/post_process.frag"));
         post_process_ = r.createProgram();
         r.attachShader(post_process_, pp_vs);
         r.attachShader(post_process_, pp_fs);
