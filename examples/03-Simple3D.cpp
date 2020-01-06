@@ -47,10 +47,7 @@ public:
         Mat4 model = Mat4::Translate(Vec3{0.0f, 0.0f, -2.0f}).ToFloat4x4() * Mat4::RotateY(angle);
         static Mat4 view = Mat4::identity;
         Mat4 proj = util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
-        Vec2 test = {-0.5f, 0.5f};
-        Mat4 mvp = proj * view * model;
-        Vec4 transformed = mvp.Transform(Vec4{test,  20.0f,1.0});
-        r.setUniform("ubo.mvp", mvp.Transposed());
+        r.setUniform("u.mvp_matrix", proj * view * model);
 
         r.setVertexBuffer(vb_);
         r.setIndexBuffer(ib_);

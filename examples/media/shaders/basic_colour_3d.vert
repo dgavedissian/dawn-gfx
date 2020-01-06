@@ -10,11 +10,11 @@ layout(location = 0) out VertexData {
 } o;
 
 layout(binding = 0) uniform UniformBufferObject {
-    mat4 mvp;
-} ubo;
+    mat4 mvp_matrix;
+} u;
 
 void main()
 {
     o.colour = in_colour;
-    gl_Position = ubo.mvp * vec4(in_position, 0.0, 1.0);
+    gl_Position = ubo.mvp_matrix * vec4(in_position, 0.0, 1.0);
 }

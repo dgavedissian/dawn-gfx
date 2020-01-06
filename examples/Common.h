@@ -55,7 +55,7 @@ public:
     }
 
     void initRenderer(RendererType type, u16 width, u16 height, const char* window_title) {
-        r.init(type, width, height, window_title, InputCallbacks{}, true);
+        r.init(type, width, height, window_title, InputCallbacks{}, false);
 
         //ImGui::SetCurrentContext(ImGui::CreateContext());
         //imgui_backend_ = std::make_unique<ImGuiBackend>(r, ImGui::GetIO());

@@ -61,6 +61,11 @@ struct ProgramVK {
     std::vector<vk::DescriptorSet> descriptor_sets;
 };
 
+struct TextureVK {
+    vk::Image image;
+    vk::DeviceMemory image_memory;
+};
+
 struct PipelineVK {
     vk::PipelineLayout layout;
     vk::Pipeline pipeline;
@@ -150,6 +155,7 @@ private:
     // Note: Pointers to ShaderVK objects should be stable.
     std::unordered_map<ShaderHandle, ShaderVK> shader_map_;
     std::unordered_map<ProgramHandle, ProgramVK> program_map_;
+    std::unordered_map<TextureHandle, TextureVK> texture_map_;
 
     bool checkValidationLayerSupport();
     std::vector<const char*> getRequiredExtensions(bool enable_validation_layers);
@@ -170,6 +176,12 @@ private:
                       vk::MemoryPropertyFlags properties, vk::Buffer& buffer,
                       vk::DeviceMemory& buffer_memory);
     void copyBuffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size);
+    void copyBufferToImage(vk::Buffer buffer, vk::Image image, u32 width, u32 height);
+    void transitionImageLayout(vk::Image image, vk::Format format, vk::ImageLayout old_layout,
+                               vk::ImageLayout new_layout);
+
+    vk::CommandBuffer beginSingleUseCommands();
+    void endSingleUseCommands(vk::CommandBuffer command_buffer);
 
     void cleanup();
 };
