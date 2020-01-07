@@ -16,7 +16,8 @@ endif()
 # Pinned dependencies.
 FetchContent_Declare(
     base
-    URL https://github.com/dgavedissian/base/archive/03643c3692416899b023319badc14b8b23e212e6.zip
+    URL https://github.com/dgavedissian/base/archive/aa1cd34a84a22fc0becd4ed4eb5cd022b8685cfe.zip
+    URL_MD5 3584045bab754ed8e8cf163bc9b2683e
 )
 FetchContent_MakeAvailable(base)
 make_patch_tool_available()

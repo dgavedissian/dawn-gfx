@@ -408,12 +408,13 @@ bool RenderContextVK::frame(const Frame* frame) {
             const auto& vb = vertex_buffer_map_.at(*ri.vb);
 
             // Bind (and create) graphics pipeline.
-            auto graphics_pipeline = findOrCreateGraphicsPipeline(ri, vb, program);
+            auto graphics_pipeline =
+                findOrCreateGraphicsPipeline(PipelineVK::Info{&ri, &vb, &program});
             command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
                                         graphics_pipeline.pipeline);
 
             // Bind descriptor set.
-            auto descriptor_set = findOrCreateDescriptorSet(ri, program);
+            auto descriptor_set = findOrCreateDescriptorSet(DescriptorSetVK::Info{&program});
             command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                                               graphics_pipeline.layout, 0,
                                               descriptor_set.descriptor_sets[next_index], nullptr);
@@ -1128,18 +1129,22 @@ void RenderContextVK::createSyncObjects() {
     images_in_flight_.resize(swap_chain_images_.size());
 }
 
-PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(const RenderItem& render_item,
-                                                         const VertexBufferVK& vb,
-                                                         const ProgramVK& program) {
+PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(PipelineVK::Info info) {
+    auto cached_pipeline = graphics_pipeline_cache_.find(info);
+    if (cached_pipeline != graphics_pipeline_cache_.end()) {
+        return cached_pipeline->second;
+    }
+
+    // Cache miss. Create a new graphics pipeline.
     PipelineVK graphics_pipeline;
 
     // Create fixed function pipeline stages.
     vk::PipelineVertexInputStateCreateInfo vertex_input_info;
     vertex_input_info.vertexBindingDescriptionCount = 1;
     vertex_input_info.vertexAttributeDescriptionCount =
-        static_cast<u32>(vb.attribute_descriptions.size());
-    vertex_input_info.pVertexBindingDescriptions = &vb.binding_description;
-    vertex_input_info.pVertexAttributeDescriptions = vb.attribute_descriptions.data();
+        static_cast<u32>(info.vb->attribute_descriptions.size());
+    vertex_input_info.pVertexBindingDescriptions = &info.vb->binding_description;
+    vertex_input_info.pVertexAttributeDescriptions = info.vb->attribute_descriptions.data();
 
     vk::PipelineInputAssemblyStateCreateInfo input_assembly;
     input_assembly.topology = vk::PrimitiveTopology::eTriangleList;
@@ -1184,7 +1189,7 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(const RenderItem& rende
     multisampling.alphaToOneEnable = VK_FALSE;       // Optional
 
     vk::PipelineColorBlendAttachmentState colour_blend_attachment;
-    if (render_item.colour_write) {
+    if (info.render_item->colour_write) {
         colour_blend_attachment.colorWriteMask =
             vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
             vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
@@ -1225,17 +1230,15 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(const RenderItem& rende
 
     vk::PipelineLayoutCreateInfo pipeline_layout_info;
     pipeline_layout_info.setLayoutCount = 1;
-    pipeline_layout_info.pSetLayouts = &program.descriptor_set_layout;
+    pipeline_layout_info.pSetLayouts = &info.program->descriptor_set_layout;
     pipeline_layout_info.pushConstantRangeCount = 0;
     pipeline_layout_info.pPushConstantRanges = nullptr;
     graphics_pipeline.layout = device_.createPipelineLayout(pipeline_layout_info);
 
-    // Look up shader program.
-    const auto& shader_stages = program_map_.at(*render_item.program);
-
+    // Create pipeline.
     vk::GraphicsPipelineCreateInfo pipeline_info;
-    pipeline_info.stageCount = shader_stages.pipeline_stages.size();
-    pipeline_info.pStages = shader_stages.pipeline_stages.data();
+    pipeline_info.stageCount = info.program->pipeline_stages.size();
+    pipeline_info.pStages = info.program->pipeline_stages.data();
     pipeline_info.pVertexInputState = &vertex_input_info;
     pipeline_info.pInputAssemblyState = &input_assembly;
     pipeline_info.pViewportState = &viewport_state;
@@ -1253,16 +1256,22 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(const RenderItem& rende
     graphics_pipeline.pipeline =
         device_.createGraphicsPipelines(vk::PipelineCache{}, pipeline_info)[0];
 
+    graphics_pipeline_cache_.emplace(info, graphics_pipeline);
     return graphics_pipeline;
 }
 
-DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(const RenderItem& render_item,
-                                                           const ProgramVK& program) {
-    // Allocate descriptor sets.
+DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(DescriptorSetVK::Info info) {
+    auto cached_descriptor_set = descriptor_set_cache_.find(info);
+    if (cached_descriptor_set != descriptor_set_cache_.end()) {
+        return cached_descriptor_set->second;
+    }
+
+    // Cache miss. Create a new descriptor set.
+
     // TODO: Move this to renderFrame like here:
     // https://github.com/bkaradzic/bgfx/blob/master/src/renderer_vk.cpp#L3638
     std::vector<vk::DescriptorSetLayout> layouts(swap_chain_images_.size(),
-                                                 program.descriptor_set_layout);
+                                                 info.program->descriptor_set_layout);
     vk::DescriptorSetAllocateInfo alloc_info;
     alloc_info.descriptorPool = descriptor_pool_;
     alloc_info.descriptorSetCount = layouts.size();
@@ -1274,7 +1283,7 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(const RenderItem& ren
         std::vector<vk::WriteDescriptorSet> descriptor_writes;
         std::vector<std::unique_ptr<vk::DescriptorBufferInfo>> buffer_info_storage;
         std::vector<std::unique_ptr<vk::DescriptorImageInfo>> image_info_storage;
-        for (const auto& binding : program.layout_bindings) {
+        for (const auto& binding : info.program->layout_bindings) {
             vk::WriteDescriptorSet descriptor_write;
             descriptor_write.dstSet = descriptor_sets[i];
             descriptor_write.dstBinding = binding.binding;
@@ -1285,7 +1294,8 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(const RenderItem& ren
                 case vk::DescriptorType::eUniformBuffer: {
                     buffer_info_storage.emplace_back(std::make_unique<vk::DescriptorBufferInfo>());
                     auto& buffer_info = *buffer_info_storage.back();
-                    buffer_info.buffer = program.uniform_buffers.at(binding.binding).buffers[i + 1];
+                    buffer_info.buffer =
+                        info.program->uniform_buffers.at(binding.binding).buffers[i + 1];
                     buffer_info.offset = 0;
                     buffer_info.range = VK_WHOLE_SIZE;
                     descriptor_write.pBufferInfo = &buffer_info;
@@ -1310,7 +1320,9 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(const RenderItem& ren
         device_.updateDescriptorSets(descriptor_writes, {});
     }
 
-    return DescriptorSetVK{std::move(descriptor_sets)};
+    DescriptorSetVK descriptor_set{std::move(descriptor_sets)};
+    descriptor_set_cache_.emplace(info, descriptor_set);
+    return descriptor_set;
 }
 
 u32 RenderContextVK::findMemoryType(u32 type_filter, vk::MemoryPropertyFlags properties) {

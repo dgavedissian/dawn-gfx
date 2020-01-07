@@ -7,6 +7,8 @@
 #include "Renderer.h"
 #include "RenderContext.h"
 
+#include <dga/hash_combine.h>
+
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
 #include <GLFW/glfw3.h>
@@ -87,6 +89,17 @@ struct TextureVK {
 struct PipelineVK {
     vk::PipelineLayout layout;
     vk::Pipeline pipeline;
+
+    struct Info {
+        const RenderItem* render_item;
+        const VertexBufferVK* vb;
+        const ProgramVK* program;
+
+        bool operator==(const Info& other) const {
+            return render_item->colour_write == other.render_item->colour_write && vb == other.vb &&
+                   program == other.program;
+        }
+    };
 };
 
 struct DescriptorSetVK {
@@ -96,8 +109,38 @@ struct DescriptorSetVK {
     void destroy(vk::Device device, vk::DescriptorPool pool) {
         device.freeDescriptorSets(pool, descriptor_sets);
     }
+
+    struct Info {
+        const ProgramVK* program;
+
+        bool operator==(const Info& other) const {
+            return program == other.program;
+        }
+    };
+};
+}  // namespace gfx
+}  // namespace dw
+
+namespace std {
+template <> struct hash<dw::gfx::PipelineVK::Info> {
+    std::size_t operator()(const dw::gfx::PipelineVK::Info& i) const {
+        std::size_t hash = 0;
+        dga::hashCombine(hash, i.render_item->colour_write, i.vb, i.program);
+        return hash;
+    }
 };
 
+template <> struct hash<dw::gfx::DescriptorSetVK::Info> {
+    std::size_t operator()(const dw::gfx::DescriptorSetVK::Info& i) const {
+        std::size_t hash = 0;
+        dga::hashCombine(hash, i.program);
+        return hash;
+    }
+};
+}  // namespace std
+
+namespace dw {
+namespace gfx {
 class RenderContextVK : public RenderContext {
 public:
     explicit RenderContextVK(Logger& logger);
@@ -184,6 +227,10 @@ private:
     std::unordered_map<ProgramHandle, ProgramVK> program_map_;
     std::unordered_map<TextureHandle, TextureVK> texture_map_;
 
+    // Cached objects.
+    std::unordered_map<PipelineVK::Info, PipelineVK> graphics_pipeline_cache_;
+    std::unordered_map<DescriptorSetVK::Info, DescriptorSetVK> descriptor_set_cache_;
+
     bool checkValidationLayerSupport();
     std::vector<const char*> getRequiredExtensions(bool enable_validation_layers);
 
@@ -197,10 +244,8 @@ private:
     void createDescriptorPool();
     void createSyncObjects();
 
-    PipelineVK findOrCreateGraphicsPipeline(const RenderItem& render_item, const VertexBufferVK& vb,
-                                            const ProgramVK& program);
-    DescriptorSetVK findOrCreateDescriptorSet(const RenderItem& render_item,
-                                              const ProgramVK& program);
+    PipelineVK findOrCreateGraphicsPipeline(PipelineVK::Info info);
+    DescriptorSetVK findOrCreateDescriptorSet(DescriptorSetVK::Info info);
 
     u32 findMemoryType(u32 type_filter, vk::MemoryPropertyFlags properties);
     void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
