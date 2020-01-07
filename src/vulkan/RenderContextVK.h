@@ -11,6 +11,8 @@
 #include <vulkan/vulkan.hpp>
 #include <GLFW/glfw3.h>
 
+#include <map>
+
 namespace dw {
 namespace gfx {
 struct VertexBufferVK {
@@ -37,11 +39,34 @@ struct ShaderVK {
     std::string entry_point;
 
     // Reflection data.
-    struct UniformLocation {
-        // Null optional indicates a push_constant buffer.
-        std::optional<u32> ubo_location;
-        usize offset;
+    struct StructLayout {
+        struct StructField {
+            std::string name;
+            usize offset;
+            usize size;
+        };
+
+        std::string name;
         usize size;
+        std::vector<StructField> fields;
+    };
+    std::optional<StructLayout> push_constants;
+    std::map<u32, StructLayout> uniform_buffer_bindings;
+    std::map<u32, vk::DescriptorType> descriptor_type_bindings;
+};
+
+struct ProgramVK {
+    std::unordered_map<vk::ShaderStageFlagBits, ShaderVK> stages;
+    std::vector<vk::PipelineShaderStageCreateInfo> pipeline_stages;
+    std::vector<vk::DescriptorSetLayoutBinding> layout_bindings;
+    vk::DescriptorSetLayout descriptor_set_layout;
+
+    // Uniforms.
+    struct UniformLocation {
+        // Empty optional indicates a push_constant buffer.
+        std::optional<u32> ubo_index;
+        usize offset = 0;
+        usize size = 0;
     };
     std::unordered_map<std::string, UniformLocation> uniform_locations;
 
@@ -49,16 +74,9 @@ struct ShaderVK {
     struct AutoUniformBuffer {
         std::vector<vk::Buffer> buffers;
         std::vector<vk::DeviceMemory> buffers_memory;
-        usize size;
+        usize size = 0;
     };
     std::vector<AutoUniformBuffer> uniform_buffers;
-};
-
-struct ProgramVK {
-    std::unordered_map<ShaderStage, ShaderVK> stages;
-    std::vector<vk::PipelineShaderStageCreateInfo> pipeline_stages;
-    vk::DescriptorSetLayout descriptor_set_layout;
-    std::vector<vk::DescriptorSet> descriptor_sets;
 };
 
 struct TextureVK {
@@ -69,6 +87,15 @@ struct TextureVK {
 struct PipelineVK {
     vk::PipelineLayout layout;
     vk::Pipeline pipeline;
+};
+
+struct DescriptorSetVK {
+    // One descriptor set per swap chain image.
+    std::vector<vk::DescriptorSet> descriptor_sets;
+
+    void destroy(vk::Device device, vk::DescriptorPool pool) {
+        device.freeDescriptorSets(pool, descriptor_sets);
+    }
 };
 
 class RenderContextVK : public RenderContext {
@@ -165,11 +192,15 @@ private:
     void createSwapChain();
     void createImageViews();
     void createRenderPass();
-    PipelineVK createGraphicsPipeline(const RenderItem& render_item, const VertexBufferVK& vb, const ProgramVK& program);
     void createFramebuffers();
     void createCommandBuffers();
     void createDescriptorPool();
     void createSyncObjects();
+
+    PipelineVK findOrCreateGraphicsPipeline(const RenderItem& render_item, const VertexBufferVK& vb,
+                                            const ProgramVK& program);
+    DescriptorSetVK findOrCreateDescriptorSet(const RenderItem& render_item,
+                                              const ProgramVK& program);
 
     u32 findMemoryType(u32 type_filter, vk::MemoryPropertyFlags properties);
     void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,

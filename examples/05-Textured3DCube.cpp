@@ -39,8 +39,8 @@ public:
         Mat4 model = Mat4::Translate(Vec3{0.0f, 0.0f, -50.0f}).ToFloat4x4() * Mat4::RotateY(angle);
         static Mat4 view = Mat4::identity;
         static Mat4 proj = util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
-        r.setUniform("u.model_matrix", model);
-        r.setUniform("u.mvp_matrix", proj * view * model);
+        r.setUniform("u.model_matrix", model.Transposed());
+        r.setUniform("u.mvp_matrix", (proj * view * model).Transposed());
         r.setUniform("u.light_direction", Vec3{1.0f, 1.0f, 1.0f}.Normalized());
 
         // Set vertex buffer and submit.

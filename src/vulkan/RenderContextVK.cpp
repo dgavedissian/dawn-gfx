@@ -6,6 +6,7 @@
 #include <cstring>
 #include <set>
 #include <cstdint>
+#include <map>
 
 #include "dawn-gfx/Shader.h"
 
@@ -127,6 +128,15 @@ struct VariantToBytesHelper {
         return VariantSpan{reinterpret_cast<const byte*>(&data), sizeof(T)};
     }
 };
+
+vk::ShaderStageFlagBits convertShaderStage(ShaderStage stage) {
+    static const std::unordered_map<ShaderStage, vk::ShaderStageFlagBits> shader_stage_map = {
+        {ShaderStage::Vertex, vk::ShaderStageFlagBits::eVertex},
+        {ShaderStage::Geometry, vk::ShaderStageFlagBits::eGeometry},
+        {ShaderStage::Fragment, vk::ShaderStageFlagBits::eFragment},
+    };
+    return shader_stage_map.at(stage);
+}
 }  // namespace
 
 void VertexBufferVK::initVertexInputDescriptions(const VertexDecl& decl) {
@@ -351,49 +361,43 @@ bool RenderContextVK::frame(const Frame* frame) {
             const auto& program = program_map_.at(*ri.program);
 
             // Update uniforms.
-            for (const auto& shader_stage : program.stages) {
-                std::vector<byte*> ubo_data;
-                std::vector<bool> ubo_updated(shader_stage.second.uniform_buffers.size(), false);
-                ubo_data.reserve(shader_stage.second.uniform_buffers.size());
-                for (const auto& ubo : shader_stage.second.uniform_buffers) {
-                    void* mapped_memory = device_.mapMemory(ubo.buffers_memory[0], 0, ubo.size);
-                    ubo_data.push_back(reinterpret_cast<byte*>(mapped_memory));
+            std::vector<byte*> ubo_data;
+            // std::vector<bool> ubo_updated(program.uniform_buffers.size(), false);
+            ubo_data.reserve(program.uniform_buffers.size());
+            for (const auto& ubo : program.uniform_buffers) {
+                void* mapped_memory = device_.mapMemory(ubo.buffers_memory[0], 0, ubo.size);
+                ubo_data.push_back(reinterpret_cast<byte*>(mapped_memory));
+            }
+            for (const auto& uniform_pair : ri.uniforms) {
+                // Find uniform binding
+                auto uniform_it = program.uniform_locations.find(uniform_pair.first);
+                if (uniform_it == program.uniform_locations.end()) {
+                    continue;
                 }
-                for (const auto& uniform_pair : ri.uniforms) {
-                    // Find uniform binding
-                    auto uniform_it =
-                        shader_stage.second.uniform_locations.find(uniform_pair.first);
-                    if (uniform_it == shader_stage.second.uniform_locations.end()) {
-                        continue;
-                    }
-                    auto& uniform_location = uniform_it->second;
-                    if (!uniform_location.ubo_location.has_value()) {
-                        logger_.warn("Push constants not implemented yet.");
-                        continue;
-                    }
-
-                    // Write to memory.
-                    auto variant_bytes = std::visit(VariantToBytesHelper{}, uniform_pair.second);
-                    byte* data_dst =
-                        ubo_data[*uniform_location.ubo_location] + uniform_location.offset;
-                    ubo_updated[*uniform_location.ubo_location] = true;
-                    std::memcpy(data_dst, variant_bytes.data, variant_bytes.size);
-
-                    /*
-                    logger_.info("Writing {} (size {}) to offset {} in UBO {}", uniform_pair.first,
-                                 variant_bytes.size, uniform_location.offset,
-                                 *uniform_location.ubo_location);
-                    */
+                auto& uniform_location = uniform_it->second;
+                if (!uniform_location.ubo_index.has_value()) {
+                    logger_.warn("Push constants not implemented yet.");
+                    continue;
                 }
-                for (usize i = 0; i < shader_stage.second.uniform_buffers.size(); ++i) {
-                    const auto& ubo = shader_stage.second.uniform_buffers[i];
 
-                    device_.unmapMemory(ubo.buffers_memory[0]);
+                // Write to memory.
+                auto variant_bytes = std::visit(VariantToBytesHelper{}, uniform_pair.second);
+                byte* data_dst = ubo_data[*uniform_location.ubo_index] + uniform_location.offset;
+                // ubo_updated[*uniform_location.ubo_index] = true;
+                std::memcpy(data_dst, variant_bytes.data, variant_bytes.size);
 
-                    // Copy buffer to the "real" buffer.
-                    // TODO: Implement dirty flags.
-                    copyBuffer(ubo.buffers[0], ubo.buffers[1 + next_index], ubo.size);
-                }
+                /*
+                logger_.info("Writing {} (size {}) to offset {} in UBO {}", uniform_pair.first,
+                             variant_bytes.size, uniform_location.offset,
+                             *uniform_location.ubo_location);
+                */
+            }
+            for (const auto& ubo : program.uniform_buffers) {
+                device_.unmapMemory(ubo.buffers_memory[0]);
+
+                // Copy buffer to the "real" buffer.
+                // TODO: Implement dirty flags.
+                copyBuffer(ubo.buffers[0], ubo.buffers[1 + next_index], ubo.size);
             }
 
             // If there are no vertices to render, we are done.
@@ -404,14 +408,15 @@ bool RenderContextVK::frame(const Frame* frame) {
             const auto& vb = vertex_buffer_map_.at(*ri.vb);
 
             // Bind (and create) graphics pipeline.
-            auto graphics_pipeline = createGraphicsPipeline(ri, vb, program);
+            auto graphics_pipeline = findOrCreateGraphicsPipeline(ri, vb, program);
             command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
                                         graphics_pipeline.pipeline);
 
             // Bind descriptor set.
+            auto descriptor_set = findOrCreateDescriptorSet(ri, program);
             command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                                               graphics_pipeline.layout, 0,
-                                              program.descriptor_sets[next_index], nullptr);
+                                              descriptor_set.descriptor_sets[next_index], nullptr);
 
             // Bind vertex/index buffers and draw.
             command_buffer.bindVertexBuffers(0, vb.buffer, ri.vb_offset);
@@ -553,44 +558,45 @@ void RenderContextVK::operator()(const cmd::CreateShader& c) {
     spirv_cross::Compiler comp(reinterpret_cast<const u32*>(c.data.data()),
                                c.data.size() / sizeof(u32));
     spirv_cross::ShaderResources res = comp.get_shader_resources();
-    for (const auto& ubo_resource : res.uniform_buffers) {
-        const spirv_cross::SPIRType& type = comp.get_type(ubo_resource.base_type_id);
-        usize size = comp.get_declared_struct_size(type);
-        const auto& name = comp.get_name(ubo_resource.id);
-        logger_.info("UBO resource {} (named {}) is {} bytes", ubo_resource.name, name, size);
+    for (const auto& resource : res.uniform_buffers) {
+        const spirv_cross::SPIRType& type = comp.get_type(resource.base_type_id);
+
+        ShaderVK::StructLayout struct_layout;
+        struct_layout.name = comp.get_name(resource.id);
+        struct_layout.size = comp.get_declared_struct_size(type);
+
         usize member_count = type.member_types.size();
+        struct_layout.fields.reserve(member_count);
         for (usize i = 0; i < member_count; ++i) {
-            ShaderVK::UniformLocation location;
-            location.size = comp.get_declared_struct_member_size(type, i);
-            location.offset = comp.type_struct_member_offset(type, i);
-
-            const auto& member_type = comp.get_type(type.member_types[i]);
-            const auto& member_name = comp.get_member_name(type.self, i);
-
-            logger_.info("- member {} is {} bytes and has an offset of {}", member_name,
-                         location.size, location.offset);
-
-            location.ubo_location = shader.uniform_buffers.size();
-            shader.uniform_locations.emplace(name + "." + member_name, location);
+            struct_layout.fields.emplace_back(ShaderVK::StructLayout::StructField{
+                comp.get_member_name(type.self, i), comp.type_struct_member_offset(type, i),
+                comp.get_declared_struct_member_size(type, i)});
         }
+        shader.uniform_buffer_bindings.emplace(
+            comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
+            std::move(struct_layout));
+    }
 
-        // Allocate a UBO and memory for each swap chain image, plus a "staging" buffer at index 0.
-        ShaderVK::AutoUniformBuffer ubo;
-        ubo.buffers.resize(swap_chain_images_.size() + 1);
-        ubo.buffers_memory.resize(swap_chain_images_.size() + 1);
-        createBuffer(
-            size, vk::BufferUsageFlagBits::eTransferSrc,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            ubo.buffers[0], ubo.buffers_memory[0]);
-        for (usize i = 0; i < swap_chain_images_.size(); ++i) {
-            createBuffer(
-                size,
-                vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eUniformBuffer,
-                vk::MemoryPropertyFlagBits::eDeviceLocal, ubo.buffers[i + 1],
-                ubo.buffers_memory[i + 1]);
-        }
-        ubo.size = size;
-        shader.uniform_buffers.push_back(std::move(ubo));
+    // Find bindings.
+    for (const auto& resource : res.uniform_buffers) {
+        shader.descriptor_type_bindings.emplace(
+            comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
+            vk::DescriptorType::eUniformBuffer);
+    }
+    for (const auto& resource : res.sampled_images) {
+        shader.descriptor_type_bindings.emplace(
+            comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
+            vk::DescriptorType::eCombinedImageSampler);
+    }
+    for (const auto& resource : res.separate_images) {
+        shader.descriptor_type_bindings.emplace(
+            comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
+            vk::DescriptorType::eSampledImage);
+    }
+    for (const auto& resource : res.separate_samplers) {
+        shader.descriptor_type_bindings.emplace(
+            comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
+            vk::DescriptorType::eSampler);
     }
 
     shader_map_.emplace(c.handle, std::move(shader));
@@ -612,91 +618,96 @@ void RenderContextVK::operator()(const cmd::AttachShader& c) {
 
     const auto& shader = shader_map_.at(c.shader_handle);
 
-    static const std::unordered_map<ShaderStage, vk::ShaderStageFlagBits> shader_stage_map = {
-        {ShaderStage::Vertex, vk::ShaderStageFlagBits::eVertex},
-        {ShaderStage::Geometry, vk::ShaderStageFlagBits::eGeometry},
-        {ShaderStage::Fragment, vk::ShaderStageFlagBits::eFragment},
-    };
-
     vk::PipelineShaderStageCreateInfo stage_info;
-    stage_info.stage = shader_stage_map.at(shader.stage);
+    stage_info.stage = convertShaderStage(shader.stage);
     stage_info.module = shader.module;
     stage_info.pName = shader.entry_point.c_str();
 
     auto& program = program_map_.at(c.handle);
-    program.stages[shader.stage] = shader;
+    program.stages[stage_info.stage] = shader;
     program.pipeline_stages.push_back(stage_info);
 }
 
 void RenderContextVK::operator()(const cmd::LinkProgram& c) {
     auto& program = program_map_.at(c.handle);
 
-    // TODO: Figure this out from the shader.
-    std::vector<vk::DescriptorSetLayoutBinding> bindings;
-    bindings.resize(3);
-    bindings[0].binding = 0;
-    bindings[0].descriptorType = vk::DescriptorType::eUniformBuffer;
-    bindings[0].descriptorCount = 1;
-    bindings[0].stageFlags = vk::ShaderStageFlagBits::eVertex;
-    bindings[0].pImmutableSamplers = nullptr;  // Optional
-    bindings[1].binding = 1;
-    bindings[1].descriptorType = vk::DescriptorType::eUniformBuffer;
-    bindings[1].descriptorCount = 1;
-    bindings[1].stageFlags = vk::ShaderStageFlagBits::eFragment;
-    bindings[1].pImmutableSamplers = nullptr;  // Optional
-    bindings[2].binding = 2;
-    bindings[2].descriptorType = vk::DescriptorType::eCombinedImageSampler;
-    bindings[2].descriptorCount = 1;
-    bindings[2].stageFlags = vk::ShaderStageFlagBits::eFragment;
-    bindings[2].pImmutableSamplers = nullptr;  // Optional
+    // Create descriptor set layout.
+    std::map<u32, vk::DescriptorSetLayoutBinding> descriptor_bindings_map;
+    for (const auto& stage : program.stages) {
+        for (const auto& b : stage.second.descriptor_type_bindings) {
+            auto it = descriptor_bindings_map.find(b.first);
+            if (it != descriptor_bindings_map.end()) {
+                if (it->second.descriptorType != b.second) {
+                    logger_.error(
+                        "Attempting to bind a descriptor of type {} to binding {} which is already "
+                        "bound to descriptor type {}, ignoring.",
+                        vk::to_string(b.second), b.first, vk::to_string(it->second.descriptorType));
+                    continue;
+                }
+                // Binding already exists, append this shader stage type.
+                it->second.stageFlags |= stage.first;
+            } else {
+                vk::DescriptorSetLayoutBinding layout_binding;
+                layout_binding.binding = b.first;
+                layout_binding.descriptorType = b.second;
+                layout_binding.descriptorCount = 1;
+                layout_binding.stageFlags = stage.first;
+                layout_binding.pImmutableSamplers = nullptr;
+                descriptor_bindings_map.emplace(b.first, layout_binding);
+            }
+        }
+    }
 
+    program.layout_bindings.reserve(descriptor_bindings_map.size());
+    for (const auto& binding_entry : descriptor_bindings_map) {
+        program.layout_bindings.push_back(binding_entry.second);
+    }
+
+    // Create descriptor set layout.
     vk::DescriptorSetLayoutCreateInfo layout_info;
-    layout_info.bindingCount = bindings.size();
-    layout_info.pBindings = bindings.data();
+    layout_info.bindingCount = program.layout_bindings.size();
+    layout_info.pBindings = program.layout_bindings.data();
     program.descriptor_set_layout = device_.createDescriptorSetLayout(layout_info);
 
-    // Allocate descriptor sets.
-    // TODO: Move this to renderFrame like here: https://github.com/bkaradzic/bgfx/blob/master/src/renderer_vk.cpp#L3638
-    std::vector<vk::DescriptorSetLayout> layouts(swap_chain_images_.size(),
-                                                 program.descriptor_set_layout);
-    vk::DescriptorSetAllocateInfo alloc_info;
-    alloc_info.descriptorPool = descriptor_pool_;
-    alloc_info.descriptorSetCount = layouts.size();
-    alloc_info.pSetLayouts = layouts.data();
-    program.descriptor_sets = device_.allocateDescriptorSets(alloc_info);
+    // Merge resources from each shader stage. We've already done error checking above.
+    std::map<u32, ShaderVK::StructLayout> uniform_buffer_bindings;
+    for (const auto& stage : program.stages) {
+        uniform_buffer_bindings.insert(stage.second.uniform_buffer_bindings.begin(),
+                                       stage.second.uniform_buffer_bindings.end());
+    }
 
-    // Write to them.
-    for (usize i = 0; i < swap_chain_images_.size(); ++i) {
-        vk::DescriptorBufferInfo bufferInfo;
-        bufferInfo.buffer = program.stages.at(ShaderStage::Vertex).uniform_buffers[0].buffers[i];
-        bufferInfo.offset = 0;
-        bufferInfo.range = VK_WHOLE_SIZE;
+    // Allocate a UBO and memory for each swap chain image, plus a "staging" buffer at index 0.
+    for (const auto& binding : uniform_buffer_bindings) {
+        logger_.info("Uniform buffer binding {} is {} bytes", binding.second.name,
+                     binding.second.size);
 
-        vk::DescriptorImageInfo imageInfo;
-        imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        // imageInfo.imageView = textureImageView;
-        // imageInfo.sampler = textureSampler;
+        ProgramVK::AutoUniformBuffer ubo;
+        ubo.buffers.resize(swap_chain_images_.size() + 1);
+        ubo.buffers_memory.resize(swap_chain_images_.size() + 1);
+        createBuffer(
+            binding.second.size, vk::BufferUsageFlagBits::eTransferSrc,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            ubo.buffers[0], ubo.buffers_memory[0]);
+        for (usize i = 0; i < swap_chain_images_.size(); ++i) {
+            createBuffer(
+                binding.second.size,
+                vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eUniformBuffer,
+                vk::MemoryPropertyFlagBits::eDeviceLocal, ubo.buffers[i + 1],
+                ubo.buffers_memory[i + 1]);
+        }
+        ubo.size = binding.second.size;
+        program.uniform_buffers.push_back(std::move(ubo));
 
-        std::array<vk::WriteDescriptorSet, 2> descriptorWrite;
-        descriptorWrite[0].dstSet = program.descriptor_sets[i];
-        descriptorWrite[0].dstBinding = 0;  // layout(binding = 0)
-        descriptorWrite[0].dstArrayElement = 0;
-        descriptorWrite[0].descriptorType = vk::DescriptorType::eUniformBuffer;
-        descriptorWrite[0].descriptorCount = 1;
-        descriptorWrite[0].pBufferInfo = &bufferInfo;
-        descriptorWrite[0].pImageInfo = nullptr;
-        descriptorWrite[0].pTexelBufferView = nullptr;
-
-        descriptorWrite[1].dstSet = program.descriptor_sets[i];
-        descriptorWrite[1].dstBinding = 2;
-        descriptorWrite[1].dstArrayElement = 0;
-        descriptorWrite[1].descriptorType = vk::DescriptorType::eCombinedImageSampler;
-        descriptorWrite[1].descriptorCount = 1;
-        descriptorWrite[1].pBufferInfo = nullptr;
-        descriptorWrite[1].pImageInfo = &imageInfo;
-        descriptorWrite[1].pTexelBufferView = nullptr;
-
-        device_.updateDescriptorSets(descriptorWrite, {});
+        // Find uniform locations.
+        usize ubo_index = program.uniform_buffers.size() - 1;
+        for (const auto& field : binding.second.fields) {
+            logger_.info("- member {} is {} bytes and has an offset of {}", field.name, field.size,
+                         field.offset);
+            std::string qualified_name = binding.second.name + "." + field.name;
+            program.uniform_locations.emplace(
+                std::move(qualified_name),
+                ProgramVK::UniformLocation{ubo_index, field.offset, field.size});
+        }
     }
 }
 
@@ -1054,9 +1065,72 @@ void RenderContextVK::createRenderPass() {
     render_pass_ = device_.createRenderPass(render_pass_info);
 }
 
-PipelineVK RenderContextVK::createGraphicsPipeline(const RenderItem& render_item,
-                                                   const VertexBufferVK& vb,
-                                                   const ProgramVK& program) {
+void RenderContextVK::createFramebuffers() {
+    swap_chain_framebuffers_.reserve(swap_chain_image_views_.size());
+    for (const auto& image_view : swap_chain_image_views_) {
+        vk::ImageView attachments[] = {image_view};
+
+        vk::FramebufferCreateInfo framebuffer_info;
+        framebuffer_info.renderPass = render_pass_;
+        framebuffer_info.attachmentCount = 1;
+        framebuffer_info.pAttachments = attachments;
+        framebuffer_info.width = swap_chain_extent_.width;
+        framebuffer_info.height = swap_chain_extent_.height;
+        framebuffer_info.layers = 1;
+        swap_chain_framebuffers_.push_back(device_.createFramebuffer(framebuffer_info));
+    }
+}
+
+void RenderContextVK::createCommandBuffers() {
+    vk::CommandPoolCreateInfo pool_info;
+    pool_info.queueFamilyIndex = graphics_queue_family_index_;
+    pool_info.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
+    command_pool_ = device_.createCommandPool(pool_info);
+
+    vk::CommandBufferAllocateInfo allocate_info;
+    allocate_info.commandPool = command_pool_;
+    allocate_info.level = vk::CommandBufferLevel::ePrimary;
+    allocate_info.commandBufferCount = static_cast<u32>(swap_chain_framebuffers_.size());
+    command_buffers_ = device_.allocateCommandBuffers(allocate_info);
+}
+
+void RenderContextVK::createDescriptorPool() {
+    vk::DescriptorPoolSize dps[] = {
+        {vk::DescriptorType::eCombinedImageSampler, (10 * DW_MAX_TEXTURE_SAMPLERS) << 10},
+        {vk::DescriptorType::eSampledImage, (10 * DW_MAX_TEXTURE_SAMPLERS) << 10},
+        {vk::DescriptorType::eSampler, (10 * DW_MAX_TEXTURE_SAMPLERS) << 10},
+        {vk::DescriptorType::eUniformBuffer, 10 << 10},
+        {vk::DescriptorType::eStorageBuffer, DW_MAX_TEXTURE_SAMPLERS << 10},
+        {vk::DescriptorType::eStorageImage, DW_MAX_TEXTURE_SAMPLERS << 10},
+    };
+
+    vk::DescriptorPoolCreateInfo poolInfo;
+    poolInfo.poolSizeCount = sizeof(dps) / sizeof(dps[0]);
+    poolInfo.pPoolSizes = dps;
+    poolInfo.maxSets = 10 << 10;
+
+    descriptor_pool_ = device_.createDescriptorPool(poolInfo);
+}
+
+void RenderContextVK::createSyncObjects() {
+    image_available_semaphores_.reserve(kMaxFramesInFlight);
+    render_finished_semaphores_.reserve(kMaxFramesInFlight);
+    in_flight_fences_.reserve(kMaxFramesInFlight);
+    for (int i = 0; i < kMaxFramesInFlight; ++i) {
+        image_available_semaphores_.push_back(device_.createSemaphore(vk::SemaphoreCreateInfo{}));
+        render_finished_semaphores_.push_back(device_.createSemaphore(vk::SemaphoreCreateInfo{}));
+
+        vk::FenceCreateInfo fence_create_info;
+        fence_create_info.flags = vk::FenceCreateFlagBits::eSignaled;
+        in_flight_fences_.push_back(device_.createFence(fence_create_info));
+    }
+
+    images_in_flight_.resize(swap_chain_images_.size());
+}
+
+PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(const RenderItem& render_item,
+                                                         const VertexBufferVK& vb,
+                                                         const ProgramVK& program) {
     PipelineVK graphics_pipeline;
 
     // Create fixed function pipeline stages.
@@ -1182,67 +1256,61 @@ PipelineVK RenderContextVK::createGraphicsPipeline(const RenderItem& render_item
     return graphics_pipeline;
 }
 
-void RenderContextVK::createFramebuffers() {
-    swap_chain_framebuffers_.reserve(swap_chain_image_views_.size());
-    for (const auto& image_view : swap_chain_image_views_) {
-        vk::ImageView attachments[] = {image_view};
+DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(const RenderItem& render_item,
+                                                           const ProgramVK& program) {
+    // Allocate descriptor sets.
+    // TODO: Move this to renderFrame like here:
+    // https://github.com/bkaradzic/bgfx/blob/master/src/renderer_vk.cpp#L3638
+    std::vector<vk::DescriptorSetLayout> layouts(swap_chain_images_.size(),
+                                                 program.descriptor_set_layout);
+    vk::DescriptorSetAllocateInfo alloc_info;
+    alloc_info.descriptorPool = descriptor_pool_;
+    alloc_info.descriptorSetCount = layouts.size();
+    alloc_info.pSetLayouts = layouts.data();
+    std::vector<vk::DescriptorSet> descriptor_sets = device_.allocateDescriptorSets(alloc_info);
 
-        vk::FramebufferCreateInfo framebuffer_info;
-        framebuffer_info.renderPass = render_pass_;
-        framebuffer_info.attachmentCount = 1;
-        framebuffer_info.pAttachments = attachments;
-        framebuffer_info.width = swap_chain_extent_.width;
-        framebuffer_info.height = swap_chain_extent_.height;
-        framebuffer_info.layers = 1;
-        swap_chain_framebuffers_.push_back(device_.createFramebuffer(framebuffer_info));
-    }
-}
+    // Write to them.
+    for (usize i = 0; i < swap_chain_images_.size(); ++i) {
+        std::vector<vk::WriteDescriptorSet> descriptor_writes;
+        std::vector<std::unique_ptr<vk::DescriptorBufferInfo>> buffer_info_storage;
+        std::vector<std::unique_ptr<vk::DescriptorImageInfo>> image_info_storage;
+        for (const auto& binding : program.layout_bindings) {
+            vk::WriteDescriptorSet descriptor_write;
+            descriptor_write.dstSet = descriptor_sets[i];
+            descriptor_write.dstBinding = binding.binding;
+            descriptor_write.dstArrayElement = 0;
+            descriptor_write.descriptorType = binding.descriptorType;
+            descriptor_write.descriptorCount = 1;
+            switch (binding.descriptorType) {
+                case vk::DescriptorType::eUniformBuffer: {
+                    buffer_info_storage.emplace_back(std::make_unique<vk::DescriptorBufferInfo>());
+                    auto& buffer_info = *buffer_info_storage.back();
+                    buffer_info.buffer = program.uniform_buffers.at(binding.binding).buffers[i + 1];
+                    buffer_info.offset = 0;
+                    buffer_info.range = VK_WHOLE_SIZE;
+                    descriptor_write.pBufferInfo = &buffer_info;
+                } break;
+                case vk::DescriptorType::eCombinedImageSampler: {
+                    image_info_storage.emplace_back(std::make_unique<vk::DescriptorImageInfo>());
+                    auto& image_info = *image_info_storage.back();
+                    image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+                    // image_info.imageView = textureImageView;
+                    // image_info.sampler = textureSampler;
+                    descriptor_write.pImageInfo = &image_info;
+                } break;
+                default:
+                    logger_.error("Unhandled descriptor type {}",
+                                  vk::to_string(binding.descriptorType));
+            }
+            descriptor_write.pImageInfo = nullptr;
+            descriptor_write.pTexelBufferView = nullptr;
+            descriptor_writes.push_back(descriptor_write);
+        }
 
-void RenderContextVK::createCommandBuffers() {
-    vk::CommandPoolCreateInfo pool_info;
-    pool_info.queueFamilyIndex = graphics_queue_family_index_;
-    pool_info.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
-    command_pool_ = device_.createCommandPool(pool_info);
-
-    vk::CommandBufferAllocateInfo allocate_info;
-    allocate_info.commandPool = command_pool_;
-    allocate_info.level = vk::CommandBufferLevel::ePrimary;
-    allocate_info.commandBufferCount = static_cast<u32>(swap_chain_framebuffers_.size());
-    command_buffers_ = device_.allocateCommandBuffers(allocate_info);
-}
-
-void RenderContextVK::createDescriptorPool() {
-    vk::DescriptorPoolSize dps[] = {
-        {vk::DescriptorType::eCombinedImageSampler, (10 * DW_MAX_TEXTURE_SAMPLERS) << 10},
-        {vk::DescriptorType::eSampledImage, (10 * DW_MAX_TEXTURE_SAMPLERS) << 10},
-        {vk::DescriptorType::eSampler, (10 * DW_MAX_TEXTURE_SAMPLERS) << 10},
-        {vk::DescriptorType::eUniformBuffer, 10 << 10},
-        {vk::DescriptorType::eStorageBuffer, DW_MAX_TEXTURE_SAMPLERS << 10},
-        {vk::DescriptorType::eStorageImage, DW_MAX_TEXTURE_SAMPLERS << 10},
-    };
-
-    vk::DescriptorPoolCreateInfo poolInfo;
-    poolInfo.poolSizeCount = sizeof(dps) / sizeof(dps[0]);
-    poolInfo.pPoolSizes = dps;
-    poolInfo.maxSets = 10 << 10;
-
-    descriptor_pool_ = device_.createDescriptorPool(poolInfo);
-}
-
-void RenderContextVK::createSyncObjects() {
-    image_available_semaphores_.reserve(kMaxFramesInFlight);
-    render_finished_semaphores_.reserve(kMaxFramesInFlight);
-    in_flight_fences_.reserve(kMaxFramesInFlight);
-    for (int i = 0; i < kMaxFramesInFlight; ++i) {
-        image_available_semaphores_.push_back(device_.createSemaphore(vk::SemaphoreCreateInfo{}));
-        render_finished_semaphores_.push_back(device_.createSemaphore(vk::SemaphoreCreateInfo{}));
-
-        vk::FenceCreateInfo fence_create_info;
-        fence_create_info.flags = vk::FenceCreateFlagBits::eSignaled;
-        in_flight_fences_.push_back(device_.createFence(fence_create_info));
+        device_.updateDescriptorSets(descriptor_writes, {});
     }
 
-    images_in_flight_.resize(swap_chain_images_.size());
+    return DescriptorSetVK{std::move(descriptor_sets)};
 }
 
 u32 RenderContextVK::findMemoryType(u32 type_filter, vk::MemoryPropertyFlags properties) {
