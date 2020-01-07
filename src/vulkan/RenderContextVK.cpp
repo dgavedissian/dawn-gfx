@@ -412,9 +412,21 @@ bool RenderContextVK::frame(const Frame* frame) {
                 findOrCreateGraphicsPipeline(PipelineVK::Info{&ri, &vb, &program});
             command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
                                         graphics_pipeline.pipeline);
+            if (ri.scissor_enabled) {
+                command_buffer.setScissor(
+                    0, vk::Rect2D{vk::Offset2D{ri.scissor_x, ri.scissor_y},
+                                  vk::Extent2D{ri.scissor_width, ri.scissor_height}});
+            }
 
             // Bind descriptor set.
-            auto descriptor_set = findOrCreateDescriptorSet(DescriptorSetVK::Info{&program});
+            std::vector<RenderItem::TextureBinding> textures;
+            for (const auto& texture_unit : ri.textures) {
+                if (texture_unit) {
+                    textures.emplace_back(*texture_unit);
+                }
+            }
+            auto descriptor_set =
+                findOrCreateDescriptorSet(DescriptorSetVK::Info{&program, std::move(textures)});
             command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                                               graphics_pipeline.layout, 0,
                                               descriptor_set.descriptor_sets[next_index], nullptr);
@@ -719,6 +731,7 @@ void RenderContextVK::operator()(const cmd::DeleteProgram& c) {
 void RenderContextVK::operator()(const cmd::CreateTexture2D& c) {
     TextureVK texture;
 
+    // Create image by copying to a staging buffer.
     vk::DeviceSize buffer_size = c.data.size();
 
     vk::Buffer staging_buffer;
@@ -768,6 +781,9 @@ void RenderContextVK::operator()(const cmd::CreateTexture2D& c) {
 
     device_.destroy(staging_buffer);
     device_.free(staging_buffer_memory);
+
+    // Create image view.
+    texture.image_view = createImageView(texture.image, image_info.format);
 
     texture_map_.emplace(c.handle, std::move(texture));
 }
@@ -1010,20 +1026,8 @@ void RenderContextVK::createSwapChain() {
 void RenderContextVK::createImageViews() {
     swap_chain_image_views_.reserve(swap_chain_images_.size());
     for (const auto& swap_chain_image : swap_chain_images_) {
-        vk::ImageViewCreateInfo create_info;
-        create_info.image = swap_chain_image;
-        create_info.viewType = vk::ImageViewType::e2D;
-        create_info.format = swap_chain_image_format_;
-        create_info.components.r = vk::ComponentSwizzle::eIdentity;
-        create_info.components.g = vk::ComponentSwizzle::eIdentity;
-        create_info.components.b = vk::ComponentSwizzle::eIdentity;
-        create_info.components.a = vk::ComponentSwizzle::eIdentity;
-        create_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-        create_info.subresourceRange.baseMipLevel = 0;
-        create_info.subresourceRange.levelCount = 1;
-        create_info.subresourceRange.baseArrayLayer = 0;
-        create_info.subresourceRange.layerCount = 1;
-        swap_chain_image_views_.push_back(device_.createImageView(create_info));
+        swap_chain_image_views_.push_back(
+            createImageView(swap_chain_image, swap_chain_image_format_));
     }
 }
 
@@ -1222,11 +1226,11 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(PipelineVK::Info info) 
     colour_blending.blendConstants[2] = 0.0f;  // Optional
     colour_blending.blendConstants[3] = 0.0f;  // Optional
 
-    vk::DynamicState dynamic_states[] = {vk::DynamicState::eViewport, vk::DynamicState::eLineWidth};
+    vk::DynamicState dynamic_states[] = {vk::DynamicState::eScissor};
 
-    //    vk::PipelineDynamicStateCreateInfo dynamic_state;
-    //    dynamic_state.dynamicStateCount = 0;
-    //    dynamic_state.pDynamicStates = dynamic_states;
+    vk::PipelineDynamicStateCreateInfo dynamic_state;
+    dynamic_state.dynamicStateCount = sizeof(dynamic_states) / sizeof(dynamic_states[0]);
+    dynamic_state.pDynamicStates = dynamic_states;
 
     vk::PipelineLayoutCreateInfo pipeline_layout_info;
     pipeline_layout_info.setLayoutCount = 1;
@@ -1267,9 +1271,6 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(DescriptorSetVK::Info
     }
 
     // Cache miss. Create a new descriptor set.
-
-    // TODO: Move this to renderFrame like here:
-    // https://github.com/bkaradzic/bgfx/blob/master/src/renderer_vk.cpp#L3638
     std::vector<vk::DescriptorSetLayout> layouts(swap_chain_images_.size(),
                                                  info.program->descriptor_set_layout);
     vk::DescriptorSetAllocateInfo alloc_info;
@@ -1283,6 +1284,8 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(DescriptorSetVK::Info
         std::vector<vk::WriteDescriptorSet> descriptor_writes;
         std::vector<std::unique_ptr<vk::DescriptorBufferInfo>> buffer_info_storage;
         std::vector<std::unique_ptr<vk::DescriptorImageInfo>> image_info_storage;
+
+        usize texture_unit_index = 0;
         for (const auto& binding : info.program->layout_bindings) {
             vk::WriteDescriptorSet descriptor_write;
             descriptor_write.dstSet = descriptor_sets[i];
@@ -1294,6 +1297,7 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(DescriptorSetVK::Info
                 case vk::DescriptorType::eUniformBuffer: {
                     buffer_info_storage.emplace_back(std::make_unique<vk::DescriptorBufferInfo>());
                     auto& buffer_info = *buffer_info_storage.back();
+
                     buffer_info.buffer =
                         info.program->uniform_buffers.at(binding.binding).buffers[i + 1];
                     buffer_info.offset = 0;
@@ -1301,19 +1305,29 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(DescriptorSetVK::Info
                     descriptor_write.pBufferInfo = &buffer_info;
                 } break;
                 case vk::DescriptorType::eCombinedImageSampler: {
+                    if (texture_unit_index >= info.textures.size()) {
+                        // Not enough textures are bound, bail from this binding.
+                        logger_.error(
+                            "Binding location {} requires a texture to be bound to texture unit {}",
+                            binding.binding, texture_unit_index);
+                        continue;
+                    }
+                    const auto& texture_info = info.textures[texture_unit_index];
+                    const auto& texture = texture_map_.at(texture_info.handle);
+
                     image_info_storage.emplace_back(std::make_unique<vk::DescriptorImageInfo>());
                     auto& image_info = *image_info_storage.back();
+
                     image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-                    // image_info.imageView = textureImageView;
-                    // image_info.sampler = textureSampler;
+                    image_info.imageView = texture.image_view;
+                    image_info.sampler = findOrCreateSampler(texture_info.sampler_info);
                     descriptor_write.pImageInfo = &image_info;
+                    texture_unit_index++;
                 } break;
                 default:
                     logger_.error("Unhandled descriptor type {}",
                                   vk::to_string(binding.descriptorType));
             }
-            descriptor_write.pImageInfo = nullptr;
-            descriptor_write.pTexelBufferView = nullptr;
             descriptor_writes.push_back(descriptor_write);
         }
 
@@ -1323,6 +1337,57 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(DescriptorSetVK::Info
     DescriptorSetVK descriptor_set{std::move(descriptor_sets)};
     descriptor_set_cache_.emplace(info, descriptor_set);
     return descriptor_set;
+}
+
+vk::Sampler RenderContextVK::findOrCreateSampler(RenderItem::SamplerInfo info) {
+    auto cached_sampler = sampler_cache_.find(info);
+    if (cached_sampler != sampler_cache_.end()) {
+        return cached_sampler->second;
+    }
+
+    // Cache miss. Create a new sampler.
+
+    // Parse sampler flags.
+    const std::unordered_map<u32, vk::SamplerAddressMode> wrapping_mode_map = {
+        {0b01, vk::SamplerAddressMode::eRepeat},
+        {0b10, vk::SamplerAddressMode::eMirroredRepeat},
+        {0b11, vk::SamplerAddressMode::eClampToEdge}};
+    const std::unordered_map<u32, vk::Filter> filter_map = {{0b01, vk::Filter::eNearest},
+                                                            {0b10, vk::Filter::eLinear}};
+    const std::unordered_map<u32, vk::SamplerMipmapMode> mipmap_mode = {
+        {0b01, vk::SamplerMipmapMode::eNearest}, {0b10, vk::SamplerMipmapMode::eLinear}};
+    auto flags = info.sampler_flags;
+    auto u_wrapping_mode =
+        (flags & SamplerFlag::maskUWrappingMode) >> SamplerFlag::shiftUWrappingMode;
+    auto v_wrapping_mode =
+        (flags & SamplerFlag::maskVWrappingMode) >> SamplerFlag::shiftVWrappingMode;
+    auto w_wrapping_mode =
+        (flags & SamplerFlag::maskWWrappingMode) >> SamplerFlag::shiftWWrappingMode;
+    auto min_filter = (flags & SamplerFlag::maskMinFilter) >> SamplerFlag::shiftMinFilter;
+    auto mag_filter = (flags & SamplerFlag::maskMagFilter) >> SamplerFlag::shiftMagFilter;
+    auto mip_filter = (flags & SamplerFlag::maskMipFilter) >> SamplerFlag::shiftMipFilter;
+
+    // Create sampler object.
+    vk::SamplerCreateInfo samplerInfo;
+    samplerInfo.magFilter = filter_map.at(mag_filter);
+    samplerInfo.minFilter = filter_map.at(min_filter);
+    samplerInfo.addressModeU = wrapping_mode_map.at(u_wrapping_mode);
+    samplerInfo.addressModeV = wrapping_mode_map.at(v_wrapping_mode);
+    samplerInfo.addressModeW = wrapping_mode_map.at(w_wrapping_mode);
+    // samplerInfo.anisotropyEnable = VK_TRUE;
+    // samplerInfo.maxAnisotropy = 16;
+    samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = vk::CompareOp::eAlways;
+    samplerInfo.mipmapMode = mipmap_mode.at(mip_filter);
+    samplerInfo.mipLodBias = 0.0f;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
+
+    vk::Sampler sampler = device_.createSampler(samplerInfo);
+    sampler_cache_.emplace(info, sampler);
+    return sampler;
 }
 
 u32 RenderContextVK::findMemoryType(u32 type_filter, vk::MemoryPropertyFlags properties) {
@@ -1426,6 +1491,23 @@ void RenderContextVK::transitionImageLayout(vk::Image image, vk::Format format,
     command_buffer.pipelineBarrier(sourceStage, destinationStage, {}, nullptr, nullptr, barrier);
 
     endSingleUseCommands(command_buffer);
+}
+
+vk::ImageView RenderContextVK::createImageView(vk::Image image, vk::Format format) {
+    vk::ImageViewCreateInfo image_view_info;
+    image_view_info.image = image;
+    image_view_info.viewType = vk::ImageViewType::e2D;
+    image_view_info.format = format;
+    image_view_info.components.r = vk::ComponentSwizzle::eIdentity;
+    image_view_info.components.g = vk::ComponentSwizzle::eIdentity;
+    image_view_info.components.b = vk::ComponentSwizzle::eIdentity;
+    image_view_info.components.a = vk::ComponentSwizzle::eIdentity;
+    image_view_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    image_view_info.subresourceRange.baseMipLevel = 0;
+    image_view_info.subresourceRange.levelCount = 1;
+    image_view_info.subresourceRange.baseArrayLayer = 0;
+    image_view_info.subresourceRange.layerCount = 1;
+    return device_.createImageView(image_view_info);
 }
 
 vk::CommandBuffer RenderContextVK::beginSingleUseCommands() {

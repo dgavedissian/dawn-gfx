@@ -14,6 +14,7 @@
 #include "Input.h"
 
 #include <dga/barrier.h>
+#include <dga/hash_combine.h>
 #include <tl/expected.hpp>
 #include <vector>
 #include <variant>
@@ -348,10 +349,22 @@ using UniformData = std::variant<int, float, Vec2, Vec3, Vec4, Mat3, Mat4>;
 
 // Current render state.
 struct RenderItem {
-    struct TextureBinding {
-        TextureHandle handle;
+    struct SamplerInfo {
         u32 sampler_flags;
         float max_anisotropy;
+
+        bool operator==(const SamplerInfo& other) const {
+            return sampler_flags == other.sampler_flags && max_anisotropy == other.max_anisotropy;
+        }
+    };
+
+    struct TextureBinding {
+        TextureHandle handle;
+        SamplerInfo sampler_info;
+
+        bool operator==(const TextureBinding& other) const {
+            return handle == other.handle && sampler_info == other.sampler_info;
+        }
     };
 
     // Vertices and indices.
@@ -532,11 +545,15 @@ public:
     /// Returns the last created render queue.
     uint lastCreatedRenderQueue() const;
 
-    /// Causes the last created render queue to clear the framebuffer to a specific colour when processed.
-    void setRenderQueueClear(const Colour& colour, bool clear_colour = true, bool clear_depth = true);
+    /// Causes the last created render queue to clear the framebuffer to a specific colour when
+    /// processed.
+    void setRenderQueueClear(const Colour& colour, bool clear_colour = true,
+                             bool clear_depth = true);
 
-    /// Causes the current render queue to clear the framebuffer to a specific colour when processed.
-    void setRenderQueueClear(uint render_queue, const Colour& colour, bool clear_colour = true, bool clear_depth = true);
+    /// Causes the current render queue to clear the framebuffer to a specific colour when
+    /// processed.
+    void setRenderQueueClear(uint render_queue, const Colour& colour, bool clear_colour = true,
+                             bool clear_depth = true);
 
     /// Update state.
     void setStateEnable(RenderState state);
@@ -552,7 +569,8 @@ public:
     /// Scissor.
     void setScissor(u16 x, u16 y, u16 width, u16 height);
 
-    /// Update uniform and draw state, but submit no geometry. Submits to the last created render queue.
+    /// Update uniform and draw state, but submit no geometry. Submits to the last created render
+    /// queue.
     void submit(ProgramHandle program);
 
     /// Update uniform and draw state, but submit no geometry.
@@ -640,3 +658,13 @@ private:
 };
 }  // namespace gfx
 }  // namespace dw
+
+namespace std {
+template <> struct hash<dw::gfx::RenderItem::SamplerInfo> {
+    std::size_t operator()(const dw::gfx::RenderItem::SamplerInfo& i) const {
+        std::size_t hash = 0;
+        dga::hashCombine(hash, i.sampler_flags, i.max_anisotropy);
+        return hash;
+    }
+};
+}  // namespace std

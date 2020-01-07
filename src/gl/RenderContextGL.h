@@ -18,13 +18,13 @@ public:
     void setMaxSupportedAnisotropy(float max_supported_anisotropy);
 
     // Find a sampler object given a set of sampler flags. If the object does not exist, create it.
-    GLuint findOrCreate(u32 sampler_flags, float max_anisotropy);
+    GLuint findOrCreate(RenderItem::SamplerInfo info);
 
     // Clear the cache.
     void clear();
 
 private:
-    std::unordered_map<std::size_t, GLuint> cache_;
+    std::unordered_map<RenderItem::SamplerInfo, GLuint> cache_;
     float max_supported_anisotropy_;
 };
 

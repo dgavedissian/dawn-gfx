@@ -84,6 +84,7 @@ struct ProgramVK {
 struct TextureVK {
     vk::Image image;
     vk::DeviceMemory image_memory;
+    vk::ImageView image_view;
 };
 
 struct PipelineVK {
@@ -112,9 +113,10 @@ struct DescriptorSetVK {
 
     struct Info {
         const ProgramVK* program;
+        std::vector<RenderItem::TextureBinding> textures;
 
         bool operator==(const Info& other) const {
-            return program == other.program;
+            return program == other.program && textures == other.textures;
         }
     };
 };
@@ -134,6 +136,9 @@ template <> struct hash<dw::gfx::DescriptorSetVK::Info> {
     std::size_t operator()(const dw::gfx::DescriptorSetVK::Info& i) const {
         std::size_t hash = 0;
         dga::hashCombine(hash, i.program);
+        for (const auto& texture : i.textures) {
+            dga::hashCombine(hash, texture.handle, texture.sampler_info);
+        }
         return hash;
     }
 };
@@ -230,6 +235,7 @@ private:
     // Cached objects.
     std::unordered_map<PipelineVK::Info, PipelineVK> graphics_pipeline_cache_;
     std::unordered_map<DescriptorSetVK::Info, DescriptorSetVK> descriptor_set_cache_;
+    std::unordered_map<RenderItem::SamplerInfo, vk::Sampler> sampler_cache_;
 
     bool checkValidationLayerSupport();
     std::vector<const char*> getRequiredExtensions(bool enable_validation_layers);
@@ -246,6 +252,7 @@ private:
 
     PipelineVK findOrCreateGraphicsPipeline(PipelineVK::Info info);
     DescriptorSetVK findOrCreateDescriptorSet(DescriptorSetVK::Info info);
+    vk::Sampler findOrCreateSampler(RenderItem::SamplerInfo info);
 
     u32 findMemoryType(u32 type_filter, vk::MemoryPropertyFlags properties);
     void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
@@ -255,6 +262,7 @@ private:
     void copyBufferToImage(vk::Buffer buffer, vk::Image image, u32 width, u32 height);
     void transitionImageLayout(vk::Image image, vk::Format format, vk::ImageLayout old_layout,
                                vk::ImageLayout new_layout);
+    vk::ImageView createImageView(vk::Image image, vk::Format format);
 
     vk::CommandBuffer beginSingleUseCommands();
     void endSingleUseCommands(vk::CommandBuffer command_buffer);

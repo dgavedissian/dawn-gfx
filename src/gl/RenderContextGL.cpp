@@ -365,21 +365,12 @@ private:
 int last_error_code = 0;
 std::string last_error_description;
 
-template <class T> inline void hash_combine(std::size_t& seed, const T& v) {
-    std::hash<T> hasher;
-    seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-}
-
 void SamplerCacheGL::setMaxSupportedAnisotropy(float max_anisotropy) {
     max_supported_anisotropy_ = max_anisotropy;
 }
 
-GLuint SamplerCacheGL::findOrCreate(u32 sampler_flags, float max_anisotropy) {
-    std::size_t hash = 0;
-    hash_combine(hash, sampler_flags);
-    hash_combine(hash, max_anisotropy);
-
-    auto it = cache_.find(hash);
+GLuint SamplerCacheGL::findOrCreate(RenderItem::SamplerInfo info) {
+    auto it = cache_.find(info);
     if (it != cache_.end()) {
         return it->second;
     }
@@ -396,15 +387,18 @@ GLuint SamplerCacheGL::findOrCreate(u32 sampler_flags, float max_anisotropy) {
                                                             {0b1010, GL_LINEAR_MIPMAP_LINEAR}};
 
     // Parse sampler flags.
+    auto flags = info.sampler_flags;
     auto u_wrapping_mode =
-        (sampler_flags & SamplerFlag::maskUWrappingMode) >> SamplerFlag::shiftUWrappingMode;
+        (flags & SamplerFlag::maskUWrappingMode) >> SamplerFlag::shiftUWrappingMode;
     auto v_wrapping_mode =
-        (sampler_flags & SamplerFlag::maskVWrappingMode) >> SamplerFlag::shiftVWrappingMode;
+        (flags & SamplerFlag::maskVWrappingMode) >> SamplerFlag::shiftVWrappingMode;
     auto w_wrapping_mode =
-        (sampler_flags & SamplerFlag::maskWWrappingMode) >> SamplerFlag::shiftWWrappingMode;
-    auto min_filter = (sampler_flags & SamplerFlag::maskMinFilter) >> SamplerFlag::shiftMinFilter;
-    auto mag_filter = (sampler_flags & SamplerFlag::maskMagFilter) >> SamplerFlag::shiftMagFilter;
-    auto mip_filter = (sampler_flags & SamplerFlag::maskMipFilter) >> SamplerFlag::shiftMipFilter;
+        (flags & SamplerFlag::maskWWrappingMode) >> SamplerFlag::shiftWWrappingMode;
+    auto min_filter = (flags & SamplerFlag::maskMinFilter) >> SamplerFlag::shiftMinFilter;
+    auto mag_filter = (flags & SamplerFlag::maskMagFilter) >> SamplerFlag::shiftMagFilter;
+    auto mip_filter = (flags & SamplerFlag::maskMipFilter) >> SamplerFlag::shiftMipFilter;
+
+    // Setup sampler object.
     GL_CHECK(glSamplerParameteri(sampler_object, GL_TEXTURE_WRAP_S,
                                  wrapping_mode_map.at(u_wrapping_mode)));
     GL_CHECK(glSamplerParameteri(sampler_object, GL_TEXTURE_WRAP_T,
@@ -416,12 +410,12 @@ GLuint SamplerCacheGL::findOrCreate(u32 sampler_flags, float max_anisotropy) {
     GL_CHECK(glSamplerParameteri(sampler_object, GL_TEXTURE_MIN_FILTER,
                                  min_filter_map.at(min_filter << 2u | mip_filter)));
 
-    if (GLAD_GL_EXT_texture_filter_anisotropic && max_anisotropy >= 1.0f) {
+    if (GLAD_GL_EXT_texture_filter_anisotropic && info.max_anisotropy >= 1.0f) {
         GL_CHECK(glSamplerParameterf(sampler_object, GL_TEXTURE_MAX_ANISOTROPY,
-                                     std::min(max_anisotropy, max_supported_anisotropy_)));
+                                     std::min(info.max_anisotropy, max_supported_anisotropy_)));
     }
 
-    cache_.emplace(hash, sampler_object);
+    cache_.emplace(info, sampler_object);
 
     return sampler_object;
 }
@@ -824,9 +818,8 @@ bool RenderContextGL::frame(const Frame* frame) {
                     GL_CHECK(glBindSampler(j, 0));
                 } else {
                     GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture_map_.at(texture->handle)));
-                    if (texture->sampler_flags != 0) {
-                        GLuint sampler = sampler_cache_.findOrCreate(texture->sampler_flags,
-                                                                     texture->max_anisotropy);
+                    if (texture->sampler_info.sampler_flags != 0) {
+                        GLuint sampler = sampler_cache_.findOrCreate(texture->sampler_info);
                         GL_CHECK(glBindSampler(j, sampler));
                     }
                 }
