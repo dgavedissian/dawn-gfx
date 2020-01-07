@@ -73,6 +73,7 @@ FetchContent_Declare(
     URL https://github.com/KhronosGroup/glslang/archive/7.13.3496.tar.gz
     URL_MD5 9bfbff6115e490654e149fd0558dba0c
 )
+set(BUILD_EXTERNAL OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)
 set(ENABLE_HLSL OFF CACHE BOOL "" FORCE)

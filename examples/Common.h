@@ -54,6 +54,8 @@ public:
     Example() : r(logger_), frame_start_time_(std::chrono::steady_clock::now()) {
     }
 
+    virtual ~Example() = default;
+
     void initRenderer(RendererType type, u16 width, u16 height, const char* window_title) {
         r.init(type, width, height, window_title, InputCallbacks{}, false);
 

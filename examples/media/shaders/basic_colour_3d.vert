@@ -16,5 +16,5 @@ layout(binding = 0) uniform UniformBufferObject {
 void main()
 {
     o.colour = in_colour;
-    gl_Position = ubo.mvp_matrix * vec4(in_position, 0.0, 1.0);
+    gl_Position = u.mvp_matrix * vec4(in_position, 0.0, 1.0);
 }

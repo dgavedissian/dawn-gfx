@@ -305,6 +305,13 @@ void Renderer::setUniform(const std::string& uniform_name, const Mat4& value) {
 }
 
 void Renderer::setUniform(const std::string& uniform_name, UniformData data) {
+    // MathGeoLib stores matrices in row-major order, but render contexts expect matrices in
+    // column-major order.
+    if (Mat3* mat3_data = std::get_if<Mat3>(&data)) {
+        mat3_data->Transpose();
+    } else if (Mat4* mat4_data = std::get_if<Mat4>(&data)) {
+        mat4_data->Transpose();
+    }
     submit_->pending_item.uniforms[uniform_name] = data;
 }
 

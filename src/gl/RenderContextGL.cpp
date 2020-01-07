@@ -108,8 +108,7 @@ GLenum mapBufferUsage(BufferUsage usage) {
     }
 }
 
-// GL TextureFormatInfo.
-struct TextureFormatInfo {
+struct TextureFormatGL {
     GLenum internal_format;
     GLenum internal_format_srgb;
     GLenum format;
@@ -118,7 +117,7 @@ struct TextureFormatInfo {
 };
 
 // clang-format off
-TextureFormatInfo s_texture_format[] = {
+TextureFormatGL s_texture_format[] = {
     {GL_ALPHA,              GL_ZERO,         GL_ALPHA,            GL_UNSIGNED_BYTE,                false}, // A8
     {GL_R8,                 GL_ZERO,         GL_RED,              GL_UNSIGNED_BYTE,                false}, // R8
     {GL_R8I,                GL_ZERO,         GL_RED,              GL_BYTE,                         false}, // R8I
@@ -346,11 +345,11 @@ public:
     }
 
     void operator()(const Mat3& value) {
-        GL_CHECK(glUniformMatrix3fv(uniform_location_, 1, GL_TRUE, value.ptr()));
+        GL_CHECK(glUniformMatrix3fv(uniform_location_, 1, GL_FALSE, value.ptr()));
     }
 
     void operator()(const Mat4& value) {
-        GL_CHECK(glUniformMatrix4fv(uniform_location_, 1, GL_TRUE, value.ptr()));
+        GL_CHECK(glUniformMatrix4fv(uniform_location_, 1, GL_FALSE, value.ptr()));
     }
 
     void updateUniform(GLint location, const UniformData& data) {
@@ -1101,7 +1100,7 @@ void RenderContextGL::operator()(const cmd::CreateTexture2D& c) {
     GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture));
 
     // Give image data to OpenGL.
-    TextureFormatInfo format = s_texture_format[static_cast<int>(c.format)];
+    TextureFormatGL format = s_texture_format[static_cast<int>(c.format)];
     logger_.debug(
         "[CreateTexture2D] format {} - internal fmt: {:#x} - internal fmt srgb: {:#x} - fmt: {:#x} "
         "- type: {:#x}",
