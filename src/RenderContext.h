@@ -29,6 +29,7 @@ public:
     // Command buffer processing. Executed on the render thread.
     virtual void startRendering() = 0;
     virtual void stopRendering() = 0;
+    virtual void prepareFrame() = 0;
     virtual void processCommandList(std::vector<RenderCommand>& command_list) = 0;
     virtual bool frame(const Frame* frame) = 0;
 

@@ -17,22 +17,83 @@
 
 namespace dw {
 namespace gfx {
-struct VertexBufferVK {
+// Device wrapper.
+class DeviceVK {
+public:
+    DeviceVK(vk::PhysicalDevice physical_device, vk::Device device, vk::CommandPool command_pool,
+             vk::Queue graphics_queue);
+    ~DeviceVK();
+
+    vk::PhysicalDevice getPhysicalDevice() const;
+    vk::Device getDevice() const;
+    vk::CommandPool getCommandPool() const;
+
+    u32 findMemoryType(u32 type_filter, vk::MemoryPropertyFlags properties);
+
+    void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
+                      vk::MemoryPropertyFlags properties, vk::Buffer& buffer,
+                      vk::DeviceMemory& buffer_memory);
+    void copyBuffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size);
+    void copyBufferToImage(vk::Buffer buffer, vk::Image image, u32 width, u32 height);
+    void transitionImageLayout(vk::Image image, vk::Format format, vk::ImageLayout old_layout,
+                               vk::ImageLayout new_layout);
+    vk::ImageView createImageView(vk::Image image, vk::Format format);
+
+    vk::CommandBuffer beginSingleUseCommands();
+    void endSingleUseCommands(vk::CommandBuffer command_buffer);
+
+private:
+    vk::PhysicalDevice physical_device_;
+    vk::Device device_;
+    vk::CommandPool command_pool_;
+    vk::Queue graphics_queue_;
+};
+
+// A buffer of data used by vertex and index buffers (and possibly user managed uniform buffers in
+// the future).
+struct BufferVK {
+    DeviceVK* device;
+    vk::DeviceSize size;
+    BufferUsage usage;
+
+    BufferVK(DeviceVK* device, const byte* data, vk::DeviceSize size, BufferUsage usage,
+             vk::BufferUsageFlags buffer_type, usize swap_chain_size);
+    ~BufferVK();
+
+    BufferVK(BufferVK&& other) noexcept;
+    BufferVK(const BufferVK&) = delete;
+    BufferVK& operator=(BufferVK&& other) noexcept;
+    BufferVK& operator=(const BufferVK&) = delete;
+
+    vk::Buffer get(u32 frame_index) const;
+
+    bool update(u32 frame_index, const byte* data, vk::DeviceSize data_size, vk::DeviceSize offset);
+
+private:
+    u32 getIndex(u32 frame_index) const;
+
+    std::vector<vk::Buffer> buffer;
+    std::vector<vk::DeviceMemory> buffer_memory;
+};
+
+struct VertexDeclVK {
     vk::VertexInputBindingDescription binding_description;
     std::vector<vk::VertexInputAttributeDescription> attribute_descriptions;
-    vk::Buffer buffer;
-    vk::DeviceMemory buffer_memory;
 
-    void initVertexInputDescriptions(const VertexDecl& decl);
+    VertexDeclVK(const VertexDecl& decl);
 
     static vk::Format getVertexAttributeFormat(VertexDecl::AttributeType type, usize count,
                                                bool normalised);
 };
 
+struct VertexBufferVK {
+    VertexDecl decl;
+    BufferVK buffer;
+};
+
 struct IndexBufferVK {
     vk::IndexType type;
-    vk::Buffer buffer;
-    vk::DeviceMemory buffer_memory;
+    BufferVK buffer;
 };
 
 struct ShaderVK {
@@ -94,11 +155,12 @@ struct PipelineVK {
     struct Info {
         const RenderItem* render_item;
         const VertexBufferVK* vb;
+        const VertexDeclVK* decl;
         const ProgramVK* program;
 
         bool operator==(const Info& other) const {
             return render_item->colour_write == other.render_item->colour_write && vb == other.vb &&
-                   program == other.program;
+                   decl == other.decl && program == other.program;
         }
     };
 };
@@ -127,7 +189,7 @@ namespace std {
 template <> struct hash<dw::gfx::PipelineVK::Info> {
     std::size_t operator()(const dw::gfx::PipelineVK::Info& i) const {
         std::size_t hash = 0;
-        dga::hashCombine(hash, i.render_item->colour_write, i.vb, i.program);
+        dga::hashCombine(hash, i.render_item->colour_write, i.vb, i.decl, i.program);
         return hash;
     }
 };
@@ -164,6 +226,7 @@ public:
     // Command buffer processing. Executed on the render thread.
     void startRendering() override;
     void stopRendering() override;
+    void prepareFrame() override;
     void processCommandList(std::vector<RenderCommand>& command_list) override;
     bool frame(const Frame* frame) override;
 
@@ -195,8 +258,8 @@ private:
     vk::Instance instance_;
     vk::DebugUtilsMessengerEXT debug_messenger_;
     vk::SurfaceKHR surface_;
-    vk::PhysicalDevice physical_device_;
-    vk::Device device_;
+    std::unique_ptr<DeviceVK> device_;
+    vk::Device vk_device_;
 
     vk::Queue graphics_queue_;
     vk::Queue present_queue_;
@@ -213,7 +276,6 @@ private:
 
     std::vector<vk::Framebuffer> swap_chain_framebuffers_;
 
-    vk::CommandPool command_pool_;
     std::vector<vk::CommandBuffer> command_buffers_;
 
     vk::DescriptorPool descriptor_pool_;
@@ -223,6 +285,7 @@ private:
     std::vector<vk::Fence> in_flight_fences_;
     std::vector<vk::Fence> images_in_flight_;
     std::size_t current_frame_;
+    u32 next_frame_index_;
 
     // Resource maps.
     std::unordered_map<VertexBufferHandle, VertexBufferVK> vertex_buffer_map_;
@@ -233,6 +296,7 @@ private:
     std::unordered_map<TextureHandle, TextureVK> texture_map_;
 
     // Cached objects.
+    std::unordered_map<VertexDecl, VertexDeclVK> vertex_decl_cache_;
     std::unordered_map<PipelineVK::Info, PipelineVK> graphics_pipeline_cache_;
     std::unordered_map<DescriptorSetVK::Info, DescriptorSetVK> descriptor_set_cache_;
     std::unordered_map<RenderItem::SamplerInfo, vk::Sampler> sampler_cache_;
@@ -253,19 +317,6 @@ private:
     PipelineVK findOrCreateGraphicsPipeline(PipelineVK::Info info);
     DescriptorSetVK findOrCreateDescriptorSet(DescriptorSetVK::Info info);
     vk::Sampler findOrCreateSampler(RenderItem::SamplerInfo info);
-
-    u32 findMemoryType(u32 type_filter, vk::MemoryPropertyFlags properties);
-    void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
-                      vk::MemoryPropertyFlags properties, vk::Buffer& buffer,
-                      vk::DeviceMemory& buffer_memory);
-    void copyBuffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size);
-    void copyBufferToImage(vk::Buffer buffer, vk::Image image, u32 width, u32 height);
-    void transitionImageLayout(vk::Image image, vk::Format format, vk::ImageLayout old_layout,
-                               vk::ImageLayout new_layout);
-    vk::ImageView createImageView(vk::Image image, vk::Format format);
-
-    vk::CommandBuffer beginSingleUseCommands();
-    void endSingleUseCommands(vk::CommandBuffer command_buffer);
 
     void cleanup();
 };

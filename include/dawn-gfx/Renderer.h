@@ -30,34 +30,39 @@
 #define DW_MAX_TRANSIENT_INDEX_BUFFER_SIZE (1 << 20)
 
 // Handles.
-#define DEFINE_HANDLE_TYPE(_Name)                                     \
-    namespace dw {                                                    \
-    namespace gfx {                                                   \
-    struct _Name : BaseHandle<_Name> {                                \
-        using BaseHandle::BaseHandle;                                 \
-    };                                                                \
-    }                                                                 \
-    }                                                                 \
-    namespace std {                                                   \
-    template <> struct hash<dw::gfx::_Name> {                         \
-        using argument_type = dw::gfx::_Name;                         \
-        using result_type = std::size_t;                              \
-        result_type operator()(const argument_type& k) const {        \
-            std::hash<dw::gfx::BaseHandle<dw::gfx::_Name>> base_hash; \
-            return base_hash(k);                                      \
-        }                                                             \
-    };                                                                \
+#define DEFINE_HANDLE_TYPE(_Name)                                                                 \
+    namespace dw {                                                                                \
+    namespace gfx {                                                                               \
+    struct _Name : BaseHandle<_Name> {                                                            \
+        using BaseHandle::BaseHandle;                                                             \
+    };                                                                                            \
+    }                                                                                             \
+    }                                                                                             \
+    template <>                                                                                   \
+    struct fmt::formatter<dw::gfx::_Name> : fmt::formatter<dw::gfx::_Name::base_type> {           \
+        template <typename FormatCtx> auto format(const dw::gfx::_Name& handle, FormatCtx& ctx) { \
+            return fmt::formatter<dw::gfx::_Name::base_type>::format(                             \
+                static_cast<dw::gfx::_Name::base_type>(handle), ctx);                             \
+        }                                                                                         \
+    };                                                                                            \
+    template <> struct std::hash<dw::gfx::_Name> {                                                \
+        using argument_type = dw::gfx::_Name;                                                     \
+        using result_type = std::size_t;                                                          \
+        result_type operator()(const argument_type& k) const {                                    \
+            std::hash<dw::gfx::BaseHandle<dw::gfx::_Name>> base_hash;                             \
+            return base_hash(k);                                                                  \
+        }                                                                                         \
     }
 
-DEFINE_HANDLE_TYPE(VertexBufferHandle)
-DEFINE_HANDLE_TYPE(TransientVertexBufferHandle)
-DEFINE_HANDLE_TYPE(IndexBufferHandle)
-DEFINE_HANDLE_TYPE(TransientIndexBufferHandle)
-DEFINE_HANDLE_TYPE(ShaderHandle)
-DEFINE_HANDLE_TYPE(ProgramHandle)
-DEFINE_HANDLE_TYPE(UniformBufferHandle)
-DEFINE_HANDLE_TYPE(TextureHandle)
-DEFINE_HANDLE_TYPE(FrameBufferHandle)
+DEFINE_HANDLE_TYPE(VertexBufferHandle);
+DEFINE_HANDLE_TYPE(TransientVertexBufferHandle);
+DEFINE_HANDLE_TYPE(IndexBufferHandle);
+DEFINE_HANDLE_TYPE(TransientIndexBufferHandle);
+DEFINE_HANDLE_TYPE(ShaderHandle);
+DEFINE_HANDLE_TYPE(ProgramHandle);
+DEFINE_HANDLE_TYPE(UniformBufferHandle);
+DEFINE_HANDLE_TYPE(TextureHandle);
+DEFINE_HANDLE_TYPE(FrameBufferHandle);
 
 namespace dw {
 namespace gfx {
@@ -615,7 +620,11 @@ private:
     HandleGenerator<FrameBufferHandle> frame_buffer_handle_;
 
     // Vertex/index buffers.
-    std::unordered_map<VertexBufferHandle, VertexDecl> vertex_buffer_decl_;
+    struct VertexBufferInfo {
+        VertexDecl decl;
+        BufferUsage usage;
+    };
+    std::unordered_map<VertexBufferHandle, VertexBufferInfo> vertex_buffer_info_;
     std::unordered_map<IndexBufferHandle, IndexBufferType> index_buffer_types_;
     VertexBufferHandle transient_vb;
     uint transient_vb_max_size;

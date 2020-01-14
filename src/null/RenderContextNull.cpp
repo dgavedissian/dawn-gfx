@@ -42,6 +42,9 @@ void RenderContextNull::startRendering() {
 void RenderContextNull::stopRendering() {
 }
 
+void RenderContextNull::prepareFrame() {
+}
+
 void RenderContextNull::processCommandList(std::vector<RenderCommand>&) {
 }
 

@@ -46,6 +46,7 @@ public:
     // Command buffer processing. Executed on the render thread.
     void startRendering() override;
     void stopRendering() override;
+    void prepareFrame() override;
     void processCommandList(std::vector<RenderCommand>& command_list) override;
     bool frame(const Frame* frame) override;
 

@@ -664,6 +664,9 @@ void RenderContextGL::stopRendering() {
     GL_CHECK(glDeleteVertexArrays(1, &vao_));
 }
 
+void RenderContextGL::prepareFrame() {
+}
+
 void RenderContextGL::processCommandList(std::vector<RenderCommand>& command_list) {
     assert(window_);
     for (auto& command : command_list) {
@@ -676,12 +679,12 @@ bool RenderContextGL::frame(const Frame* frame) {
 
     // Upload transient vertex/element buffer data.
     auto& tvb = frame->transient_vb_storage;
-    if (tvb.handle) {
+    if (tvb.handle && tvb.size > 0) {
         GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_map_.at(*tvb.handle).vertex_buffer));
         GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, tvb.size, tvb.data.data()));
     }
     auto& tib = frame->transient_ib_storage;
-    if (tib.handle) {
+    if (tib.handle && tib.size > 0) {
         GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,
                               index_buffer_map_.at(*tib.handle).element_buffer));
         GL_CHECK(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, tib.size, tib.data.data()));

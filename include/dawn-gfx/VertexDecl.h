@@ -9,6 +9,8 @@
 #include <utility>
 #include <cstddef>
 
+#include <dga/hash_combine.h>
+
 namespace dw {
 namespace gfx {
 // Vertex Declaration.
@@ -26,6 +28,9 @@ public:
     // TODO: Alternatively, combine type and normalised, and make count an enum.
     VertexDecl& add(Attribute attribute, usize count, AttributeType type, bool normalised = false);
     VertexDecl& end();
+
+    bool operator==(const VertexDecl& other) const;
+    bool operator!=(const VertexDecl& other) const;
 
     u16 stride() const;
     bool empty() const;
@@ -46,3 +51,14 @@ public:
 };
 }  // namespace gfx
 }  // namespace dw
+
+template <> struct std::hash<dw::gfx::VertexDecl> {
+    std::size_t operator()(const dw::gfx::VertexDecl& decl) const {
+        std::size_t hash = 0;
+        dga::hashCombine(hash, decl.stride_);
+        for (const auto& entry : decl.attributes_) {
+            dga::hashCombine(hash, entry.first, entry.second);
+        }
+        return hash;
+    }
+};

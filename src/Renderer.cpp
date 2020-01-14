@@ -126,7 +126,7 @@ VertexBufferHandle Renderer::createVertexBuffer(Memory data, const VertexDecl& d
     auto handle = vertex_buffer_handle_.next();
     uint data_size = data.size();
     submitPreFrameCommand(cmd::CreateVertexBuffer{handle, std::move(data), data_size, decl, usage});
-    vertex_buffer_decl_[handle] = decl;
+    vertex_buffer_info_[handle] = VertexBufferInfo{decl, usage};
     return handle;
 }
 
@@ -137,7 +137,16 @@ void Renderer::setVertexBuffer(VertexBufferHandle handle) {
 }
 
 void Renderer::updateVertexBuffer(VertexBufferHandle handle, Memory data, uint offset) {
-    // TODO: Validate data.
+    auto vbd = vertex_buffer_info_.find(handle);
+    if (vbd == vertex_buffer_info_.end()) {
+        logger_.error("Vertex buffer handle {} invalid.", static_cast<u32>(handle));
+        return;
+    }
+    if (vbd->second.usage == BufferUsage::Static) {
+        logger_.error("Attempted to update a static vertex buffer {}, skipping.",
+                      static_cast<u32>(handle));
+        return;
+    }
     submitPreFrameCommand(cmd::UpdateVertexBuffer{handle, std::move(data), offset});
 
 #ifdef DW_DEBUG
@@ -479,7 +488,7 @@ void Renderer::submit(uint render_queue, ProgramHandle program, uint vertex_coun
             IndexBufferType type = index_buffer_types_.at(*item.ib);
             item.ib_offset += offset * (type == IndexBufferType::U16 ? sizeof(u16) : sizeof(u32));
         } else if (item.vb.has_value()) {
-            const VertexDecl& decl = vertex_buffer_decl_.at(*item.vb);
+            const VertexDecl& decl = vertex_buffer_info_.at(*item.vb).decl;
             item.vb_offset += offset * decl.stride();
         } else {
             logger_.error("Submitted item with no vertex or index buffer bound.");
@@ -586,6 +595,7 @@ void Renderer::renderThread() {
 
 bool Renderer::renderFrame(Frame* frame) {
     // Hand off commands to the render context.
+    shared_render_context_->prepareFrame();
     shared_render_context_->processCommandList(frame->commands_pre);
     if (!shared_render_context_->frame(frame)) {
         return false;
