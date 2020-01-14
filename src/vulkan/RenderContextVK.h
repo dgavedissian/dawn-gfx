@@ -37,7 +37,12 @@ public:
     void copyBufferToImage(vk::Buffer buffer, vk::Image image, u32 width, u32 height);
     void transitionImageLayout(vk::Image image, vk::Format format, vk::ImageLayout old_layout,
                                vk::ImageLayout new_layout);
-    vk::ImageView createImageView(vk::Image image, vk::Format format);
+
+    void createImage(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling,
+                     vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties,
+                     vk::Image& image, vk::DeviceMemory& image_memory);
+    vk::ImageView createImageView(vk::Image image, vk::Format format,
+                                  vk::ImageAspectFlags aspect_flags);
 
     vk::CommandBuffer beginSingleUseCommands();
     void endSingleUseCommands(vk::CommandBuffer command_buffer);
@@ -153,6 +158,7 @@ struct PipelineVK {
     vk::Pipeline pipeline;
 
     struct Info {
+        // TODO: Replace RenderItem with just the render state used by the pipeline.
         const RenderItem* render_item;
         const VertexBufferVK* vb;
         const VertexDeclVK* decl;
@@ -189,7 +195,8 @@ namespace std {
 template <> struct hash<dw::gfx::PipelineVK::Info> {
     std::size_t operator()(const dw::gfx::PipelineVK::Info& i) const {
         std::size_t hash = 0;
-        dga::hashCombine(hash, i.render_item->colour_write, i.vb, i.decl, i.program);
+        dga::hashCombine(hash, i.render_item->colour_write, i.render_item->depth_enabled,
+                         i.render_item->depth_write, i.vb, i.decl, i.program);
         return hash;
     }
 };
@@ -272,6 +279,11 @@ private:
     std::vector<vk::Image> swap_chain_images_;
     std::vector<vk::ImageView> swap_chain_image_views_;
 
+    vk::Format depth_format_;
+    vk::Image depth_image_;
+    vk::DeviceMemory depth_image_memory_;
+    vk::ImageView depth_image_view_;
+
     vk::RenderPass render_pass_;
 
     std::vector<vk::Framebuffer> swap_chain_framebuffers_;
@@ -307,7 +319,6 @@ private:
     void createInstance(bool enable_validation_layers);
     void createDevice();
     void createSwapChain();
-    void createImageViews();
     void createRenderPass();
     void createFramebuffers();
     void createCommandBuffers();
