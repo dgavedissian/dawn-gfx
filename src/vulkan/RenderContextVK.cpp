@@ -229,6 +229,8 @@ void DeviceVK::transitionImageLayout(vk::Image image, vk::Format format, vk::Ima
                                      vk::ImageLayout new_layout) {
     vk::CommandBuffer command_buffer = beginSingleUseCommands();
 
+    // TODO: Merge this with TextureVK::setImageBarrier
+
     vk::ImageMemoryBarrier barrier;
     barrier.oldLayout = old_layout;
     barrier.newLayout = new_layout;
@@ -428,6 +430,7 @@ bool BufferVK::update(u32 frame_index, const byte* data, vk::DeviceSize data_siz
             return true;
         }
     }
+    return false;
 }
 
 u32 BufferVK::getIndex(u32 frame_index) const {
@@ -506,7 +509,193 @@ vk::Format VertexDeclVK::getVertexAttributeFormat(VertexDecl::AttributeType type
                     static_cast<int>(type), count, normalised));
 }
 
+void TextureVK::setImageBarrier(vk::CommandBuffer command_buffer, vk::ImageLayout new_layout) {
+    if (new_layout == image_layout) {
+        return;
+    }
+
+    vk::AccessFlags src_access_mask = {};
+    vk::AccessFlags dst_access_mask = {};
+
+    switch (image_layout) {
+        case vk::ImageLayout::eUndefined:
+            break;
+        case vk::ImageLayout::eGeneral:
+            break;
+        case vk::ImageLayout::eColorAttachmentOptimal:
+            src_access_mask |= vk::AccessFlagBits::eColorAttachmentWrite;
+            break;
+        case vk::ImageLayout::eDepthStencilAttachmentOptimal:
+            src_access_mask |= vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+            break;
+        case vk::ImageLayout::eDepthStencilReadOnlyOptimal:
+            break;
+        case vk::ImageLayout::eShaderReadOnlyOptimal:
+            src_access_mask |= vk::AccessFlagBits::eShaderRead;
+            break;
+        case vk::ImageLayout::eTransferSrcOptimal:
+            src_access_mask |= vk::AccessFlagBits::eTransferRead;
+            break;
+        case vk::ImageLayout::eTransferDstOptimal:
+            break;
+        case vk::ImageLayout::ePreinitialized:
+            src_access_mask |= vk::AccessFlagBits::eHostWrite | vk::AccessFlagBits::eTransferWrite;
+            break;
+        case vk::ImageLayout::ePresentSrcKHR:
+            src_access_mask |= vk::AccessFlagBits::eMemoryRead;
+            break;
+        default:
+            break;
+    }
+
+    switch (new_layout) {
+        case vk::ImageLayout::eUndefined:
+            break;
+        case vk::ImageLayout::eGeneral:
+            break;
+        case vk::ImageLayout::eColorAttachmentOptimal:
+            dst_access_mask |= vk::AccessFlagBits::eColorAttachmentWrite;
+            break;
+        case vk::ImageLayout::eDepthStencilAttachmentOptimal:
+            dst_access_mask |= vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+            // aspectMask     = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+            break;
+        case vk::ImageLayout::eDepthStencilReadOnlyOptimal:
+            break;
+        case vk::ImageLayout::eShaderReadOnlyOptimal:
+            dst_access_mask |=
+                vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eInputAttachmentRead;
+            break;
+        case vk::ImageLayout::eTransferSrcOptimal:
+            dst_access_mask |= vk::AccessFlagBits::eShaderRead;
+            break;
+        case vk::ImageLayout::eTransferDstOptimal:
+            dst_access_mask |= vk::AccessFlagBits::eTransferRead;
+            break;
+        case vk::ImageLayout::ePreinitialized:
+            break;
+        case vk::ImageLayout::ePresentSrcKHR:
+            dst_access_mask |= vk::AccessFlagBits::eMemoryRead;
+            break;
+        default:
+            break;
+    }
+
+    vk::ImageMemoryBarrier imb;
+    imb.srcAccessMask = src_access_mask;
+    imb.dstAccessMask = dst_access_mask;
+    imb.oldLayout = image_layout;
+    imb.newLayout = new_layout;
+    imb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imb.image = image;
+    imb.subresourceRange.aspectMask = aspect_mask;
+    imb.subresourceRange.baseMipLevel = 0;
+    imb.subresourceRange.levelCount = 1;
+    imb.subresourceRange.baseArrayLayer = 0;
+    imb.subresourceRange.layerCount = 1;
+    command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
+                                   vk::PipelineStageFlagBits::eAllCommands, {}, {}, {}, imb);
+
+    image_layout = new_layout;
+}
+
+FramebufferVK::FramebufferVK(DeviceVK* device, u16 width, u16 height,
+                             std::vector<TextureVK*> attachments)
+    : extent(width, height), images(std::move(attachments)) {
+    // Create depth image.
+    auto depth_image_format = vk::Format::eD32Sfloat;
+    device->createImage(width, height, depth_image_format, vk::ImageTiling::eOptimal,
+                        vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                        vk::MemoryPropertyFlagBits::eDeviceLocal, depth.image, depth.image_memory);
+    depth.image_view =
+        device->createImageView(depth.image, depth_image_format, vk::ImageAspectFlagBits::eDepth);
+
+    // Create render pass.
+    std::vector<vk::ImageView> image_views;
+
+    // Setup colour attachments.
+    std::vector<vk::AttachmentDescription> attachment_descriptions;
+    std::vector<vk::AttachmentReference> colour_attachment_refs;
+    for (TextureVK* attachment : attachments) {
+        vk::AttachmentDescription colour_attachment;
+        colour_attachment.format = attachment->image_format;
+        colour_attachment.samples = vk::SampleCountFlagBits::e1;
+        colour_attachment.loadOp = vk::AttachmentLoadOp::eClear;
+        colour_attachment.storeOp = vk::AttachmentStoreOp::eStore;
+        colour_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+        colour_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+        colour_attachment.initialLayout = vk::ImageLayout::eUndefined;
+        colour_attachment.finalLayout = vk::ImageLayout::eColorAttachmentOptimal;
+        attachment_descriptions.emplace_back(colour_attachment);
+
+        vk::AttachmentReference colour_attachment_ref;
+        colour_attachment_ref.attachment = attachment_descriptions.size() - 1;
+        colour_attachment_ref.layout = vk::ImageLayout::eColorAttachmentOptimal;
+        colour_attachment_refs.emplace_back(colour_attachment_ref);
+
+        image_views.emplace_back(attachment->image_view);
+    }
+
+    // Depth attachment.
+    vk::AttachmentDescription depth_attachment;
+    depth_attachment.format = depth_image_format;
+    depth_attachment.samples = vk::SampleCountFlagBits::e1;
+    depth_attachment.loadOp = vk::AttachmentLoadOp::eClear;
+    depth_attachment.storeOp = vk::AttachmentStoreOp::eDontCare;
+    depth_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+    depth_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+    depth_attachment.initialLayout = vk::ImageLayout::eUndefined;
+    depth_attachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+    attachment_descriptions.emplace_back(depth_attachment);
+
+    vk::AttachmentReference depth_attachment_ref;
+    depth_attachment_ref.attachment = attachment_descriptions.size() - 1;
+    depth_attachment_ref.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+
+    image_views.emplace_back(depth.image_view);
+
+    // Subpass.
+    vk::SubpassDescription subpass;
+    subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
+    subpass.colorAttachmentCount = colour_attachment_refs.size();
+    subpass.pColorAttachments = colour_attachment_refs.data();
+    subpass.pDepthStencilAttachment = &depth_attachment_ref;
+
+    vk::SubpassDependency dependency;
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.srcAccessMask = {};
+    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.dstAccessMask =
+        vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
+
+    vk::RenderPassCreateInfo render_pass_info;
+    render_pass_info.attachmentCount = attachment_descriptions.size();
+    render_pass_info.pAttachments = attachment_descriptions.data();
+    render_pass_info.subpassCount = 1;
+    render_pass_info.pSubpasses = &subpass;
+    render_pass_info.dependencyCount = 1;
+    render_pass_info.pDependencies = &dependency;
+    render_pass = device->getDevice().createRenderPass(render_pass_info);
+
+    // Create framebuffer.
+    vk::FramebufferCreateInfo framebuffer_info;
+    framebuffer_info.renderPass = render_pass;
+    framebuffer_info.attachmentCount = image_views.size();
+    framebuffer_info.pAttachments = image_views.data();
+    framebuffer_info.width = extent.width;
+    framebuffer_info.height = extent.height;
+    framebuffer_info.layers = 1;
+    framebuffer = device->getDevice().createFramebuffer(framebuffer_info);
+}
+
 RenderContextVK::RenderContextVK(Logger& logger) : RenderContext{logger}, current_frame_(0) {
+}
+
+RenderContextVK::~RenderContextVK() {
+    cleanup();
 }
 
 tl::expected<void, std::string> RenderContextVK::createWindow(u16 width, u16 height,
@@ -636,21 +825,48 @@ bool RenderContextVK::frame(const Frame* frame) {
     begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
     command_buffer.begin(begin_info);
 
+    const FramebufferVK* previous_frame_buffer = nullptr;
+
     for (const auto& q : frame->render_queues) {
+        // Get framebuffer.
+        const FramebufferVK* current_frame_buffer = nullptr;
         vk::Framebuffer target_framebuffer;
+        vk::RenderPass target_render_pass;
+        vk::Extent2D target_extent;
         if (q.frame_buffer) {
-            throw std::runtime_error("unimplemented");
+            const auto& fb = framebuffer_map_.at(*q.frame_buffer);
+            target_framebuffer = fb.framebuffer;
+            target_render_pass = fb.render_pass;
+            target_extent = fb.extent;
+            current_frame_buffer = &fb;
         } else {
             // Bind to backbuffer.
             target_framebuffer = swap_chain_framebuffers_[next_frame_index_];
+            target_render_pass = render_pass_;
+            target_extent = swap_chain_extent_;
         }
+
+        // Transition framebuffer state.
+        if (previous_frame_buffer && current_frame_buffer != previous_frame_buffer) {
+            for (TextureVK* image : previous_frame_buffer->images) {
+                image->setImageBarrier(command_buffer, vk::ImageLayout::eShaderReadOnlyOptimal);
+            }
+            // TODO: Depth.
+        }
+        if (current_frame_buffer) {
+            for (TextureVK* image : current_frame_buffer->images) {
+                image->setImageBarrier(command_buffer, vk::ImageLayout::eColorAttachmentOptimal);
+            }
+            // TODO: Depth.
+        }
+        previous_frame_buffer = current_frame_buffer;
 
         // Begin render pass.
         vk::RenderPassBeginInfo render_pass_info;
-        render_pass_info.renderPass = render_pass_;
+        render_pass_info.renderPass = target_render_pass;
         render_pass_info.framebuffer = target_framebuffer;
         render_pass_info.renderArea.offset = vk::Offset2D{0, 0};
-        render_pass_info.renderArea.extent = swap_chain_extent_;
+        render_pass_info.renderArea.extent = target_extent;
 
         // If this render queue has clear parameters, start a new render pass.
         if (q.clear_parameters.has_value()) {
@@ -736,7 +952,7 @@ bool RenderContextVK::frame(const Frame* frame) {
 
             // Bind (and create) graphics pipeline.
             auto graphics_pipeline = findOrCreateGraphicsPipeline(
-                PipelineVK::Info{&ri, &vb, &decl_it->second, &program});
+                PipelineVK::Info{&ri, &vb, &decl_it->second, &program, current_frame_buffer});
             command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
                                         graphics_pipeline.pipeline);
             if (ri.scissor_enabled) {
@@ -835,34 +1051,6 @@ void RenderContextVK::operator()(const cmd::CreateIndexBuffer& c) {
     IndexBufferVK ib{type,
                      BufferVK{device_.get(), c.data.data(), c.data.size(), c.usage,
                               vk::BufferUsageFlagBits::eIndexBuffer, swap_chain_images_.size()}};
-
-    /*
-    IndexBufferVK ib;
-    ib.type = c.type == IndexBufferType::U16 ? vk::IndexType::eUint16 : vk::IndexType::eUint32;
-
-    vk::DeviceSize buffer_size = c.data.size();
-
-    vk::Buffer staging_buffer;
-    vk::DeviceMemory staging_buffer_memory;
-    device_->createBuffer(
-        buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        staging_buffer, staging_buffer_memory);
-
-    void* data = vk_device_.mapMemory(staging_buffer_memory, 0, buffer_size);
-    memcpy(data, c.data.data(), static_cast<std::size_t>(buffer_size));
-    vk_device_.unmapMemory(staging_buffer_memory);
-
-    createBuffer(buffer_size,
-                 vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
-                 vk::MemoryPropertyFlagBits::eDeviceLocal, ib.buffer, ib.buffer_memory);
-
-    copyBuffer(staging_buffer, ib.buffer, buffer_size);
-
-    vk_device_.destroy(staging_buffer);
-    vk_device_.free(staging_buffer_memory);
-     */
-
     index_buffer_map_.emplace(c.handle, std::move(ib));
 }
 
@@ -1055,42 +1243,57 @@ void RenderContextVK::operator()(const cmd::DeleteProgram& c) {
 void RenderContextVK::operator()(const cmd::CreateTexture2D& c) {
     TextureVK texture;
 
-    // Create image by copying to a staging buffer.
-    vk::DeviceSize buffer_size = c.data.size();
+    texture.image_format = vk::Format::eR8G8B8A8Unorm;
 
-    vk::Buffer staging_buffer;
-    vk::DeviceMemory staging_buffer_memory;
-    device_->createBuffer(
-        buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        staging_buffer, staging_buffer_memory);
+    vk::DeviceSize buffer_size = c.width * c.height * 4;
+    assert(c.data.size() <= buffer_size);
 
-    void* data = vk_device_.mapMemory(staging_buffer_memory, 0, buffer_size);
-    memcpy(data, c.data.data(), static_cast<std::size_t>(buffer_size));
-    vk_device_.unmapMemory(staging_buffer_memory);
+    texture.aspect_mask = vk::ImageAspectFlagBits::eColor;
 
-    // Create image.
-    auto format = vk::Format::eR8G8B8A8Unorm;
-    device_->createImage(
-        static_cast<u32>(c.width), static_cast<u32>(c.height), format, vk::ImageTiling::eOptimal,
-        vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-        vk::MemoryPropertyFlagBits::eDeviceLocal, texture.image, texture.image_memory);
+    if (c.framebuffer_usage) {
+        device_->createImage(
+            static_cast<u32>(c.width), static_cast<u32>(c.height), texture.image_format,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal, texture.image, texture.image_memory);
+        texture.image_layout = vk::ImageLayout::eUndefined;
+    } else {
+        // Create image by copying to a staging buffer.
+        vk::Buffer staging_buffer;
+        vk::DeviceMemory staging_buffer_memory;
+        device_->createBuffer(
+            buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            staging_buffer, staging_buffer_memory);
 
-    device_->transitionImageLayout(texture.image, vk::Format::eR8G8B8A8Unorm,
-                                   vk::ImageLayout::eUndefined,
-                                   vk::ImageLayout::eTransferDstOptimal);
-    device_->copyBufferToImage(staging_buffer, texture.image, static_cast<u32>(c.width),
-                               static_cast<u32>(c.height));
-    device_->transitionImageLayout(texture.image, vk::Format::eR8G8B8A8Unorm,
-                                   vk::ImageLayout::eTransferDstOptimal,
-                                   vk::ImageLayout::eShaderReadOnlyOptimal);
+        void* data = vk_device_.mapMemory(staging_buffer_memory, 0, buffer_size);
+        memcpy(data, c.data.data(), static_cast<std::size_t>(c.data.size()));
+        vk_device_.unmapMemory(staging_buffer_memory);
 
-    vk_device_.destroy(staging_buffer);
-    vk_device_.free(staging_buffer_memory);
+        // Create image.
+        device_->createImage(
+            static_cast<u32>(c.width), static_cast<u32>(c.height), texture.image_format,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal, texture.image, texture.image_memory);
+
+        device_->transitionImageLayout(texture.image, texture.image_format,
+                                       vk::ImageLayout::eUndefined,
+                                       vk::ImageLayout::eTransferDstOptimal);
+        device_->copyBufferToImage(staging_buffer, texture.image, static_cast<u32>(c.width),
+                                   static_cast<u32>(c.height));
+        device_->transitionImageLayout(texture.image, texture.image_format,
+                                       vk::ImageLayout::eTransferDstOptimal,
+                                       vk::ImageLayout::eShaderReadOnlyOptimal);
+        texture.image_layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+
+        vk_device_.destroy(staging_buffer);
+        vk_device_.free(staging_buffer_memory);
+    }
 
     // Create image view.
-    texture.image_view =
-        device_->createImageView(texture.image, format, vk::ImageAspectFlagBits::eColor);
+    texture.image_view = device_->createImageView(texture.image, texture.image_format,
+                                                  vk::ImageAspectFlagBits::eColor);
 
     texture_map_.emplace(c.handle, std::move(texture));
 }
@@ -1099,6 +1302,14 @@ void RenderContextVK::operator()(const cmd::DeleteTexture& c) {
 }
 
 void RenderContextVK::operator()(const cmd::CreateFrameBuffer& c) {
+    std::vector<TextureVK*> textures;
+    textures.reserve(c.textures.size());
+    for (const auto& texture_handle : c.textures) {
+        textures.push_back(&texture_map_.at(texture_handle));
+    }
+
+    FramebufferVK framebuffer{device_.get(), c.width, c.height, std::move(textures)};
+    framebuffer_map_.emplace(c.handle, std::move(framebuffer));
 }
 
 void RenderContextVK::operator()(const cmd::DeleteFrameBuffer& c) {
@@ -1318,11 +1529,11 @@ void RenderContextVK::createSwapChain() {
     create_info.imageArrayLayers = 1;
     create_info.imageUsage = vk::ImageUsageFlagBits::eColorAttachment;
 
-    u32 queueFamilyIndices[] = {graphics_queue_family_index_, present_queue_family_index_};
+    u32 queue_family_indices[] = {graphics_queue_family_index_, present_queue_family_index_};
     if (graphics_queue_family_index_ != present_queue_family_index_) {
         create_info.imageSharingMode = vk::SharingMode::eConcurrent;
         create_info.queueFamilyIndexCount = 2;
-        create_info.pQueueFamilyIndices = queueFamilyIndices;
+        create_info.pQueueFamilyIndices = queue_family_indices;
     } else {
         create_info.imageSharingMode = vk::SharingMode::eExclusive;
         create_info.queueFamilyIndexCount = 0;
@@ -1604,7 +1815,7 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(PipelineVK::Info info) 
     pipeline_info.pColorBlendState = &colour_blending;
     pipeline_info.pDynamicState = nullptr;  // Optional
     pipeline_info.layout = graphics_pipeline.layout;
-    pipeline_info.renderPass = render_pass_;
+    pipeline_info.renderPass = info.framebuffer ? info.framebuffer->render_pass : render_pass_;
     pipeline_info.subpass = 0;
     pipeline_info.basePipelineHandle = vk::Pipeline{};  // Optional
     pipeline_info.basePipelineIndex = -1;               // Optional

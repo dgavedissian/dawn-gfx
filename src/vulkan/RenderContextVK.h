@@ -151,24 +151,11 @@ struct TextureVK {
     vk::Image image;
     vk::DeviceMemory image_memory;
     vk::ImageView image_view;
-};
+    vk::Format image_format;
+    vk::ImageLayout image_layout;
+    vk::ImageAspectFlags aspect_mask;
 
-struct PipelineVK {
-    vk::PipelineLayout layout;
-    vk::Pipeline pipeline;
-
-    struct Info {
-        // TODO: Replace RenderItem with just the render state used by the pipeline.
-        const RenderItem* render_item;
-        const VertexBufferVK* vb;
-        const VertexDeclVK* decl;
-        const ProgramVK* program;
-
-        bool operator==(const Info& other) const {
-            return render_item->colour_write == other.render_item->colour_write && vb == other.vb &&
-                   decl == other.decl && program == other.program;
-        }
-    };
+    void setImageBarrier(vk::CommandBuffer command_buffer, vk::ImageLayout new_layout);
 };
 
 struct DescriptorSetVK {
@@ -188,6 +175,36 @@ struct DescriptorSetVK {
         }
     };
 };
+
+struct FramebufferVK {
+    vk::RenderPass render_pass;
+    TextureVK depth;
+    vk::Framebuffer framebuffer;
+    std::vector<TextureVK*> images;
+    vk::Extent2D extent;
+
+    FramebufferVK(DeviceVK* device, u16 width, u16 height, std::vector<TextureVK*> attachments);
+};
+
+struct PipelineVK {
+    vk::PipelineLayout layout;
+    vk::Pipeline pipeline;
+
+    struct Info {
+        // TODO: Replace RenderItem with just the render state used by the pipeline.
+        const RenderItem* render_item;
+        const VertexBufferVK* vb;
+        const VertexDeclVK* decl;
+        const ProgramVK* program;
+        const FramebufferVK* framebuffer;
+
+        bool operator==(const Info& other) const {
+            return render_item->colour_write == other.render_item->colour_write && vb == other.vb &&
+                   decl == other.decl && program == other.program &&
+                   framebuffer == other.framebuffer;
+        }
+    };
+};
 }  // namespace gfx
 }  // namespace dw
 
@@ -196,7 +213,7 @@ template <> struct hash<dw::gfx::PipelineVK::Info> {
     std::size_t operator()(const dw::gfx::PipelineVK::Info& i) const {
         std::size_t hash = 0;
         dga::hashCombine(hash, i.render_item->colour_write, i.render_item->depth_enabled,
-                         i.render_item->depth_write, i.vb, i.decl, i.program);
+                         i.render_item->depth_write, i.vb, i.decl, i.program, i.framebuffer);
         return hash;
     }
 };
@@ -218,7 +235,7 @@ namespace gfx {
 class RenderContextVK : public RenderContext {
 public:
     explicit RenderContextVK(Logger& logger);
-    ~RenderContextVK() override = default;
+    ~RenderContextVK() override;
 
     // Window management. Executed on the main thread.
     tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title,
@@ -306,6 +323,7 @@ private:
     std::unordered_map<ShaderHandle, ShaderVK> shader_map_;
     std::unordered_map<ProgramHandle, ProgramVK> program_map_;
     std::unordered_map<TextureHandle, TextureVK> texture_map_;
+    std::unordered_map<FrameBufferHandle, FramebufferVK> framebuffer_map_;
 
     // Cached objects.
     std::unordered_map<VertexDecl, VertexDeclVK> vertex_decl_cache_;

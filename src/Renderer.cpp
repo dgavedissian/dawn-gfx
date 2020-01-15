@@ -325,11 +325,11 @@ void Renderer::setUniform(const std::string& uniform_name, UniformData data) {
 }
 
 TextureHandle Renderer::createTexture2D(u16 width, u16 height, TextureFormat format, Memory data,
-                                        bool generate_mipmaps) {
+                                        bool generate_mipmaps, bool framebuffer_usage) {
     auto handle = texture_handle_.next();
     texture_data_[handle] = {width, height, format};
-    submitPreFrameCommand(
-        cmd::CreateTexture2D{handle, width, height, format, std::move(data), generate_mipmaps});
+    submitPreFrameCommand(cmd::CreateTexture2D{handle, width, height, format, std::move(data),
+                                               generate_mipmaps, framebuffer_usage});
     return handle;
 }
 
@@ -347,7 +347,7 @@ void Renderer::deleteTexture(TextureHandle handle) {
 
 FrameBufferHandle Renderer::createFrameBuffer(u16 width, u16 height, TextureFormat format) {
     auto handle = frame_buffer_handle_.next();
-    auto texture_handle = createTexture2D(width, height, format, Memory());
+    auto texture_handle = createTexture2D(width, height, format, Memory(), false, true);
     frame_buffer_textures_[handle] = {texture_handle};
     submitPreFrameCommand(cmd::CreateFrameBuffer{handle, width, height, {texture_handle}});
     return handle;

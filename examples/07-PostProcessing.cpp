@@ -22,7 +22,7 @@ public:
         r.attachShader(box_program_, vs);
         r.attachShader(box_program_, fs);
         r.linkProgram(box_program_);
-        r.setUniform("diffuse_colour", Vec3{1.0f, 1.0f, 1.0f});
+        r.setUniform("u.diffuse_colour", Vec3{1.0f, 1.0f, 1.0f});
         r.submit(box_program_);
 
         // Create box.
@@ -48,15 +48,17 @@ public:
     }
 
     void render(float dt) override {
+        r.setRenderQueueClear({0.0f, 0.2f, 0.0f});
+
         // Calculate matrices.
         static float angle = 0.0f;
         angle += M_PI / 4.0f * dt;  // 45 degrees per second.
         Mat4 model = Mat4::Translate(Vec3{0.0f, 0.0f, -50.0f}).ToFloat4x4() * Mat4::RotateY(angle);
         static Mat4 view = Mat4::identity;
         static Mat4 proj = util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
-        r.setUniform("model_matrix", model);
-        r.setUniform("mvp_matrix", proj * view * model);
-        r.setUniform("light_direction", Vec3{1.0f, 1.0f, 1.0f}.Normalized());
+        r.setUniform("u.model_matrix", model);
+        r.setUniform("u.mvp_matrix", proj * view * model);
+        r.setUniform("u.light_direction", Vec3{1.0f, 1.0f, 1.0f}.Normalized());
 
         // Set up render queue to frame buffer.
         r.startRenderQueue(fb_handle_);

@@ -1,9 +1,11 @@
 #version 330 core
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_ARB_enhanced_layouts : enable
 
 layout(location = 0) in vec2 in_position;
 layout(location = 1) in vec2 in_texcoord;
 
-out VertexData {
+layout(location = 0) out VertexData {
     vec2 texcoord;
 } o;
 

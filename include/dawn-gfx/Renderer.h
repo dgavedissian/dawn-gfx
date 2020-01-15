@@ -311,6 +311,7 @@ struct CreateTexture2D {
     TextureFormat format;
     Memory data;
     bool generate_mipmaps;
+    bool framebuffer_usage;
 };
 
 struct DeleteTexture {
@@ -529,7 +530,7 @@ public:
 
     // Create texture.
     TextureHandle createTexture2D(u16 width, u16 height, TextureFormat format, Memory data,
-                                  bool generate_mipmaps = true);
+                                   bool generate_mipmaps = true, bool framebuffer_usage = false);
     void setTexture(TextureHandle handle, uint sampler_unit,
                     u32 sampler_flags = SamplerFlag::Default, float max_anisotropy = 0.0f);
     // get texture information.
