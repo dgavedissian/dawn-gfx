@@ -1,6 +1,8 @@
-#version 330 core
+#version 420 core
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_ARB_enhanced_layouts : enable
 
-in VertexData {
+layout(location = 0) in VertexData {
     vec3 world_position;
     vec3 normal;
     vec2 texcoord;
@@ -16,14 +18,15 @@ layout(location = 0) out vec4 gb0;
 layout(location = 1) out vec4 gb1;
 layout(location = 2) out vec4 gb2;
 
-uniform vec3 light_direction;
-uniform vec2 texcoord_scale;
+layout(binding = 1) uniform Parameters {
+    vec2 texcoord_scale;
+} u;
 
-uniform sampler2D diffuse_texture;
+layout(binding = 2) uniform sampler2D diffuse_texture;
 
 void main()
 {
-    vec4 diffuse = texture(diffuse_texture, i.texcoord * texcoord_scale);
+    vec4 diffuse = texture(diffuse_texture, i.texcoord * u.texcoord_scale);
     gb0.rgb = diffuse.rgb;
     gb1.rgb = i.world_position;
     gb2.rgb = normalize(i.normal);

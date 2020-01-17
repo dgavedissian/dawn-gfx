@@ -139,10 +139,6 @@ enum class TextureFormat {
     RGBA32I,
     RGBA32U,
     RGBA32F,
-    RGBA4,
-    RGB5A1,
-    RGB10A2,
-    RG11B10F,
     // Depth formats.
     D16,
     D24,

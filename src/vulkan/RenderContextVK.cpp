@@ -18,8 +18,67 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE;
 namespace dw {
 namespace gfx {
 namespace {
-const std::vector<const char*> kValidationLayers = {"VK_LAYER_KHRONOS_validation"};
-const std::vector<const char*> kRequiredDeviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+struct TextureFormatVK {
+    vk::Format format;
+    vk::Format format_srgb;
+};
+// clang-format off
+const std::array<TextureFormatVK, usize(TextureFormat::Count)> kTextureFormatMap = {{
+    {vk::Format::eUndefined,          vk::Format::eUndefined        }, // A8
+    {vk::Format::eR8Unorm,            vk::Format::eR8Srgb           }, // R8
+    {vk::Format::eR8Sint,             vk::Format::eUndefined        }, // R8I
+    {vk::Format::eR8Uint,             vk::Format::eUndefined        }, // R8U
+    {vk::Format::eR8Snorm,            vk::Format::eUndefined        }, // R8S
+    {vk::Format::eR16Unorm,           vk::Format::eUndefined        }, // R16
+    {vk::Format::eR16Sint,            vk::Format::eUndefined        }, // R16I
+    {vk::Format::eR16Unorm,           vk::Format::eUndefined        }, // R16U
+    {vk::Format::eR16Sfloat,          vk::Format::eUndefined        }, // R16F
+    {vk::Format::eR16Snorm,           vk::Format::eUndefined        }, // R16S
+    {vk::Format::eR32Sint,            vk::Format::eUndefined        }, // R32I
+    {vk::Format::eR32Uint,            vk::Format::eUndefined        }, // R32U
+    {vk::Format::eR32Sfloat,          vk::Format::eUndefined        }, // R32F
+    {vk::Format::eR8G8Unorm,          vk::Format::eR8G8Srgb         }, // RG8
+    {vk::Format::eR8G8Sint,           vk::Format::eUndefined        }, // RG8I
+    {vk::Format::eR8G8Uint,           vk::Format::eUndefined        }, // RG8U
+    {vk::Format::eR8G8Snorm,          vk::Format::eUndefined        }, // RG8S
+    {vk::Format::eR16G16Unorm,        vk::Format::eUndefined        }, // RG16
+    {vk::Format::eR16G16Sint,         vk::Format::eUndefined        }, // RG16I
+    {vk::Format::eR16G16Uint,         vk::Format::eUndefined        }, // RG16U
+    {vk::Format::eR16G16Sfloat,       vk::Format::eUndefined        }, // RG16F
+    {vk::Format::eR16G16Snorm,        vk::Format::eUndefined        }, // RG16S
+    {vk::Format::eR32G32Sint,         vk::Format::eUndefined        }, // RG32I
+    {vk::Format::eR32G32Uint,         vk::Format::eUndefined        }, // RG32U
+    {vk::Format::eR32G32Sfloat,       vk::Format::eUndefined        }, // RG32F
+    {vk::Format::eR8G8B8Unorm,        vk::Format::eR8G8B8Srgb       }, // RGB8
+    {vk::Format::eR8G8B8Sint,         vk::Format::eR8G8B8Srgb       }, // RGB8I
+    {vk::Format::eR8G8B8Uint,         vk::Format::eR8G8B8Srgb       }, // RGB8U
+    {vk::Format::eR8G8B8Snorm,        vk::Format::eUndefined        }, // RGB8S
+    {vk::Format::eB8G8R8A8Unorm,      vk::Format::eB8G8R8A8Srgb     }, // BGRA8
+    {vk::Format::eR8G8B8A8Unorm,      vk::Format::eR8G8B8A8Srgb     }, // RGBA8
+    {vk::Format::eR8G8B8A8Sint,       vk::Format::eR8G8B8A8Srgb     }, // RGBA8I
+    {vk::Format::eR8G8B8A8Uint,       vk::Format::eR8G8B8A8Srgb     }, // RGBA8U
+    {vk::Format::eR8G8B8A8Snorm,      vk::Format::eUndefined        }, // RGBA8S
+    {vk::Format::eR16G16B16A16Unorm,  vk::Format::eUndefined        }, // RGBA16
+    {vk::Format::eR16G16B16A16Sint,   vk::Format::eUndefined        }, // RGBA16I
+    {vk::Format::eR16G16B16A16Uint,   vk::Format::eUndefined        }, // RGBA16U
+    {vk::Format::eR16G16B16A16Sfloat, vk::Format::eUndefined        }, // RGBA16F
+    {vk::Format::eR16G16B16A16Snorm,  vk::Format::eUndefined        }, // RGBA16S
+    {vk::Format::eR32G32B32A32Sint,   vk::Format::eUndefined        }, // RGBA32I
+    {vk::Format::eR32G32B32A32Uint,   vk::Format::eUndefined        }, // RGBA32U
+    {vk::Format::eR32G32B32A32Sfloat, vk::Format::eUndefined        }, // RGBA32F
+    {vk::Format::eD16Unorm,           vk::Format::eUndefined        }, // D16
+    {vk::Format::eD24UnormS8Uint,     vk::Format::eUndefined        }, // D24
+    {vk::Format::eD24UnormS8Uint,     vk::Format::eUndefined        }, // D24S8
+    {vk::Format::eD32Sfloat,          vk::Format::eUndefined        }, // D32
+    {vk::Format::eD32Sfloat,          vk::Format::eUndefined        }, // D16F
+    {vk::Format::eD32Sfloat,          vk::Format::eUndefined        }, // D24F
+    {vk::Format::eD32Sfloat,          vk::Format::eUndefined        }, // D32F
+    {vk::Format::eD24UnormS8Uint,     vk::Format::eUndefined        }, // D0S8
+}};
+// clang-format on
+
+const std::array<const char*, 1> kValidationLayers = {"VK_LAYER_KHRONOS_validation"};
+const std::array<const char*, 1> kRequiredDeviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 constexpr auto kMaxFramesInFlight = 2;
 
 VKAPI_ATTR VkBool32 VKAPI_CALL
@@ -617,7 +676,7 @@ FramebufferVK::FramebufferVK(DeviceVK* device, u16 width, u16 height,
     // Setup colour attachments.
     std::vector<vk::AttachmentDescription> attachment_descriptions;
     std::vector<vk::AttachmentReference> colour_attachment_refs;
-    for (TextureVK* attachment : attachments) {
+    for (TextureVK* attachment : images) {
         vk::AttachmentDescription colour_attachment;
         colour_attachment.format = attachment->image_format;
         colour_attachment.samples = vk::SampleCountFlagBits::e1;
@@ -869,37 +928,45 @@ bool RenderContextVK::frame(const Frame* frame) {
         render_pass_info.renderArea.extent = target_extent;
 
         // If this render queue has clear parameters, start a new render pass.
-        if (q.clear_parameters.has_value()) {
-            // Note: using an array here to avoid the dynamic allocation overhead of std::vector.
-            vk::ClearValue clear_values[2];
-            int clear_value_count = 0;
-
-            if (q.clear_parameters->clear_colour) {
-                const auto& colour = q.clear_parameters.value().colour;
-                clear_values[clear_value_count++].color = {
-                    std::array<float, 4>{colour.r(), colour.g(), colour.b(), colour.a()}};
-            }
-
-            if (q.clear_parameters->clear_depth) {
-                clear_values[clear_value_count++].depthStencil =
-                    vk::ClearDepthStencilValue{1.0f, 0};
-            }
-
-            render_pass_info.clearValueCount = clear_value_count;
-            render_pass_info.pClearValues = clear_values;
+        std::vector<vk::ClearValue> clear_values;
+        int colour_attachment_count = 1;
+        if (current_frame_buffer) {
+            colour_attachment_count = current_frame_buffer->images.size();
         }
+        if (q.clear_parameters.has_value()) {
+            // if (q.clear_parameters->clear_colour) {
+            const auto& colour = q.clear_parameters.value().colour;
+            vk::ClearColorValue clear_colour = {
+                std::array<float, 4>{colour.r(), colour.g(), colour.b(), colour.a()}};
+            for (int i = 0; i < colour_attachment_count; ++i) {
+                clear_values.emplace_back(clear_colour);
+            }
+            //}
+            // if (q.clear_parameters->clear_depth) {
+            clear_values.emplace_back(vk::ClearDepthStencilValue{1.0f, 0});
+            //}
+        } else {
+            vk::ClearColorValue clear_colour = {std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}};
+            for (int i = 0; i < colour_attachment_count; ++i) {
+                clear_values.emplace_back(clear_colour);
+            }
+            clear_values.emplace_back(vk::ClearDepthStencilValue{1.0f, 0});
+        }
+        render_pass_info.clearValueCount = clear_values.size();
+        render_pass_info.pClearValues = clear_values.data();
 
         command_buffer.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
         for (const auto& ri : q.render_items) {
             const auto& program = program_map_.at(*ri.program);
 
             // Update uniforms.
-            std::vector<byte*> ubo_data;
+            std::unordered_map<usize, byte*> ubo_data;
             // std::vector<bool> ubo_updated(program.uniform_buffers.size(), false);
             ubo_data.reserve(program.uniform_buffers.size());
-            for (const auto& ubo : program.uniform_buffers) {
-                void* mapped_memory = vk_device_.mapMemory(ubo.buffers_memory[0], 0, ubo.size);
-                ubo_data.push_back(reinterpret_cast<byte*>(mapped_memory));
+            for (const auto& ubo_entry : program.uniform_buffers) {
+                void* mapped_memory = vk_device_.mapMemory(ubo_entry.second.buffers_memory[0], 0,
+                                                           ubo_entry.second.size);
+                ubo_data[ubo_entry.first] = reinterpret_cast<byte*>(mapped_memory);
             }
             for (const auto& uniform_pair : ri.uniforms) {
                 // Find uniform binding
@@ -908,14 +975,15 @@ bool RenderContextVK::frame(const Frame* frame) {
                     continue;
                 }
                 auto& uniform_location = uniform_it->second;
-                if (!uniform_location.ubo_index.has_value()) {
+                if (!uniform_location.binding_location.has_value()) {
                     logger_.warn("Push constants not implemented yet.");
                     continue;
                 }
 
                 // Write to memory.
                 auto variant_bytes = std::visit(VariantToBytesHelper{}, uniform_pair.second);
-                byte* data_dst = ubo_data[*uniform_location.ubo_index] + uniform_location.offset;
+                byte* data_dst =
+                    ubo_data.at(*uniform_location.binding_location) + uniform_location.offset;
                 // ubo_updated[*uniform_location.ubo_index] = true;
                 std::memcpy(data_dst, variant_bytes.data, variant_bytes.size);
 
@@ -925,12 +993,14 @@ bool RenderContextVK::frame(const Frame* frame) {
                              *uniform_location.ubo_location);
                 */
             }
-            for (const auto& ubo : program.uniform_buffers) {
-                vk_device_.unmapMemory(ubo.buffers_memory[0]);
+            for (const auto& ubo_entry : program.uniform_buffers) {
+                vk_device_.unmapMemory(ubo_entry.second.buffers_memory[0]);
 
                 // Copy buffer to the "real" buffer.
                 // TODO: Implement dirty flags.
-                device_->copyBuffer(ubo.buffers[0], ubo.buffers[1 + next_frame_index_], ubo.size);
+                device_->copyBuffer(ubo_entry.second.buffers[0],
+                                    ubo_entry.second.buffers[1 + next_frame_index_],
+                                    ubo_entry.second.size);
             }
 
             // If there are no vertices to render, we are done.
@@ -1203,7 +1273,7 @@ void RenderContextVK::operator()(const cmd::LinkProgram& c) {
 
     // Allocate a UBO and memory for each swap chain image, plus a "staging" buffer at index 0.
     for (const auto& binding : uniform_buffer_bindings) {
-        logger_.info("Uniform buffer binding {} is {} bytes", binding.second.name,
+        logger_.info("Uniform buffer binding {} {} is {} bytes", binding.first, binding.second.name,
                      binding.second.size);
 
         ProgramVK::AutoUniformBuffer ubo;
@@ -1221,17 +1291,16 @@ void RenderContextVK::operator()(const cmd::LinkProgram& c) {
                 ubo.buffers_memory[i + 1]);
         }
         ubo.size = binding.second.size;
-        program.uniform_buffers.push_back(std::move(ubo));
+        program.uniform_buffers[binding.first] = std::move(ubo);
 
         // Find uniform locations.
-        usize ubo_index = program.uniform_buffers.size() - 1;
         for (const auto& field : binding.second.fields) {
             logger_.info("- member {} is {} bytes and has an offset of {}", field.name, field.size,
                          field.offset);
             std::string qualified_name = binding.second.name + "." + field.name;
             program.uniform_locations.emplace(
                 std::move(qualified_name),
-                ProgramVK::UniformLocation{ubo_index, field.offset, field.size});
+                ProgramVK::UniformLocation{binding.first, field.offset, field.size});
         }
     }
 }
@@ -1243,7 +1312,7 @@ void RenderContextVK::operator()(const cmd::DeleteProgram& c) {
 void RenderContextVK::operator()(const cmd::CreateTexture2D& c) {
     TextureVK texture;
 
-    texture.image_format = vk::Format::eR8G8B8A8Unorm;
+    texture.image_format = kTextureFormatMap[usize(c.format)].format;
 
     vk::DeviceSize buffer_size = c.width * c.height * 4;
     assert(c.data.size() <= buffer_size);
@@ -1743,35 +1812,41 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(PipelineVK::Info info) 
     multisampling.alphaToCoverageEnable = VK_FALSE;  // Optional
     multisampling.alphaToOneEnable = VK_FALSE;       // Optional
 
-    vk::PipelineColorBlendAttachmentState colour_blend_attachment;
-    if (info.render_item->colour_write) {
-        colour_blend_attachment.colorWriteMask =
-            vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-            vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-    }
-    colour_blend_attachment.blendEnable = VK_FALSE;
-    colour_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eOne;   // Optional
-    colour_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eZero;  // Optional
-    colour_blend_attachment.colorBlendOp = vk::BlendOp::eAdd;              // Optional
-    colour_blend_attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;   // Optional
-    colour_blend_attachment.dstAlphaBlendFactor = vk::BlendFactor::eZero;  // Optional
-    colour_blend_attachment.alphaBlendOp = vk::BlendOp::eAdd;              // Optional
+    std::vector<vk::PipelineColorBlendAttachmentState> colour_blend_attachments;
+    int colour_attachment_count = info.framebuffer ? info.framebuffer->images.size() : 1;
+    for (int i = 0; i < colour_attachment_count; ++i) {
+        vk::PipelineColorBlendAttachmentState colour_blend_attachment;
+        if (info.render_item->colour_write) {
+            colour_blend_attachment.colorWriteMask =
+                vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+        }
 
-    /* Alpha blending:
-        colour_blend_attachment.blendEnable = VK_TRUE;
-        colour_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        colour_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        colour_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
-        colour_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        colour_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-        colour_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
-     */
+        colour_blend_attachment.blendEnable = info.render_item->blend_enabled;
+        colour_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eOne;
+        colour_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eZero;
+        colour_blend_attachment.colorBlendOp = vk::BlendOp::eAdd;
+        colour_blend_attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+        colour_blend_attachment.dstAlphaBlendFactor = vk::BlendFactor::eZero;
+        colour_blend_attachment.alphaBlendOp = vk::BlendOp::eAdd;
+
+        /* Alpha blending:
+            colour_blend_attachment.blendEnable = VK_TRUE;
+            colour_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            colour_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            colour_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
+            colour_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            colour_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+            colour_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+         */
+        colour_blend_attachments.push_back(colour_blend_attachment);
+    }
 
     vk::PipelineColorBlendStateCreateInfo colour_blending;
     colour_blending.logicOpEnable = VK_FALSE;
     colour_blending.logicOp = vk::LogicOp::eCopy;  // Optional
-    colour_blending.attachmentCount = 1;
-    colour_blending.pAttachments = &colour_blend_attachment;
+    colour_blending.attachmentCount = colour_blend_attachments.size();
+    colour_blending.pAttachments = colour_blend_attachments.data();
     colour_blending.blendConstants[0] = 0.0f;  // Optional
     colour_blending.blendConstants[1] = 0.0f;  // Optional
     colour_blending.blendConstants[2] = 0.0f;  // Optional

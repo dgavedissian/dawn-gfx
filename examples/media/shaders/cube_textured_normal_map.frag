@@ -1,16 +1,20 @@
-#version 330 core
+#version 420 core
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_ARB_enhanced_layouts : enable
 
-in VertexData {
+layout(location = 0) in VertexData {
     vec2 texcoord;
     mat3 tbn;
 } i;
 
 layout(location = 0) out vec4 out_colour;
 
-uniform vec3 light_direction;
+layout(binding = 1) uniform LightInfo {
+    vec3 light_direction;
+} u;
 
-uniform sampler2D diffuse_texture;
-uniform sampler2D normal_map_texture;
+layout(binding = 2) uniform sampler2D diffuse_texture;
+layout(binding = 3) uniform sampler2D normal_map_texture;
 
 void main()
 {
@@ -21,5 +25,5 @@ void main()
 
     // Diffuse lighting.
     vec4 diffuse = texture(diffuse_texture, i.texcoord);
-    out_colour = clamp(dot(normal, light_direction), 0.0, 1.0) * diffuse;
+    out_colour = clamp(dot(normal, u.light_direction), 0.0, 1.0) * diffuse;
 }

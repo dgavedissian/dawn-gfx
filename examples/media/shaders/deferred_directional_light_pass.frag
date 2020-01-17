@@ -1,6 +1,8 @@
-#version 330 core
+#version 420 core
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_ARB_enhanced_layouts : enable
 
-in VertexData {
+layout(location = 0) in VertexData {
     vec2 texcoord;
 } i;
 
@@ -12,11 +14,13 @@ gb0: |diffuse.rgb|X|
 gb1: |position.xyz|X|
 gb2: |normal.xyz|X|
 */
-uniform sampler2D gb0_texture;
-uniform sampler2D gb1_texture;
-uniform sampler2D gb2_texture;
+layout(binding = 1) uniform sampler2D gb0_texture;
+layout(binding = 2) uniform sampler2D gb1_texture;
+layout(binding = 3) uniform sampler2D gb2_texture;
 
-uniform vec3 light_direction;
+layout(binding = 4) uniform Parameters {
+    vec3 light_direction;
+} u;
 
 void main()
 {
@@ -30,5 +34,5 @@ void main()
     vec3 normal = gb2.xyz;
 
     // Render directional light.
-    out_colour = vec4(clamp(dot(normal, light_direction), 0.0, 1.0) * diffuse, 1.0);
+    out_colour = vec4(clamp(dot(normal, u.light_direction), 0.0, 1.0) * diffuse, 1.0);
 }

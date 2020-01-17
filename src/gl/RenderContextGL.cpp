@@ -115,73 +115,68 @@ struct TextureFormatGL {
     GLenum type;
     bool supported;
 };
-
 // clang-format off
-TextureFormatGL s_texture_format[] = {
-    {GL_ALPHA,              GL_ZERO,         GL_ALPHA,            GL_UNSIGNED_BYTE,                false}, // A8
-    {GL_R8,                 GL_ZERO,         GL_RED,              GL_UNSIGNED_BYTE,                false}, // R8
-    {GL_R8I,                GL_ZERO,         GL_RED,              GL_BYTE,                         false}, // R8I
-    {GL_R8UI,               GL_ZERO,         GL_RED,              GL_UNSIGNED_BYTE,                false}, // R8U
-    {GL_R8_SNORM,           GL_ZERO,         GL_RED,              GL_BYTE,                         false}, // R8S
-    {GL_R16,                GL_ZERO,         GL_RED,              GL_UNSIGNED_SHORT,               false}, // R16
-    {GL_R16I,               GL_ZERO,         GL_RED,              GL_SHORT,                        false}, // R16I
-    {GL_R16UI,              GL_ZERO,         GL_RED,              GL_UNSIGNED_SHORT,               false}, // R16U
-    {GL_R16F,               GL_ZERO,         GL_RED,              GL_HALF_FLOAT,                   false}, // R16F
-    {GL_R16_SNORM,          GL_ZERO,         GL_RED,              GL_SHORT,                        false}, // R16S
-    {GL_R32I,               GL_ZERO,         GL_RED,              GL_INT,                          false}, // R32I
-    {GL_R32UI,              GL_ZERO,         GL_RED,              GL_UNSIGNED_INT,                 false}, // R32U
-    {GL_R32F,               GL_ZERO,         GL_RED,              GL_FLOAT,                        false}, // R32F
-    {GL_RG8,                GL_ZERO,         GL_RG,               GL_UNSIGNED_BYTE,                false}, // RG8
-    {GL_RG8I,               GL_ZERO,         GL_RG,               GL_BYTE,                         false}, // RG8I
-    {GL_RG8UI,              GL_ZERO,         GL_RG,               GL_UNSIGNED_BYTE,                false}, // RG8U
-    {GL_RG8_SNORM,          GL_ZERO,         GL_RG,               GL_BYTE,                         false}, // RG8S
-    {GL_RG16,               GL_ZERO,         GL_RG,               GL_UNSIGNED_SHORT,               false}, // RG16
-    {GL_RG16I,              GL_ZERO,         GL_RG,               GL_SHORT,                        false}, // RG16I
-    {GL_RG16UI,             GL_ZERO,         GL_RG,               GL_UNSIGNED_SHORT,               false}, // RG16U
-    {GL_RG16F,              GL_ZERO,         GL_RG,               GL_FLOAT,                        false}, // RG16F
-    {GL_RG16_SNORM,         GL_ZERO,         GL_RG,               GL_SHORT,                        false}, // RG16S
-    {GL_RG32I,              GL_ZERO,         GL_RG,               GL_INT,                          false}, // RG32I
-    {GL_RG32UI,             GL_ZERO,         GL_RG,               GL_UNSIGNED_INT,                 false}, // RG32U
-    {GL_RG32F,              GL_ZERO,         GL_RG,               GL_FLOAT,                        false}, // RG32F
-    {GL_RGB8,               GL_SRGB8,        GL_RGB,              GL_UNSIGNED_BYTE,                false}, // RGB8
-    {GL_RGB8I,              GL_ZERO,         GL_RGB,              GL_BYTE,                         false}, // RGB8I
-    {GL_RGB8UI,             GL_ZERO,         GL_RGB,              GL_UNSIGNED_BYTE,                false}, // RGB8U
-    {GL_RGB8_SNORM,         GL_ZERO,         GL_RGB,              GL_BYTE,                         false}, // RGB8S
-    {GL_RGBA8,              GL_SRGB8_ALPHA8, GL_BGRA,             GL_UNSIGNED_BYTE,                false}, // BGRA8
-    {GL_RGBA8,              GL_SRGB8_ALPHA8, GL_RGBA,             GL_UNSIGNED_BYTE,                false}, // RGBA8
-    {GL_RGBA8I,             GL_ZERO,         GL_RGBA,             GL_BYTE,                         false}, // RGBA8I
-    {GL_RGBA8UI,            GL_ZERO,         GL_RGBA,             GL_UNSIGNED_BYTE,                false}, // RGBA8U
-    {GL_RGBA8_SNORM,        GL_ZERO,         GL_RGBA,             GL_BYTE,                         false}, // RGBA8S
-    {GL_RGBA16,             GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT,               false}, // RGBA16
-    {GL_RGBA16I,            GL_ZERO,         GL_RGBA,             GL_SHORT,                        false}, // RGBA16I
-    {GL_RGBA16UI,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT,               false}, // RGBA16U
-    {GL_RGBA16F,            GL_ZERO,         GL_RGBA,             GL_HALF_FLOAT,                   false}, // RGBA16F
-    {GL_RGBA16_SNORM,       GL_ZERO,         GL_RGBA,             GL_SHORT,                        false}, // RGBA16S
-    {GL_RGBA32I,            GL_ZERO,         GL_RGBA,             GL_INT,                          false}, // RGBA32I
-    {GL_RGBA32UI,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_INT,                 false}, // RGBA32U
-    {GL_RGBA32F,            GL_ZERO,         GL_RGBA,             GL_FLOAT,                        false}, // RGBA32F
-    {GL_RGBA4,              GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT_4_4_4_4_REV,   false}, // RGBA4
-    {GL_RGB5_A1,            GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT_1_5_5_5_REV,   false}, // RGB5A1
-    {GL_RGB10_A2,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_INT_2_10_10_10_REV,  false}, // RGB10A2
-    {GL_R11F_G11F_B10F,     GL_ZERO,         GL_RGB,              GL_UNSIGNED_INT_10F_11F_11F_REV, false}, // RG11B10F
-    {GL_DEPTH_COMPONENT16,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_SHORT,               false}, // D16
-    {GL_DEPTH_COMPONENT24,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_INT,                 false}, // D24
-    {GL_DEPTH24_STENCIL8,   GL_ZERO,         GL_DEPTH_STENCIL,    GL_UNSIGNED_INT_24_8,            false}, // D24S8
-    {GL_DEPTH_COMPONENT32,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_INT,                 false}, // D32
-    {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,                        false}, // D16F
-    {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,                        false}, // D24F
-    {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,                        false}, // D32F
-    {GL_STENCIL_INDEX8,     GL_ZERO,         GL_STENCIL_INDEX,    GL_UNSIGNED_BYTE,                false}, // D0S8
-};
+const std::array<TextureFormatGL, usize(TextureFormat::Count)> kTextureFormatMap = {{
+    {GL_ALPHA,              GL_ZERO,         GL_ALPHA,            GL_UNSIGNED_BYTE,     false}, // A8
+    {GL_R8,                 GL_ZERO,         GL_RED,              GL_UNSIGNED_BYTE,     false}, // R8
+    {GL_R8I,                GL_ZERO,         GL_RED,              GL_BYTE,              false}, // R8I
+    {GL_R8UI,               GL_ZERO,         GL_RED,              GL_UNSIGNED_BYTE,     false}, // R8U
+    {GL_R8_SNORM,           GL_ZERO,         GL_RED,              GL_BYTE,              false}, // R8S
+    {GL_R16,                GL_ZERO,         GL_RED,              GL_UNSIGNED_SHORT,    false}, // R16
+    {GL_R16I,               GL_ZERO,         GL_RED,              GL_SHORT,             false}, // R16I
+    {GL_R16UI,              GL_ZERO,         GL_RED,              GL_UNSIGNED_SHORT,    false}, // R16U
+    {GL_R16F,               GL_ZERO,         GL_RED,              GL_HALF_FLOAT,        false}, // R16F
+    {GL_R16_SNORM,          GL_ZERO,         GL_RED,              GL_SHORT,             false}, // R16S
+    {GL_R32I,               GL_ZERO,         GL_RED,              GL_INT,               false}, // R32I
+    {GL_R32UI,              GL_ZERO,         GL_RED,              GL_UNSIGNED_INT,      false}, // R32U
+    {GL_R32F,               GL_ZERO,         GL_RED,              GL_FLOAT,             false}, // R32F
+    {GL_RG8,                GL_ZERO,         GL_RG,               GL_UNSIGNED_BYTE,     false}, // RG8
+    {GL_RG8I,               GL_ZERO,         GL_RG,               GL_BYTE,              false}, // RG8I
+    {GL_RG8UI,              GL_ZERO,         GL_RG,               GL_UNSIGNED_BYTE,     false}, // RG8U
+    {GL_RG8_SNORM,          GL_ZERO,         GL_RG,               GL_BYTE,              false}, // RG8S
+    {GL_RG16,               GL_ZERO,         GL_RG,               GL_UNSIGNED_SHORT,    false}, // RG16
+    {GL_RG16I,              GL_ZERO,         GL_RG,               GL_SHORT,             false}, // RG16I
+    {GL_RG16UI,             GL_ZERO,         GL_RG,               GL_UNSIGNED_SHORT,    false}, // RG16U
+    {GL_RG16F,              GL_ZERO,         GL_RG,               GL_FLOAT,             false}, // RG16F
+    {GL_RG16_SNORM,         GL_ZERO,         GL_RG,               GL_SHORT,             false}, // RG16S
+    {GL_RG32I,              GL_ZERO,         GL_RG,               GL_INT,               false}, // RG32I
+    {GL_RG32UI,             GL_ZERO,         GL_RG,               GL_UNSIGNED_INT,      false}, // RG32U
+    {GL_RG32F,              GL_ZERO,         GL_RG,               GL_FLOAT,             false}, // RG32F
+    {GL_RGB8,               GL_SRGB8,        GL_RGB,              GL_UNSIGNED_BYTE,     false}, // RGB8
+    {GL_RGB8I,              GL_ZERO,         GL_RGB,              GL_BYTE,              false}, // RGB8I
+    {GL_RGB8UI,             GL_ZERO,         GL_RGB,              GL_UNSIGNED_BYTE,     false}, // RGB8U
+    {GL_RGB8_SNORM,         GL_ZERO,         GL_RGB,              GL_BYTE,              false}, // RGB8S
+    {GL_RGBA8,              GL_SRGB8_ALPHA8, GL_BGRA,             GL_UNSIGNED_BYTE,     false}, // BGRA8
+    {GL_RGBA8,              GL_SRGB8_ALPHA8, GL_RGBA,             GL_UNSIGNED_BYTE,     false}, // RGBA8
+    {GL_RGBA8I,             GL_ZERO,         GL_RGBA,             GL_BYTE,              false}, // RGBA8I
+    {GL_RGBA8UI,            GL_ZERO,         GL_RGBA,             GL_UNSIGNED_BYTE,     false}, // RGBA8U
+    {GL_RGBA8_SNORM,        GL_ZERO,         GL_RGBA,             GL_BYTE,              false}, // RGBA8S
+    {GL_RGBA16,             GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT,    false}, // RGBA16
+    {GL_RGBA16I,            GL_ZERO,         GL_RGBA,             GL_SHORT,             false}, // RGBA16I
+    {GL_RGBA16UI,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT,    false}, // RGBA16U
+    {GL_RGBA16F,            GL_ZERO,         GL_RGBA,             GL_HALF_FLOAT,        false}, // RGBA16F
+    {GL_RGBA16_SNORM,       GL_ZERO,         GL_RGBA,             GL_SHORT,             false}, // RGBA16S
+    {GL_RGBA32I,            GL_ZERO,         GL_RGBA,             GL_INT,               false}, // RGBA32I
+    {GL_RGBA32UI,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_INT,      false}, // RGBA32U
+    {GL_RGBA32F,            GL_ZERO,         GL_RGBA,             GL_FLOAT,             false}, // RGBA32F
+    {GL_DEPTH_COMPONENT16,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_SHORT,    false}, // D16
+    {GL_DEPTH_COMPONENT24,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_INT,      false}, // D24
+    {GL_DEPTH24_STENCIL8,   GL_ZERO,         GL_DEPTH_STENCIL,    GL_UNSIGNED_INT_24_8, false}, // D24S8
+    {GL_DEPTH_COMPONENT32,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_INT,      false}, // D32
+    {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,             false}, // D16F
+    {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,             false}, // D24F
+    {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,             false}, // D32F
+    {GL_STENCIL_INDEX8,     GL_ZERO,         GL_STENCIL_INDEX,    GL_UNSIGNED_BYTE,     false}, // D0S8
+}};
 
-std::unordered_map<BlendEquation, GLenum> s_blend_equation_map = {
+const std::unordered_map<BlendEquation, GLenum> kBlendEquationMap = {
     {BlendEquation::Add, GL_FUNC_ADD},
     {BlendEquation::Subtract, GL_FUNC_SUBTRACT},
     {BlendEquation::ReverseSubtract, GL_FUNC_REVERSE_SUBTRACT},
     {BlendEquation::Min, GL_MIN},
     {BlendEquation::Max, GL_MAX}
 };
-std::unordered_map<BlendFunc, GLenum> s_blend_func_map = {
+const std::unordered_map<BlendFunc, GLenum> kBlendFuncMap = {
     {BlendFunc::Zero, GL_ZERO},
     {BlendFunc::One, GL_ONE},
     {BlendFunc::SrcColor, GL_SRC_COLOR},
@@ -200,7 +195,7 @@ std::unordered_map<BlendFunc, GLenum> s_blend_func_map = {
 };
 
 // GLFW key map.
-std::unordered_map<int, Key::Enum> s_key_map = {
+const std::unordered_map<int, Key::Enum> kGlfwKeyMap = {
     {GLFW_KEY_SPACE, Key::Space},
     {GLFW_KEY_APOSTROPHE, Key::Apostrophe},
     {GLFW_KEY_COMMA, Key::Comma},
@@ -315,7 +310,7 @@ std::unordered_map<int, MouseButton::Enum> s_mouse_button_map = {
 };
 // clang-format on
 static_assert(static_cast<int>(TextureFormat::Count) ==
-                  sizeof(s_texture_format) / sizeof(s_texture_format[0]),
+                  sizeof(kTextureFormatMap) / sizeof(kTextureFormatMap[0]),
               "Texture format mapping mismatch.");
 
 // Uniform binder.
@@ -521,8 +516,8 @@ tl::expected<void, std::string> RenderContextGL::createWindow(u16 width, u16 hei
         }
 
         // Look up key.
-        auto key_it = s_key_map.find(key);
-        if (key_it == s_key_map.end()) {
+        auto key_it = kGlfwKeyMap.find(key);
+        if (key_it == kGlfwKeyMap.end()) {
             ctx.logger_.warn("Unknown key code {}", key);
             return;
         }
@@ -761,18 +756,17 @@ bool RenderContextGL::frame(const Frame* frame) {
             }
             if (!previous || previous->blend_equation_rgb != current->blend_equation_rgb ||
                 previous->blend_equation_a != current->blend_equation_a) {
-                GL_CHECK(
-                    glBlendEquationSeparate(s_blend_equation_map.at(current->blend_equation_rgb),
-                                            s_blend_equation_map.at(current->blend_equation_a)));
+                GL_CHECK(glBlendEquationSeparate(kBlendEquationMap.at(current->blend_equation_rgb),
+                                                 kBlendEquationMap.at(current->blend_equation_a)));
             }
             if (!previous || previous->blend_src_rgb != current->blend_src_rgb ||
                 previous->blend_src_a != current->blend_src_a ||
                 previous->blend_dest_rgb != current->blend_dest_rgb ||
                 previous->blend_dest_a != current->blend_dest_a) {
-                GL_CHECK(glBlendFuncSeparate(s_blend_func_map.at(current->blend_src_rgb),
-                                             s_blend_func_map.at(current->blend_dest_rgb),
-                                             s_blend_func_map.at(current->blend_src_a),
-                                             s_blend_func_map.at(current->blend_dest_a)));
+                GL_CHECK(glBlendFuncSeparate(kBlendFuncMap.at(current->blend_src_rgb),
+                                             kBlendFuncMap.at(current->blend_dest_rgb),
+                                             kBlendFuncMap.at(current->blend_src_a),
+                                             kBlendFuncMap.at(current->blend_dest_a)));
             }
 
             // Bind Program.
@@ -1096,7 +1090,7 @@ void RenderContextGL::operator()(const cmd::CreateTexture2D& c) {
     GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture));
 
     // Give image data to OpenGL.
-    TextureFormatGL format = s_texture_format[static_cast<int>(c.format)];
+    TextureFormatGL format = kTextureFormatMap[static_cast<int>(c.format)];
     logger_.debug(
         "[CreateTexture2D] format {} - internal fmt: {:#x} - internal fmt srgb: {:#x} - fmt: {:#x} "
         "- type: {:#x}",

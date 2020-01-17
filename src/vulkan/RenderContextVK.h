@@ -132,7 +132,7 @@ struct ProgramVK {
     // Uniforms.
     struct UniformLocation {
         // Empty optional indicates a push_constant buffer.
-        std::optional<u32> ubo_index;
+        std::optional<usize> binding_location;
         usize offset = 0;
         usize size = 0;
     };
@@ -144,7 +144,7 @@ struct ProgramVK {
         std::vector<vk::DeviceMemory> buffers_memory;
         usize size = 0;
     };
-    std::vector<AutoUniformBuffer> uniform_buffers;
+    std::unordered_map<usize, AutoUniformBuffer> uniform_buffers;
 };
 
 struct TextureVK {

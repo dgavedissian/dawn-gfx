@@ -62,6 +62,9 @@ Renderer::~Renderer() {
             render_thread_.join();
         }
     }
+
+    // Delete renderer.
+    shared_render_context_.reset();
 }
 
 tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16 height,

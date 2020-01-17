@@ -1,14 +1,16 @@
-#version 330 core
+#version 420 core
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_ARB_enhanced_layouts : enable
 
-in VertexData {
+layout(location = 0) in VertexData {
     vec2 texcoord;
 } i;
 
 layout(location = 0) out vec4 out_colour;
 
-uniform sampler2D gb0_texture;
-uniform sampler2D gb1_texture;
-uniform sampler2D gb2_texture;
+layout(binding = 1) uniform sampler2D gb0_texture;
+layout(binding = 2) uniform sampler2D gb1_texture;
+layout(binding = 3) uniform sampler2D gb2_texture;
 
 void main()
 {
