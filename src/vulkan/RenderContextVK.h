@@ -199,8 +199,15 @@ struct PipelineVK {
         const FramebufferVK* framebuffer;
 
         bool operator==(const Info& other) const {
-            return render_item->colour_write == other.render_item->colour_write && vb == other.vb &&
-                   decl == other.decl && program == other.program &&
+            return render_item->colour_write == other.render_item->colour_write &&
+                   render_item->blend_enabled == other.render_item->blend_enabled &&
+                   render_item->blend_src_rgb == other.render_item->blend_src_rgb &&
+                   render_item->blend_dest_rgb == other.render_item->blend_dest_rgb &&
+                   render_item->blend_equation_rgb == other.render_item->blend_equation_rgb &&
+                   render_item->blend_src_a == other.render_item->blend_src_a &&
+                   render_item->blend_dest_a == other.render_item->blend_dest_a &&
+                   render_item->blend_equation_a == other.render_item->blend_equation_a &&
+                   vb == other.vb && decl == other.decl && program == other.program &&
                    framebuffer == other.framebuffer;
         }
     };
@@ -212,8 +219,12 @@ namespace std {
 template <> struct hash<dw::gfx::PipelineVK::Info> {
     std::size_t operator()(const dw::gfx::PipelineVK::Info& i) const {
         std::size_t hash = 0;
-        dga::hashCombine(hash, i.render_item->colour_write, i.render_item->depth_enabled,
-                         i.render_item->depth_write, i.vb, i.decl, i.program, i.framebuffer);
+        dga::hashCombine(hash, i.render_item->colour_write, i.render_item->blend_enabled,
+                         i.render_item->blend_src_rgb, i.render_item->blend_dest_rgb,
+                         i.render_item->blend_equation_rgb, i.render_item->blend_src_a,
+                         i.render_item->blend_dest_a, i.render_item->blend_equation_a,
+                         i.render_item->depth_enabled, i.render_item->depth_write, i.vb, i.decl,
+                         i.program, i.framebuffer);
         return hash;
     }
 };

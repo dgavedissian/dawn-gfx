@@ -24,57 +24,82 @@ struct TextureFormatVK {
 };
 // clang-format off
 const std::array<TextureFormatVK, usize(TextureFormat::Count)> kTextureFormatMap = {{
-    {vk::Format::eUndefined,          vk::Format::eUndefined        }, // A8
-    {vk::Format::eR8Unorm,            vk::Format::eR8Srgb           }, // R8
-    {vk::Format::eR8Sint,             vk::Format::eUndefined        }, // R8I
-    {vk::Format::eR8Uint,             vk::Format::eUndefined        }, // R8U
-    {vk::Format::eR8Snorm,            vk::Format::eUndefined        }, // R8S
-    {vk::Format::eR16Unorm,           vk::Format::eUndefined        }, // R16
-    {vk::Format::eR16Sint,            vk::Format::eUndefined        }, // R16I
-    {vk::Format::eR16Unorm,           vk::Format::eUndefined        }, // R16U
-    {vk::Format::eR16Sfloat,          vk::Format::eUndefined        }, // R16F
-    {vk::Format::eR16Snorm,           vk::Format::eUndefined        }, // R16S
-    {vk::Format::eR32Sint,            vk::Format::eUndefined        }, // R32I
-    {vk::Format::eR32Uint,            vk::Format::eUndefined        }, // R32U
-    {vk::Format::eR32Sfloat,          vk::Format::eUndefined        }, // R32F
-    {vk::Format::eR8G8Unorm,          vk::Format::eR8G8Srgb         }, // RG8
-    {vk::Format::eR8G8Sint,           vk::Format::eUndefined        }, // RG8I
-    {vk::Format::eR8G8Uint,           vk::Format::eUndefined        }, // RG8U
-    {vk::Format::eR8G8Snorm,          vk::Format::eUndefined        }, // RG8S
-    {vk::Format::eR16G16Unorm,        vk::Format::eUndefined        }, // RG16
-    {vk::Format::eR16G16Sint,         vk::Format::eUndefined        }, // RG16I
-    {vk::Format::eR16G16Uint,         vk::Format::eUndefined        }, // RG16U
-    {vk::Format::eR16G16Sfloat,       vk::Format::eUndefined        }, // RG16F
-    {vk::Format::eR16G16Snorm,        vk::Format::eUndefined        }, // RG16S
-    {vk::Format::eR32G32Sint,         vk::Format::eUndefined        }, // RG32I
-    {vk::Format::eR32G32Uint,         vk::Format::eUndefined        }, // RG32U
-    {vk::Format::eR32G32Sfloat,       vk::Format::eUndefined        }, // RG32F
-    {vk::Format::eR8G8B8Unorm,        vk::Format::eR8G8B8Srgb       }, // RGB8
-    {vk::Format::eR8G8B8Sint,         vk::Format::eR8G8B8Srgb       }, // RGB8I
-    {vk::Format::eR8G8B8Uint,         vk::Format::eR8G8B8Srgb       }, // RGB8U
-    {vk::Format::eR8G8B8Snorm,        vk::Format::eUndefined        }, // RGB8S
-    {vk::Format::eB8G8R8A8Unorm,      vk::Format::eB8G8R8A8Srgb     }, // BGRA8
-    {vk::Format::eR8G8B8A8Unorm,      vk::Format::eR8G8B8A8Srgb     }, // RGBA8
-    {vk::Format::eR8G8B8A8Sint,       vk::Format::eR8G8B8A8Srgb     }, // RGBA8I
-    {vk::Format::eR8G8B8A8Uint,       vk::Format::eR8G8B8A8Srgb     }, // RGBA8U
-    {vk::Format::eR8G8B8A8Snorm,      vk::Format::eUndefined        }, // RGBA8S
-    {vk::Format::eR16G16B16A16Unorm,  vk::Format::eUndefined        }, // RGBA16
-    {vk::Format::eR16G16B16A16Sint,   vk::Format::eUndefined        }, // RGBA16I
-    {vk::Format::eR16G16B16A16Uint,   vk::Format::eUndefined        }, // RGBA16U
-    {vk::Format::eR16G16B16A16Sfloat, vk::Format::eUndefined        }, // RGBA16F
-    {vk::Format::eR16G16B16A16Snorm,  vk::Format::eUndefined        }, // RGBA16S
-    {vk::Format::eR32G32B32A32Sint,   vk::Format::eUndefined        }, // RGBA32I
-    {vk::Format::eR32G32B32A32Uint,   vk::Format::eUndefined        }, // RGBA32U
-    {vk::Format::eR32G32B32A32Sfloat, vk::Format::eUndefined        }, // RGBA32F
-    {vk::Format::eD16Unorm,           vk::Format::eUndefined        }, // D16
-    {vk::Format::eD24UnormS8Uint,     vk::Format::eUndefined        }, // D24
-    {vk::Format::eD24UnormS8Uint,     vk::Format::eUndefined        }, // D24S8
-    {vk::Format::eD32Sfloat,          vk::Format::eUndefined        }, // D32
-    {vk::Format::eD32Sfloat,          vk::Format::eUndefined        }, // D16F
-    {vk::Format::eD32Sfloat,          vk::Format::eUndefined        }, // D24F
-    {vk::Format::eD32Sfloat,          vk::Format::eUndefined        }, // D32F
-    {vk::Format::eD24UnormS8Uint,     vk::Format::eUndefined        }, // D0S8
+    {vk::Format::eUndefined,          vk::Format::eUndefined   }, // A8
+    {vk::Format::eR8Unorm,            vk::Format::eR8Srgb      }, // R8
+    {vk::Format::eR8Sint,             vk::Format::eUndefined   }, // R8I
+    {vk::Format::eR8Uint,             vk::Format::eUndefined   }, // R8U
+    {vk::Format::eR8Snorm,            vk::Format::eUndefined   }, // R8S
+    {vk::Format::eR16Unorm,           vk::Format::eUndefined   }, // R16
+    {vk::Format::eR16Sint,            vk::Format::eUndefined   }, // R16I
+    {vk::Format::eR16Unorm,           vk::Format::eUndefined   }, // R16U
+    {vk::Format::eR16Sfloat,          vk::Format::eUndefined   }, // R16F
+    {vk::Format::eR16Snorm,           vk::Format::eUndefined   }, // R16S
+    {vk::Format::eR32Sint,            vk::Format::eUndefined   }, // R32I
+    {vk::Format::eR32Uint,            vk::Format::eUndefined   }, // R32U
+    {vk::Format::eR32Sfloat,          vk::Format::eUndefined   }, // R32F
+    {vk::Format::eR8G8Unorm,          vk::Format::eR8G8Srgb    }, // RG8
+    {vk::Format::eR8G8Sint,           vk::Format::eUndefined   }, // RG8I
+    {vk::Format::eR8G8Uint,           vk::Format::eUndefined   }, // RG8U
+    {vk::Format::eR8G8Snorm,          vk::Format::eUndefined   }, // RG8S
+    {vk::Format::eR16G16Unorm,        vk::Format::eUndefined   }, // RG16
+    {vk::Format::eR16G16Sint,         vk::Format::eUndefined   }, // RG16I
+    {vk::Format::eR16G16Uint,         vk::Format::eUndefined   }, // RG16U
+    {vk::Format::eR16G16Sfloat,       vk::Format::eUndefined   }, // RG16F
+    {vk::Format::eR16G16Snorm,        vk::Format::eUndefined   }, // RG16S
+    {vk::Format::eR32G32Sint,         vk::Format::eUndefined   }, // RG32I
+    {vk::Format::eR32G32Uint,         vk::Format::eUndefined   }, // RG32U
+    {vk::Format::eR32G32Sfloat,       vk::Format::eUndefined   }, // RG32F
+    {vk::Format::eR8G8B8Unorm,        vk::Format::eR8G8B8Srgb  }, // RGB8
+    {vk::Format::eR8G8B8Sint,         vk::Format::eR8G8B8Srgb  }, // RGB8I
+    {vk::Format::eR8G8B8Uint,         vk::Format::eR8G8B8Srgb  }, // RGB8U
+    {vk::Format::eR8G8B8Snorm,        vk::Format::eUndefined   }, // RGB8S
+    {vk::Format::eB8G8R8A8Unorm,      vk::Format::eB8G8R8A8Srgb}, // BGRA8
+    {vk::Format::eR8G8B8A8Unorm,      vk::Format::eR8G8B8A8Srgb}, // RGBA8
+    {vk::Format::eR8G8B8A8Sint,       vk::Format::eR8G8B8A8Srgb}, // RGBA8I
+    {vk::Format::eR8G8B8A8Uint,       vk::Format::eR8G8B8A8Srgb}, // RGBA8U
+    {vk::Format::eR8G8B8A8Snorm,      vk::Format::eUndefined   }, // RGBA8S
+    {vk::Format::eR16G16B16A16Unorm,  vk::Format::eUndefined   }, // RGBA16
+    {vk::Format::eR16G16B16A16Sint,   vk::Format::eUndefined   }, // RGBA16I
+    {vk::Format::eR16G16B16A16Uint,   vk::Format::eUndefined   }, // RGBA16U
+    {vk::Format::eR16G16B16A16Sfloat, vk::Format::eUndefined   }, // RGBA16F
+    {vk::Format::eR16G16B16A16Snorm,  vk::Format::eUndefined   }, // RGBA16S
+    {vk::Format::eR32G32B32A32Sint,   vk::Format::eUndefined   }, // RGBA32I
+    {vk::Format::eR32G32B32A32Uint,   vk::Format::eUndefined   }, // RGBA32U
+    {vk::Format::eR32G32B32A32Sfloat, vk::Format::eUndefined   }, // RGBA32F
+    {vk::Format::eD16Unorm,           vk::Format::eUndefined   }, // D16
+    {vk::Format::eD24UnormS8Uint,     vk::Format::eUndefined   }, // D24
+    {vk::Format::eD24UnormS8Uint,     vk::Format::eUndefined   }, // D24S8
+    {vk::Format::eD32Sfloat,          vk::Format::eUndefined   }, // D32
+    {vk::Format::eD32Sfloat,          vk::Format::eUndefined   }, // D16F
+    {vk::Format::eD32Sfloat,          vk::Format::eUndefined   }, // D24F
+    {vk::Format::eD32Sfloat,          vk::Format::eUndefined   }, // D32F
+    {vk::Format::eD24UnormS8Uint,     vk::Format::eUndefined   }, // D0S8
 }};
+
+const std::unordered_map<BlendEquation, vk::BlendOp> kBlendEquationMap = {
+    {BlendEquation::Add, vk::BlendOp::eAdd},
+    {BlendEquation::Subtract, vk::BlendOp::eSubtract},
+    {BlendEquation::ReverseSubtract, vk::BlendOp::eReverseSubtract},
+    {BlendEquation::Min, vk::BlendOp::eMin},
+    {BlendEquation::Max, vk::BlendOp::eMax}
+};
+const std::unordered_map<BlendFunc, vk::BlendFactor> kBlendFuncMap = {
+    {BlendFunc::Zero, vk::BlendFactor::eZero},
+    {BlendFunc::One, vk::BlendFactor::eOne},
+    {BlendFunc::SrcColor, vk::BlendFactor::eSrcColor},
+    {BlendFunc::OneMinusSrcColor, vk::BlendFactor::eOneMinusSrcColor},
+    {BlendFunc::DstColor, vk::BlendFactor::eDstColor},
+    {BlendFunc::OneMinusDstColor, vk::BlendFactor::eOneMinusDstColor},
+    {BlendFunc::SrcAlpha, vk::BlendFactor::eSrcAlpha},
+    {BlendFunc::OneMinusSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha},
+    {BlendFunc::DstAlpha, vk::BlendFactor::eDstAlpha},
+    {BlendFunc::OneMinusDstAlpha, vk::BlendFactor::eOneMinusDstAlpha},
+    {BlendFunc::ConstantColor, vk::BlendFactor::eConstantColor},
+    {BlendFunc::OneMinusConstantColor, vk::BlendFactor::eOneMinusConstantColor},
+    {BlendFunc::ConstantAlpha, vk::BlendFactor::eConstantAlpha},
+    {BlendFunc::OneMinusConstantAlpha, vk::BlendFactor::eOneMinusConstantAlpha},
+    {BlendFunc::SrcAlphaSaturate, vk::BlendFactor::eSrcAlphaSaturate},
+};
 // clang-format on
 
 const std::array<const char*, 1> kValidationLayers = {"VK_LAYER_KHRONOS_validation"};
@@ -1821,24 +1846,19 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(PipelineVK::Info info) 
                 vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
                 vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
         }
-
         colour_blend_attachment.blendEnable = info.render_item->blend_enabled;
-        colour_blend_attachment.srcColorBlendFactor = vk::BlendFactor::eOne;
-        colour_blend_attachment.dstColorBlendFactor = vk::BlendFactor::eZero;
-        colour_blend_attachment.colorBlendOp = vk::BlendOp::eAdd;
-        colour_blend_attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
-        colour_blend_attachment.dstAlphaBlendFactor = vk::BlendFactor::eZero;
-        colour_blend_attachment.alphaBlendOp = vk::BlendOp::eAdd;
-
-        /* Alpha blending:
-            colour_blend_attachment.blendEnable = VK_TRUE;
-            colour_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-            colour_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-            colour_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
-            colour_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-            colour_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-            colour_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
-         */
+        colour_blend_attachment.srcColorBlendFactor =
+            kBlendFuncMap.at(info.render_item->blend_src_rgb);
+        colour_blend_attachment.dstColorBlendFactor =
+            kBlendFuncMap.at(info.render_item->blend_dest_rgb);
+        colour_blend_attachment.colorBlendOp =
+            kBlendEquationMap.at(info.render_item->blend_equation_rgb);
+        colour_blend_attachment.srcAlphaBlendFactor =
+            kBlendFuncMap.at(info.render_item->blend_src_a);
+        colour_blend_attachment.dstAlphaBlendFactor =
+            kBlendFuncMap.at(info.render_item->blend_dest_a);
+        colour_blend_attachment.alphaBlendOp =
+            kBlendEquationMap.at(info.render_item->blend_equation_a);
         colour_blend_attachments.push_back(colour_blend_attachment);
     }
 
