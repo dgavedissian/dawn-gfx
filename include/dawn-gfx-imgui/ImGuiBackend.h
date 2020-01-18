@@ -82,22 +82,26 @@ ImGuiBackend::ImGuiBackend(Renderer& r, ImGuiIO& io) : r_(r), io_(io) {
 
     // Create shader.
     auto compiled_vs_result = compileGLSL(ShaderStage::Vertex, R"(
-        #version 330 core
+        #version 420 core
+        #extension GL_ARB_separate_shader_objects : enable
+        #extension GL_ARB_enhanced_layouts : enable
 
         layout(location = 0) in vec2 in_position;
         layout(location = 1) in vec2 in_texcoord;
         layout(location = 2) in vec4 in_colour;
 
-        uniform mat4 proj_matrix;
+        layout(binding = 0) uniform PerFrame {
+            mat4 proj_matrix;
+        } u;
 
-        out VertexData {
+        layout(location = 0) out VertexData {
             vec2 texcoord;
             vec4 colour;
         } o;
 
         void main()
         {
-            gl_Position = proj_matrix * vec4(in_position, 0.0, 1.0);
+            gl_Position = u.proj_matrix * vec4(in_position, 0.0, 1.0);
             o.texcoord = in_texcoord;
             o.colour = in_colour;
         }
@@ -107,14 +111,16 @@ ImGuiBackend::ImGuiBackend(Renderer& r, ImGuiIO& io) : r_(r), io_(io) {
                                  compiled_vs_result.error().compile_error);
     }
     auto compiled_fs_result = compileGLSL(ShaderStage::Fragment, R"(
-        #version 330 core
+        #version 420 core
+        #extension GL_ARB_separate_shader_objects : enable
+        #extension GL_ARB_enhanced_layouts : enable
 
-        in VertexData {
+        layout(location = 0) in VertexData {
             vec2 texcoord;
             vec4 colour;
         } i;
 
-        uniform sampler2D ui_texture;
+        layout(binding = 1) uniform sampler2D ui_texture;
 
         layout(location = 0) out vec4 out_colour;
 
@@ -137,9 +143,6 @@ ImGuiBackend::ImGuiBackend(Renderer& r, ImGuiIO& io) : r_(r), io_(io) {
     r_.linkProgram(shader_program_);
     r_.deleteShader(vs);
     r_.deleteShader(fs);
-
-    // Set UI texture unit.
-    r_.setUniform("ui_texture", 0);
     r_.submit(shader_program_);
 }
 
@@ -161,10 +164,10 @@ void ImGuiBackend::render(ImDrawData* draw_data) {
     }
 
     // Setup projection matrix.
-    Mat4 proj_matrix = Mat4::OpenGLOrthoProjRH(-1.0f, 1.0f, io_.DisplaySize.x, io_.DisplaySize.y) *
-                       Mat4::Translate(-io_.DisplaySize.x * 0.5f, io_.DisplaySize.y * 0.5f, 0.0f) *
-                       Mat4::Scale(1.0f, -1.0f, 1.0f);
-    r_.setUniform("proj_matrix", proj_matrix);
+    Mat4 proj_matrix = Mat4::D3DOrthoProjRH(-1.0f, 1.0f, io_.DisplaySize.x, io_.DisplaySize.y) *
+                       Mat4::Translate(-io_.DisplaySize.x * 0.5f, -io_.DisplaySize.y * 0.5f, 0.0f) *
+                       Mat4::Scale(1.0f, 1.0f, 1.0f);
+    r_.setUniform("u.proj_matrix", proj_matrix);
 
     // Create a new render queue specific for the UI elements.
     r_.startRenderQueue();

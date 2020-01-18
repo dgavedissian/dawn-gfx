@@ -230,6 +230,7 @@ DeviceVK::DeviceVK(vk::PhysicalDevice physical_device, vk::Device device,
       device_(device),
       command_pool_(command_pool),
       graphics_queue_(graphics_queue) {
+    properties_ = physical_device_.getProperties();
 }
 
 DeviceVK::~DeviceVK() {
@@ -261,9 +262,9 @@ u32 DeviceVK::findMemoryType(u32 type_filter, vk::MemoryPropertyFlags properties
     throw std::runtime_error("failed to find a suitable memory type.");
 }
 
-void DeviceVK::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
-                            vk::MemoryPropertyFlags properties, vk::Buffer& buffer,
-                            vk::DeviceMemory& buffer_memory) {
+vk::DeviceSize DeviceVK::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
+                                      vk::MemoryPropertyFlags properties, vk::Buffer& buffer,
+                                      vk::DeviceMemory& buffer_memory) {
     vk::BufferCreateInfo bufferInfo;
     bufferInfo.size = size;
     bufferInfo.usage = usage;
@@ -277,6 +278,8 @@ void DeviceVK::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
     buffer_memory = device_.allocateMemory(alloc_info);
 
     device_.bindBufferMemory(buffer, buffer_memory, 0);
+
+    return mem_requirements.size;
 }
 
 void DeviceVK::copyBuffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size) {
@@ -424,6 +427,10 @@ void DeviceVK::endSingleUseCommands(vk::CommandBuffer command_buffer) {
     graphics_queue_.waitIdle();
 
     device_.freeCommandBuffers(command_pool_, command_buffer);
+}
+
+const vk::PhysicalDeviceProperties& DeviceVK::properties() {
+    return properties_;
 }
 
 BufferVK::BufferVK(DeviceVK* device, const byte* data, vk::DeviceSize size, BufferUsage usage,
@@ -591,6 +598,39 @@ vk::Format VertexDeclVK::getVertexAttributeFormat(VertexDecl::AttributeType type
     throw std::runtime_error(
         fmt::format("Unknown vertex attribute type {} with {} elements (normalised: {})",
                     static_cast<int>(type), count, normalised));
+}
+
+UniformScratchBuffer::UniformScratchBuffer(
+    DeviceVK* device /*, vk::DescriptorPool descriptor_pool*/, usize size)
+    : device_(device), current_size_(0) {
+    maximum_size_ = device_->createBuffer(
+        size, vk::BufferUsageFlagBits::eUniformBuffer,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        buffer_, buffer_memory_);
+    data_ =
+        reinterpret_cast<byte*>(device_->getDevice().mapMemory(buffer_memory_, 0, maximum_size_));
+}
+
+UniformScratchBuffer::~UniformScratchBuffer() {
+    device_->getDevice().unmapMemory(buffer_memory_);
+}
+
+UniformScratchBuffer::Allocation UniformScratchBuffer::alloc(usize size) {
+    if (current_size_ + size > maximum_size_) {
+        throw std::runtime_error(
+            "Ran out of uniform scratch space this frame. Dynamic resizing not yet implemented.");
+    }
+    UniformScratchBuffer::Allocation allocation{data_ + current_size_, current_size_};
+    current_size_ += size;
+    return allocation;
+}
+
+void UniformScratchBuffer::reset() {
+    current_size_ = 0;
+}
+
+vk::Buffer UniformScratchBuffer::getBuffer() const {
+    return buffer_;
 }
 
 void TextureVK::setImageBarrier(vk::CommandBuffer command_buffer, vk::ImageLayout new_layout) {
@@ -819,6 +859,14 @@ tl::expected<void, std::string> RenderContextVK::createWindow(u16 width, u16 hei
     createDescriptorPool();
     createSyncObjects();
 
+    uniform_scratch_buffers_.reserve(swap_chain_image_views_.size());
+    for (usize i = 0; i < swap_chain_image_views_.size(); ++i) {
+        // We estimate that there will be a maximum of 65535 draw calls, with an average of 128
+        // bytes of uniforms each.
+        uniform_scratch_buffers_.emplace_back(
+            std::make_unique<UniformScratchBuffer>(device_.get(), 65535 * 128));
+    }
+
     return {};
 }
 
@@ -902,15 +950,16 @@ bool RenderContextVK::frame(const Frame* frame) {
                                frame->transient_ib_storage.size, 0);
     }
 
-    auto command_buffer = command_buffers_[next_frame_index_];
+    uniform_scratch_buffers_[next_frame_index_]->reset();
 
-    // Write render queues to command buffer.
+    auto command_buffer = command_buffers_[next_frame_index_];
     vk::CommandBufferBeginInfo begin_info;
     begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
     command_buffer.begin(begin_info);
 
+    // Write render queues to command buffer.
     const FramebufferVK* previous_frame_buffer = nullptr;
-
+    bool in_render_pass = false;
     for (const auto& q : frame->render_queues) {
         // Get framebuffer.
         const FramebufferVK* current_frame_buffer = nullptr;
@@ -930,107 +979,111 @@ bool RenderContextVK::frame(const Frame* frame) {
             target_extent = swap_chain_extent_;
         }
 
-        // Transition framebuffer state.
-        if (previous_frame_buffer && current_frame_buffer != previous_frame_buffer) {
-            for (TextureVK* image : previous_frame_buffer->images) {
-                image->setImageBarrier(command_buffer, vk::ImageLayout::eShaderReadOnlyOptimal);
+        // If the framebuffer has changed, start a new render pass.
+        if (!in_render_pass || current_frame_buffer != previous_frame_buffer) {
+            // End the previous render pass.
+            if (in_render_pass) {
+                command_buffer.endRenderPass();
+                in_render_pass = false;
             }
-            // TODO: Depth.
-        }
-        if (current_frame_buffer) {
-            for (TextureVK* image : current_frame_buffer->images) {
-                image->setImageBarrier(command_buffer, vk::ImageLayout::eColorAttachmentOptimal);
+
+            // Transition framebuffer state.
+            if (previous_frame_buffer && current_frame_buffer != previous_frame_buffer) {
+                for (TextureVK* image : previous_frame_buffer->images) {
+                    image->setImageBarrier(command_buffer, vk::ImageLayout::eShaderReadOnlyOptimal);
+                }
+                // TODO: Depth.
             }
-            // TODO: Depth.
+            if (current_frame_buffer) {
+                for (TextureVK* image : current_frame_buffer->images) {
+                    image->setImageBarrier(command_buffer,
+                                           vk::ImageLayout::eColorAttachmentOptimal);
+                }
+                // TODO: Depth.
+            }
+
+            // Begin render pass.
+            vk::RenderPassBeginInfo render_pass_info;
+            render_pass_info.renderPass = target_render_pass;
+            render_pass_info.framebuffer = target_framebuffer;
+            render_pass_info.renderArea.offset = vk::Offset2D{0, 0};
+            render_pass_info.renderArea.extent = target_extent;
+
+            // Set clear parameters.
+            std::vector<vk::ClearValue> clear_values;
+            int colour_attachment_count = 1;
+            if (current_frame_buffer) {
+                colour_attachment_count = current_frame_buffer->images.size();
+            }
+            vk::ClearColorValue clear_colour;
+            if (q.clear_parameters.has_value()) {
+                const auto& colour = q.clear_parameters.value().colour;
+                clear_colour = {
+                    std::array<float, 4>{colour.r(), colour.g(), colour.b(), colour.a()}};
+            } else {
+                clear_colour = {std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}};
+            }
+            for (int i = 0; i < colour_attachment_count; ++i) {
+                clear_values.emplace_back(clear_colour);
+            }
+            clear_values.emplace_back(vk::ClearDepthStencilValue{1.0f, 0});
+            render_pass_info.clearValueCount = clear_values.size();
+            render_pass_info.pClearValues = clear_values.data();
+
+            // Begin render pass.
+            command_buffer.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
+            in_render_pass = true;
         }
         previous_frame_buffer = current_frame_buffer;
 
-        // Begin render pass.
-        vk::RenderPassBeginInfo render_pass_info;
-        render_pass_info.renderPass = target_render_pass;
-        render_pass_info.framebuffer = target_framebuffer;
-        render_pass_info.renderArea.offset = vk::Offset2D{0, 0};
-        render_pass_info.renderArea.extent = target_extent;
+        for (auto& ri : q.render_items) {
+            auto& program = program_map_.at(*ri.program);
 
-        // If this render queue has clear parameters, start a new render pass.
-        std::vector<vk::ClearValue> clear_values;
-        int colour_attachment_count = 1;
-        if (current_frame_buffer) {
-            colour_attachment_count = current_frame_buffer->images.size();
-        }
-        if (q.clear_parameters.has_value()) {
-            // if (q.clear_parameters->clear_colour) {
-            const auto& colour = q.clear_parameters.value().colour;
-            vk::ClearColorValue clear_colour = {
-                std::array<float, 4>{colour.r(), colour.g(), colour.b(), colour.a()}};
-            for (int i = 0; i < colour_attachment_count; ++i) {
-                clear_values.emplace_back(clear_colour);
-            }
-            //}
-            // if (q.clear_parameters->clear_depth) {
-            clear_values.emplace_back(vk::ClearDepthStencilValue{1.0f, 0});
-            //}
-        } else {
-            vk::ClearColorValue clear_colour = {std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}};
-            for (int i = 0; i < colour_attachment_count; ++i) {
-                clear_values.emplace_back(clear_colour);
-            }
-            clear_values.emplace_back(vk::ClearDepthStencilValue{1.0f, 0});
-        }
-        render_pass_info.clearValueCount = clear_values.size();
-        render_pass_info.pClearValues = clear_values.data();
-
-        command_buffer.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
-        for (const auto& ri : q.render_items) {
-            const auto& program = program_map_.at(*ri.program);
-
-            // Update uniforms.
-            std::unordered_map<usize, byte*> ubo_data;
-            // std::vector<bool> ubo_updated(program.uniform_buffers.size(), false);
-            ubo_data.reserve(program.uniform_buffers.size());
-            for (const auto& ubo_entry : program.uniform_buffers) {
-                void* mapped_memory = vk_device_.mapMemory(ubo_entry.second.buffers_memory[0], 0,
-                                                           ubo_entry.second.size);
-                ubo_data[ubo_entry.first] = reinterpret_cast<byte*>(mapped_memory);
-            }
-            for (const auto& uniform_pair : ri.uniforms) {
-                // Find uniform binding
-                auto uniform_it = program.uniform_locations.find(uniform_pair.first);
-                if (uniform_it == program.uniform_locations.end()) {
+            // Apply uniforms.
+            for (auto& entry : ri.uniforms) {
+                auto uniform = program.uniform_locations.find(entry.first);
+                if (uniform == program.uniform_locations.end()) {
+                    logger_.warn("Unknown uniform '{}' in program {}", entry.first, *ri.program);
                     continue;
                 }
-                auto& uniform_location = uniform_it->second;
-                if (!uniform_location.binding_location.has_value()) {
-                    logger_.warn("Push constants not implemented yet.");
-                    continue;
-                }
-
-                // Write to memory.
-                auto variant_bytes = std::visit(VariantToBytesHelper{}, uniform_pair.second);
-                byte* data_dst =
-                    ubo_data.at(*uniform_location.binding_location) + uniform_location.offset;
-                // ubo_updated[*uniform_location.ubo_index] = true;
-                std::memcpy(data_dst, variant_bytes.data, variant_bytes.size);
-
-                /*
-                logger_.info("Writing {} (size {}) to offset {} in UBO {}", uniform_pair.first,
-                             variant_bytes.size, uniform_location.offset,
-                             *uniform_location.ubo_location);
-                */
-            }
-            for (const auto& ubo_entry : program.uniform_buffers) {
-                vk_device_.unmapMemory(ubo_entry.second.buffers_memory[0]);
-
-                // Copy buffer to the "real" buffer.
-                // TODO: Implement dirty flags.
-                device_->copyBuffer(ubo_entry.second.buffers[0],
-                                    ubo_entry.second.buffers[1 + next_frame_index_],
-                                    ubo_entry.second.size);
+                uniform->second.data = std::move(entry.second);
             }
 
             // If there are no vertices to render, we are done.
             if (!ri.vb) {
                 continue;
+            }
+
+            // Upload uniforms to uniform buffer.
+            std::map<usize, UniformScratchBuffer::Allocation> ubo_data;
+            for (const auto& ubo : program.uniform_buffers) {
+                const u32 alignment = device_->properties().limits.minUniformBufferOffsetAlignment;
+                const u32 vsize = strideAlign(ubo.size, alignment);
+                ubo_data[ubo.binding] = uniform_scratch_buffers_[next_frame_index_]->alloc(vsize);
+            }
+            for (const auto& uniform_entry : program.uniform_locations) {
+                const auto& uniform = uniform_entry.second;
+                if (!uniform.binding_location.has_value()) {
+                    logger_.warn("Push constants not implemented yet.");
+                    continue;
+                }
+
+                // Write to memory.
+                if (uniform.data) {
+                    auto variant_bytes = std::visit(VariantToBytesHelper{}, *uniform.data);
+                    byte* data_dst = ubo_data.at(*uniform.binding_location).ptr + uniform.offset;
+                    std::memcpy(data_dst, variant_bytes.data, variant_bytes.size);
+                    /*
+                    logger_.info("Writing {} (size {}) to offset {} in UBO {}", uniform_pair.first,
+                                 variant_bytes.size, uniform_location.offset,
+                                 *uniform_location.ubo_location);
+                    */
+                }
+#ifndef NDEBUG
+                if (!uniform.data) {
+                    logger_.warn("Uniform {} is uninitialised.", uniform_entry.first);
+                }
+#endif
             }
 
             const auto& vb = vertex_buffer_map_.at(*ri.vb);
@@ -1054,6 +1107,14 @@ bool RenderContextVK::frame(const Frame* frame) {
                 command_buffer.setScissor(
                     0, vk::Rect2D{vk::Offset2D{ri.scissor_x, ri.scissor_y},
                                   vk::Extent2D{ri.scissor_width, ri.scissor_height}});
+            } else {
+                command_buffer.setScissor(0, vk::Rect2D{vk::Offset2D{0, 0}, swap_chain_extent_});
+            }
+
+            // Calculate dynamic offsets for the UBOs.
+            std::vector<u32> dynamic_offsets;
+            for (const auto& ubo_entry : ubo_data) {
+                dynamic_offsets.emplace_back(ubo_entry.second.offset_from_base);
             }
 
             // Bind descriptor set.
@@ -1067,7 +1128,7 @@ bool RenderContextVK::frame(const Frame* frame) {
                 findOrCreateDescriptorSet(DescriptorSetVK::Info{&program, std::move(textures)});
             command_buffer.bindDescriptorSets(
                 vk::PipelineBindPoint::eGraphics, graphics_pipeline.layout, 0,
-                descriptor_set.descriptor_sets[next_frame_index_], nullptr);
+                descriptor_set.descriptor_sets[next_frame_index_], dynamic_offsets);
 
             // Bind vertex/index buffers and draw.
             command_buffer.bindVertexBuffers(0, vb.buffer.get(next_frame_index_), ri.vb_offset);
@@ -1080,7 +1141,10 @@ bool RenderContextVK::frame(const Frame* frame) {
                 command_buffer.draw(ri.primitive_count * 3, 1, 0, 0);
             }
         }
+    }
+    if (in_render_pass) {
         command_buffer.endRenderPass();
+        in_render_pass = false;
     }
 
     command_buffer.end();
@@ -1104,11 +1168,9 @@ bool RenderContextVK::frame(const Frame* frame) {
     vk::PresentInfoKHR presentInfo;
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = signal_semaphores;
-    vk::SwapchainKHR swapChains[] = {swap_chain_};
     presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = swapChains;
+    presentInfo.pSwapchains = &swap_chain_;
     presentInfo.pImageIndices = &next_frame_index_;
-    presentInfo.pResults = nullptr;  // Optional
     present_queue_.presentKHR(presentInfo);
 
     current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
@@ -1200,7 +1262,7 @@ void RenderContextVK::operator()(const cmd::CreateShader& c) {
     for (const auto& resource : res.uniform_buffers) {
         shader.descriptor_type_bindings.emplace(
             comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
-            vk::DescriptorType::eUniformBuffer);
+            vk::DescriptorType::eUniformBufferDynamic);
     }
     for (const auto& resource : res.sampled_images) {
         shader.descriptor_type_bindings.emplace(
@@ -1259,8 +1321,7 @@ void RenderContextVK::operator()(const cmd::LinkProgram& c) {
                 if (it->second.descriptorType != b.second) {
                     logger_.error(
                         "Attempting to bind a descriptor of type {} to binding {} which is "
-                        "already "
-                        "bound to descriptor type {}, ignoring.",
+                        "already bound to descriptor type {}, ignoring.",
                         vk::to_string(b.second), b.first, vk::to_string(it->second.descriptorType));
                     continue;
                 }
@@ -1296,36 +1357,24 @@ void RenderContextVK::operator()(const cmd::LinkProgram& c) {
                                        stage.second.uniform_buffer_bindings.end());
     }
 
-    // Allocate a UBO and memory for each swap chain image, plus a "staging" buffer at index 0.
+    // Loop through uniform buffer bindings and discover uniforms.
     for (const auto& binding : uniform_buffer_bindings) {
-        logger_.info("Uniform buffer binding {} {} is {} bytes", binding.first, binding.second.name,
-                     binding.second.size);
+        // logger_.info("Uniform buffer binding {} {} is {} bytes", binding.first,
+        // binding.second.name, binding.second.size);
 
-        ProgramVK::AutoUniformBuffer ubo;
-        ubo.buffers.resize(swap_chain_images_.size() + 1);
-        ubo.buffers_memory.resize(swap_chain_images_.size() + 1);
-        device_->createBuffer(
-            binding.second.size, vk::BufferUsageFlagBits::eTransferSrc,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            ubo.buffers[0], ubo.buffers_memory[0]);
-        for (usize i = 0; i < swap_chain_images_.size(); ++i) {
-            device_->createBuffer(
-                binding.second.size,
-                vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eUniformBuffer,
-                vk::MemoryPropertyFlagBits::eDeviceLocal, ubo.buffers[i + 1],
-                ubo.buffers_memory[i + 1]);
-        }
+        ProgramVK::UniformBuffer ubo;
+        ubo.binding = binding.first;
         ubo.size = binding.second.size;
-        program.uniform_buffers[binding.first] = std::move(ubo);
+        program.uniform_buffers.push_back(ubo);
 
         // Find uniform locations.
         for (const auto& field : binding.second.fields) {
-            logger_.info("- member {} is {} bytes and has an offset of {}", field.name, field.size,
-                         field.offset);
+            // logger_.info("- member {} is {} bytes and has an offset of {}", field.name,
+            // field.size, field.offset);
             std::string qualified_name = binding.second.name + "." + field.name;
             program.uniform_locations.emplace(
                 std::move(qualified_name),
-                ProgramVK::UniformLocation{binding.first, field.offset, field.size});
+                ProgramVK::Uniform{binding.first, field.offset, field.size, {}});
         }
     }
 }
@@ -1747,7 +1796,7 @@ void RenderContextVK::createDescriptorPool() {
         {vk::DescriptorType::eCombinedImageSampler, (10 * DW_MAX_TEXTURE_SAMPLERS) << 10},
         {vk::DescriptorType::eSampledImage, (10 * DW_MAX_TEXTURE_SAMPLERS) << 10},
         {vk::DescriptorType::eSampler, (10 * DW_MAX_TEXTURE_SAMPLERS) << 10},
-        {vk::DescriptorType::eUniformBuffer, 10 << 10},
+        {vk::DescriptorType::eUniformBufferDynamic, 10 << 10},
         {vk::DescriptorType::eStorageBuffer, DW_MAX_TEXTURE_SAMPLERS << 10},
         {vk::DescriptorType::eStorageImage, DW_MAX_TEXTURE_SAMPLERS << 10},
     };
@@ -1873,7 +1922,6 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(PipelineVK::Info info) 
     colour_blending.blendConstants[3] = 0.0f;  // Optional
 
     vk::DynamicState dynamic_states[] = {vk::DynamicState::eScissor};
-
     vk::PipelineDynamicStateCreateInfo dynamic_state;
     dynamic_state.dynamicStateCount = sizeof(dynamic_states) / sizeof(dynamic_states[0]);
     dynamic_state.pDynamicStates = dynamic_states;
@@ -1908,12 +1956,10 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(PipelineVK::Info info) 
     pipeline_info.pMultisampleState = &multisampling;
     pipeline_info.pDepthStencilState = &depth_stencil;
     pipeline_info.pColorBlendState = &colour_blending;
-    pipeline_info.pDynamicState = nullptr;  // Optional
+    pipeline_info.pDynamicState = &dynamic_state;
     pipeline_info.layout = graphics_pipeline.layout;
     pipeline_info.renderPass = info.framebuffer ? info.framebuffer->render_pass : render_pass_;
     pipeline_info.subpass = 0;
-    pipeline_info.basePipelineHandle = vk::Pipeline{};  // Optional
-    pipeline_info.basePipelineIndex = -1;               // Optional
 
     graphics_pipeline.pipeline =
         vk_device_.createGraphicsPipelines(vk::PipelineCache{}, pipeline_info)[0];
@@ -1952,12 +1998,11 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(DescriptorSetVK::Info
             descriptor_write.descriptorType = binding.descriptorType;
             descriptor_write.descriptorCount = 1;
             switch (binding.descriptorType) {
-                case vk::DescriptorType::eUniformBuffer: {
+                case vk::DescriptorType::eUniformBufferDynamic: {
                     buffer_info_storage.emplace_back(std::make_unique<vk::DescriptorBufferInfo>());
                     auto& buffer_info = *buffer_info_storage.back();
 
-                    buffer_info.buffer =
-                        info.program->uniform_buffers.at(binding.binding).buffers[i + 1];
+                    buffer_info.buffer = uniform_scratch_buffers_[i]->getBuffer();
                     buffer_info.offset = 0;
                     buffer_info.range = VK_WHOLE_SIZE;
                     descriptor_write.pBufferInfo = &buffer_info;

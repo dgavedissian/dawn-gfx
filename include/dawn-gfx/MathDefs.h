@@ -44,5 +44,10 @@ using Quat = math::Quat;
 
 // Plane
 using Plane = math::Plane;
+
+// Memory alignment.
+inline u32 strideAlign(u32 stride, u32 alignment) {
+    return (stride + alignment - 1) & ~(alignment - 1);
 }
-}
+}  // namespace gfx
+}  // namespace dw

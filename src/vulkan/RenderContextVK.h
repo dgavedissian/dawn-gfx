@@ -30,9 +30,10 @@ public:
 
     u32 findMemoryType(u32 type_filter, vk::MemoryPropertyFlags properties);
 
-    void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
-                      vk::MemoryPropertyFlags properties, vk::Buffer& buffer,
-                      vk::DeviceMemory& buffer_memory);
+    // Returns the allocation size of the buffe rmemory.
+    vk::DeviceSize createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
+                                vk::MemoryPropertyFlags properties, vk::Buffer& buffer,
+                                vk::DeviceMemory& buffer_memory);
     void copyBuffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size);
     void copyBufferToImage(vk::Buffer buffer, vk::Image image, u32 width, u32 height);
     void transitionImageLayout(vk::Image image, vk::Format format, vk::ImageLayout old_layout,
@@ -47,11 +48,15 @@ public:
     vk::CommandBuffer beginSingleUseCommands();
     void endSingleUseCommands(vk::CommandBuffer command_buffer);
 
+    const vk::PhysicalDeviceProperties& properties();
+
 private:
     vk::PhysicalDevice physical_device_;
     vk::Device device_;
     vk::CommandPool command_pool_;
     vk::Queue graphics_queue_;
+
+    vk::PhysicalDeviceProperties properties_;
 };
 
 // A buffer of data used by vertex and index buffers (and possibly user managed uniform buffers in
@@ -130,21 +135,45 @@ struct ProgramVK {
     vk::DescriptorSetLayout descriptor_set_layout;
 
     // Uniforms.
-    struct UniformLocation {
+    struct Uniform {
         // Empty optional indicates a push_constant buffer.
         std::optional<usize> binding_location;
         usize offset = 0;
         usize size = 0;
+        std::optional<UniformData> data;
     };
-    std::unordered_map<std::string, UniformLocation> uniform_locations;
+    std::unordered_map<std::string, Uniform> uniform_locations;
 
     // Uniform buffers.
-    struct AutoUniformBuffer {
-        std::vector<vk::Buffer> buffers;
-        std::vector<vk::DeviceMemory> buffers_memory;
+    struct UniformBuffer {
+        usize binding = 0;
         usize size = 0;
     };
-    std::unordered_map<usize, AutoUniformBuffer> uniform_buffers;
+    std::vector<UniformBuffer> uniform_buffers;
+};
+
+class UniformScratchBuffer {
+public:
+    struct Allocation {
+        byte* ptr;
+        usize offset_from_base;
+    };
+
+    UniformScratchBuffer(DeviceVK* device, usize size);
+    ~UniformScratchBuffer();
+
+    Allocation alloc(usize size);
+    void reset();
+
+    vk::Buffer getBuffer() const;
+
+private:
+    DeviceVK* device_;
+    vk::Buffer buffer_;
+    vk::DeviceMemory buffer_memory_;
+    byte* data_;
+    usize current_size_;
+    usize maximum_size_;
 };
 
 struct TextureVK {
@@ -167,6 +196,8 @@ struct DescriptorSetVK {
     }
 
     struct Info {
+        // TODO: Instead pass specific <binding index / binding type> pairs, so we can reuse
+        // descriptor sets for multiple programs of the same "shape".
         const ProgramVK* program;
         std::vector<RenderItem::TextureBinding> textures;
 
@@ -315,7 +346,6 @@ private:
     vk::RenderPass render_pass_;
 
     std::vector<vk::Framebuffer> swap_chain_framebuffers_;
-
     std::vector<vk::CommandBuffer> command_buffers_;
 
     vk::DescriptorPool descriptor_pool_;
@@ -326,6 +356,8 @@ private:
     std::vector<vk::Fence> images_in_flight_;
     std::size_t current_frame_;
     u32 next_frame_index_;
+
+    std::vector<std::unique_ptr<UniformScratchBuffer>> uniform_scratch_buffers_;
 
     // Resource maps.
     std::unordered_map<VertexBufferHandle, VertexBufferVK> vertex_buffer_map_;
