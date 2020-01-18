@@ -18,7 +18,7 @@ layout(binding = 3) uniform sampler2D gb2_texture;
 
 layout(binding = 4) uniform PerSubmit {
     vec3 ambient_light;
-} u;
+};
 
 void main() {
     vec4 gb0 = texture(gb0_texture, i.texcoord);
@@ -34,6 +34,6 @@ void main() {
     if (diffuse.rgb == vec3(0.0, 0.0, 0.0)) {
         out_colour = vec4(diffuse, 1.0);
     } else {
-        out_colour = vec4(diffuse * u.ambient_light, 1.0);
+        out_colour = vec4(diffuse * ambient_light, 1.0);
     }
 }

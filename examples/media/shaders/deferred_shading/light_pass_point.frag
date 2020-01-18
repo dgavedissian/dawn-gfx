@@ -19,10 +19,10 @@ layout(binding = 4) uniform PerSubmit {
     vec3 light_colour;
     float linear_term;
     float quadratic_term;
-} u;
+};
 
 void main() {
-    vec2 screen_coord = gl_FragCoord.xy / u.screen_size;
+    vec2 screen_coord = gl_FragCoord.xy / screen_size;
 
     vec3 diffuse_colour = texture(gb0_texture, screen_coord).rgb;
     vec3 pixel_position = texture(gb1_texture, screen_coord).rgb;
@@ -31,11 +31,11 @@ void main() {
     vec3 lighting = vec3(0.0);
 
     // Diffuse.
-    vec3 light_dir = normalize(u.light_position - pixel_position);
-    vec3 diffuse = max(dot(pixel_normal, light_dir), 0.0) * diffuse_colour * u.light_colour;
+    vec3 light_dir = normalize(light_position - pixel_position);
+    vec3 diffuse = max(dot(pixel_normal, light_dir), 0.0) * diffuse_colour * light_colour;
     // Attenuation.
-    float distance = length(u.light_position - pixel_position);
-    float attenuation = 1.0 / (1.0 + u.linear_term * distance + u.quadratic_term * distance * distance);
+    float distance = length(light_position - pixel_position);
+    float attenuation = 1.0 / (1.0 + linear_term * distance + quadratic_term * distance * distance);
     diffuse *= attenuation;
     lighting += diffuse;
 

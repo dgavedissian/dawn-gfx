@@ -27,9 +27,9 @@ public:
         };
         Vertex vertices[] = {
             // Little-endian, so colours are 0xAABBGGRR.
-            {0.0f, -0.5f, 0xff0000ff},  // Vertex 1: Red
-            {0.5f, 0.5f, 0xff00ff00},   // Vertex 2: Green
-            {-0.5f, 0.5f, 0xffff0000}   // Vertex 3: Blue
+            {0.0f, 0.5f, 0xff0000ff},  // Vertex 1: Red
+            {-0.5f, -0.5f, 0xff00ff00},   // Vertex 2: Green
+            {0.5f, -0.5f, 0xffff0000}   // Vertex 3: Blue
         };
         VertexDecl decl;
         decl.begin()

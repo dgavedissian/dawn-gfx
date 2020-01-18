@@ -479,6 +479,13 @@ public:
                                          const std::string& title, InputCallbacks input_callbacks,
                                          bool use_render_thread);
 
+    /// Adjusts a RH D3D projection matrix to be compatible with the underlying renderer type.
+    /// Does nothing unless init() has been called.
+    Mat4 adjustProjectionMatrix(Mat4 projection_matrix) const;
+
+    /// Returns true if viewport coordinates are from the top-left (Vulkan) rather than bottom-left (OpenGL, D3D).
+    bool hasFlippedViewport() const;
+
     /// Create vertex buffer.
     VertexBufferHandle createVertexBuffer(Memory data, const VertexDecl& decl,
                                           BufferUsage usage = BufferUsage::Static);

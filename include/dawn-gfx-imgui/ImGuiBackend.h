@@ -90,7 +90,7 @@ ImGuiBackend::ImGuiBackend(Renderer& r, ImGuiIO& io) : r_(r), io_(io) {
 
         layout(binding = 0) uniform PerFrame {
             mat4 proj_matrix;
-        } u;
+        };
 
         layout(location = 0) out VertexData {
             vec2 texcoord;
@@ -99,7 +99,7 @@ ImGuiBackend::ImGuiBackend(Renderer& r, ImGuiIO& io) : r_(r), io_(io) {
 
         void main()
         {
-            gl_Position = u.proj_matrix * vec4(in_position, 0.0, 1.0);
+            gl_Position = proj_matrix * vec4(in_position, 0.0, 1.0);
             o.texcoord = in_texcoord;
             o.colour = in_colour;
         }
@@ -160,10 +160,10 @@ void ImGuiBackend::render(ImDrawData* draw_data) {
     }
 
     // Setup projection matrix.
-    Mat4 proj_matrix = Mat4::D3DOrthoProjRH(-1.0f, 1.0f, io_.DisplaySize.x, io_.DisplaySize.y) *
-                       Mat4::Translate(-io_.DisplaySize.x * 0.5f, -io_.DisplaySize.y * 0.5f, 0.0f) *
-                       Mat4::Scale(1.0f, 1.0f, 1.0f);
-    r_.setUniform("u.proj_matrix", proj_matrix);
+    Mat4 proj_matrix = Mat4::OpenGLOrthoProjRH(-1.0f, 1.0f, io_.DisplaySize.x, io_.DisplaySize.y) *
+                       Mat4::Translate(-io_.DisplaySize.x * 0.5f, io_.DisplaySize.y * 0.5f, 0.0f) *
+                       Mat4::Scale(1.0f, -1.0f, 1.0f);
+    r_.setUniform("proj_matrix", proj_matrix);
 
     // Create a new render queue specific for the UI elements.
     r_.startRenderQueue();

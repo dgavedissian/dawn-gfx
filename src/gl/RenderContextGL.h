@@ -33,6 +33,10 @@ public:
     explicit RenderContextGL(Logger& logger);
     ~RenderContextGL() override;
 
+    // Capabilities / customisations.
+    Mat4 adjustProjectionMatrix(Mat4 projection_matrix) const override;
+    bool hasFlippedViewport() const override;
+
     // Window management. Executed on the main thread.
     tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title,
                                                  InputCallbacks desc) override;
@@ -107,11 +111,16 @@ private:
     std::unordered_map<IndexBufferHandle, IndexBufferData> index_buffer_map_;
 
     // Shaders and programs.
+    struct ShaderData {
+        GLuint shader;
+        std::unordered_map<std::string, u32> uniform_remap_ids;
+    };
     struct ProgramData {
         GLuint program;
         std::unordered_map<std::string, GLint> uniform_location_map;
+        std::unordered_map<std::string, u32> uniform_remap_ids;
     };
-    std::unordered_map<ShaderHandle, GLuint> shader_map_;
+    std::unordered_map<ShaderHandle, ShaderData> shader_map_;
     std::unordered_map<ProgramHandle, ProgramData> program_map_;
 
     // Textures.

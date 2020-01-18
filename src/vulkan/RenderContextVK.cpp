@@ -822,6 +822,14 @@ RenderContextVK::~RenderContextVK() {
     cleanup();
 }
 
+Mat4 RenderContextVK::adjustProjectionMatrix(Mat4 projection_matrix) const {
+    return projection_matrix;
+}
+
+bool RenderContextVK::hasFlippedViewport() const {
+    return true;
+}
+
 tl::expected<void, std::string> RenderContextVK::createWindow(u16 width, u16 height,
                                                               const std::string& title,
                                                               InputCallbacks input_callbacks) {
@@ -831,12 +839,7 @@ tl::expected<void, std::string> RenderContextVK::createWindow(u16 width, u16 hei
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
 
     // Get DPI settings.
-#ifndef DGA_EMSCRIPTEN
     glfwGetMonitorContentScale(monitor, &window_scale_.x, &window_scale_.y);
-#else
-    // Unsupported in emscripten.
-    window_scale_ = {1.0f, 1.0f};
-#endif
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     // TODO: Support resizing.
@@ -895,7 +898,7 @@ Vec2i RenderContextVK::windowSize() const {
 }
 
 Vec2 RenderContextVK::windowScale() const {
-    return {1.0f, 1.0f};
+    return window_scale_;
 }
 
 Vec2i RenderContextVK::framebufferSize() const {
@@ -1371,7 +1374,8 @@ void RenderContextVK::operator()(const cmd::LinkProgram& c) {
         for (const auto& field : binding.second.fields) {
             // logger_.info("- member {} is {} bytes and has an offset of {}", field.name,
             // field.size, field.offset);
-            std::string qualified_name = binding.second.name + "." + field.name;
+            std::string qualified_name =
+                (binding.second.name.empty() ? "" : binding.second.name + ".") + field.name;
             program.uniform_locations.emplace(
                 std::move(qualified_name),
                 ProgramVK::Uniform{binding.first, field.offset, field.size, {}});
@@ -1449,10 +1453,10 @@ void RenderContextVK::operator()(const cmd::CreateFrameBuffer& c) {
     textures.reserve(c.textures.size());
     for (const auto& texture_handle : c.textures) {
         textures.push_back(&texture_map_.at(texture_handle));
-    }/*
- * Dawn Engine
- * Written by David Avedissian (c) 2012-2019 (git@dga.dev)
- */
+    } /*
+       * Dawn Engine
+       * Written by David Avedissian (c) 2012-2019 (git@dga.dev)
+       */
 
     FramebufferVK framebuffer{device_.get(), c.width, c.height, std::move(textures)};
     framebuffer_map_.emplace(c.handle, std::move(framebuffer));
@@ -1523,7 +1527,7 @@ void RenderContextVK::createInstance(bool enable_validation_layers) {
     app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     app_info.pEngineName = "dawn-gfx";
     app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    app_info.apiVersion = VK_API_VERSION_1_0;
+    app_info.apiVersion = VK_API_VERSION_1_1;
 
     vk::InstanceCreateInfo create_info;
     create_info.pApplicationInfo = &app_info;
@@ -1864,16 +1868,28 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(PipelineVK::Info info) 
     input_assembly.primitiveRestartEnable = VK_FALSE;
 
     vk::Viewport viewport;
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(swap_chain_extent_.width);
-    viewport.height = static_cast<float>(swap_chain_extent_.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
+    bool viewport_inverted = !info.framebuffer;
+    if (!info.framebuffer) {
+        // The window should be flipped.
+        viewport.width = static_cast<float>(swap_chain_extent_.width);
+        viewport.height = -static_cast<float>(swap_chain_extent_.height);
+        viewport.x = 0.0f;
+        viewport.y = static_cast<float>(swap_chain_extent_.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+    } else {
+        // Viewports on framebuffer attachments should not be flipped.
+        viewport.width = static_cast<float>(info.framebuffer->extent.width);
+        viewport.height = static_cast<float>(info.framebuffer->extent.height);
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+    }
 
     vk::Rect2D scissor;
     scissor.offset = vk::Offset2D{0, 0};
-    scissor.extent = swap_chain_extent_;
+    scissor.extent = info.framebuffer ? info.framebuffer->extent : swap_chain_extent_;
 
     vk::PipelineViewportStateCreateInfo viewport_state;
     viewport_state.viewportCount = 1;
@@ -1886,8 +1902,14 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(PipelineVK::Info info) 
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = vk::PolygonMode::eFill;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = vk::CullModeFlagBits::eNone;
-    rasterizer.frontFace = vk::FrontFace::eClockwise;
+    rasterizer.cullMode = info.render_item->cull_face_enabled ? vk::CullModeFlagBits::eBack
+                                                              : vk::CullModeFlagBits::eNone;
+    bool clockwise_front_face = info.render_item->cull_front_face == CullFrontFace::CW;
+    if (!viewport_inverted) {
+        clockwise_front_face = !clockwise_front_face;
+    }
+    rasterizer.frontFace =
+        clockwise_front_face ? vk::FrontFace::eClockwise : vk::FrontFace::eCounterClockwise;
     rasterizer.depthBiasEnable = VK_FALSE;
     rasterizer.depthBiasConstantFactor = 0.0f;  // Optional
     rasterizer.depthBiasClamp = 0.0f;           // Optional

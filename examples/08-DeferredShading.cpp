@@ -30,13 +30,13 @@ public:
         r.attachShader(program_, fs);
         r.linkProgram(program_);
 
-        r.setUniform("u.screen_size", screen_size);
-        // r.setUniform("u.gb0_texture", 0);
-        // r.setUniform("u.gb1_texture", 1);
-        // r.setUniform("u.gb2_texture", 2);
-        r.setUniform("u.light_colour", colour.rgb());
-        r.setUniform("u.linear_term", linear_term);
-        r.setUniform("u.quadratic_term", quadratic_term);
+        r.setUniform("screen_size", screen_size);
+        // r.setUniform("gb0_texture", 0);
+        // r.setUniform("gb1_texture", 1);
+        // r.setUniform("gb2_texture", 2);
+        r.setUniform("light_colour", colour.rgb());
+        r.setUniform("linear_term", linear_term);
+        r.setUniform("quadratic_term", quadratic_term);
         r.submit(program_);
         sphere_ =
             MeshBuilder{r}.normals(false).texcoords(false).createSphere(light_sphere_radius_, 8, 8);
@@ -68,8 +68,8 @@ public:
         // Draw sphere.
         r.setVertexBuffer(sphere_.vb);
         r.setIndexBuffer(sphere_.ib);
-        r.setUniform("u.mvp_matrix", mvp);
-        r.setUniform("u.light_position", position_);
+        r.setUniform("mvp_matrix", mvp);
+        r.setUniform("light_position", position_);
         r.submit(program_, sphere_.index_count);
     }
 
@@ -129,16 +129,16 @@ public:
         r.attachShader(ground_program_, vs);
         r.attachShader(ground_program_, fs);
         r.linkProgram(ground_program_);
-        r.setUniform("u.diffuse_texture", 0);
-        r.setUniform("u.texcoord_scale", Vec2{kGroundSize / 5.0f, kGroundSize / 5.0f});
+        r.setUniform("diffuse_texture", 0);
+        r.setUniform("texcoord_scale", Vec2{kGroundSize / 5.0f, kGroundSize / 5.0f});
         r.submit(ground_program_);
 
         sphere_program_ = r.createProgram();
         r.attachShader(sphere_program_, vs);
         r.attachShader(sphere_program_, fs);
         r.linkProgram(sphere_program_);
-        r.setUniform("u.diffuse_texture", 0);
-        r.setUniform("u.texcoord_scale", Vec2{1.0f, 1.0f});
+        r.setUniform("diffuse_texture", 0);
+        r.setUniform("texcoord_scale", Vec2{1.0f, 1.0f});
         r.submit(sphere_program_);
 
         // Create ground.
@@ -146,7 +146,7 @@ public:
                                                                            kGroundSize * 2.0f);
 
         // Create ground.
-        sphere_ = MeshBuilder{r}.normals(true).texcoords(true).createSphere(3.0f);
+        sphere_ = MeshBuilder{r}.normals(true).texcoords(true).createSphere(3.0f, 15, 15);
 
         // Load texture.
         texture_ = util::loadTexture(r, util::media("wall.jpg"));
@@ -164,17 +164,17 @@ public:
         // Load post process shader.
         auto pp_vs =
             util::loadShader(r, ShaderStage::Vertex, util::media("shaders/post_process.vert"));
-        auto pp_fs = util::loadShader(
-            r, ShaderStage::Fragment,
-            util::media("shaders/deferred_shading/deferred_ambient_light_pass.frag"));
+        auto pp_fs =
+            util::loadShader(r, ShaderStage::Fragment,
+                             util::media("shaders/deferred_shading/deferred_ambient_light_pass.frag"));
         post_process_ = r.createProgram();
         r.attachShader(post_process_, pp_vs);
         r.attachShader(post_process_, pp_fs);
         r.linkProgram(post_process_);
-        r.setUniform("u.gb0_texture", 0);
-        r.setUniform("u.gb1_texture", 1);
-        r.setUniform("u.gb2_texture", 2);
-        r.setUniform("u.ambient_light", Vec3{0.1f, 0.1f, 0.1f});
+        // r.setUniform("gb0_texture", 0);
+        // r.setUniform("gb1_texture", 1);
+        // r.setUniform("gb2_texture", 2);
+        r.setUniform("ambient_light", Vec3{0.1f, 0.1f, 0.1f});
         r.submit(post_process_);
 
         // Lights.
@@ -217,13 +217,13 @@ public:
         static Mat4 view = (Mat4::Translate(Vec3{0.0f, 30.0f, 40.0f}).ToFloat4x4() *
                             Mat4::RotateX(math::pi * -0.25f))
                                .Inverted();
-        static Mat4 proj = util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
+        static Mat4 proj = util::createProjMatrix(r, 0.1f, 1000.0f, 60.0f, aspect());
 
         // Draw ground.
         {
             Mat4 model = Mat4::RotateX(math::pi * -0.5f);
-            r.setUniform("u.model_matrix", model);
-            r.setUniform("u.mvp_matrix", proj * view * model);
+            r.setUniform("model_matrix", model);
+            r.setUniform("mvp_matrix", proj * view * model);
 
             r.setVertexBuffer(ground_.vb);
             r.setIndexBuffer(ground_.ib);
@@ -234,8 +234,8 @@ public:
         // Draw spheres.
         for (const auto& sphere_info : spheres) {
             Mat4 model = Mat4::Translate(sphere_info.position);
-            r.setUniform("u.model_matrix", model);
-            r.setUniform("u.mvp_matrix", proj * view * model);
+            r.setUniform("model_matrix", model);
+            r.setUniform("mvp_matrix", proj * view * model);
             r.setVertexBuffer(sphere_.vb);
             r.setIndexBuffer(sphere_.ib);
             r.setTexture(texture_, 0);

@@ -12,8 +12,13 @@ namespace dw {
 namespace gfx {
 class RenderContext {
 public:
-    RenderContext(Logger& logger) : logger_{logger} {}
+    RenderContext(Logger& logger) : logger_{logger} {
+    }
     virtual ~RenderContext() = default;
+
+    // Capabilities / customisations.
+    virtual Mat4 adjustProjectionMatrix(Mat4 projection_matrix) const = 0;
+    virtual bool hasFlippedViewport() const = 0;
 
     // Window management. Executed on the main thread.
     virtual tl::expected<void, std::string> createWindow(u16 width, u16 height,
@@ -36,5 +41,5 @@ public:
 protected:
     Logger& logger_;
 };
-}
+}  // namespace gfx
 }  // namespace dw

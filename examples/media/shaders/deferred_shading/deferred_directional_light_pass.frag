@@ -18,7 +18,7 @@ layout(binding = 3) uniform sampler2D gb2_texture;
 
 layout(binding = 4) uniform PerSubmit {
     vec3 light_direction;
-} u;
+};
 
 void main() {
     vec4 gb0 = texture(gb0_texture, i.texcoord);
@@ -31,5 +31,5 @@ void main() {
     vec3 normal = gb2.xyz;
 
     // Render directional light.
-    out_colour = vec4(clamp(dot(normal, u.light_direction), 0.0, 1.0) * diffuse, 1.0);
+    out_colour = vec4(clamp(dot(normal, light_direction), 0.0, 1.0) * diffuse, 1.0);
 }

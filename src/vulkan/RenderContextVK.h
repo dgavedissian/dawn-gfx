@@ -238,6 +238,8 @@ struct PipelineVK {
                    render_item->blend_src_a == other.render_item->blend_src_a &&
                    render_item->blend_dest_a == other.render_item->blend_dest_a &&
                    render_item->blend_equation_a == other.render_item->blend_equation_a &&
+                   render_item->cull_face_enabled == other.render_item->cull_face_enabled &&
+                   render_item->cull_front_face == other.render_item->cull_front_face &&
                    vb == other.vb && decl == other.decl && program == other.program &&
                    framebuffer == other.framebuffer;
         }
@@ -254,8 +256,9 @@ template <> struct hash<dw::gfx::PipelineVK::Info> {
                          i.render_item->blend_src_rgb, i.render_item->blend_dest_rgb,
                          i.render_item->blend_equation_rgb, i.render_item->blend_src_a,
                          i.render_item->blend_dest_a, i.render_item->blend_equation_a,
-                         i.render_item->depth_enabled, i.render_item->depth_write, i.vb, i.decl,
-                         i.program, i.framebuffer);
+                         i.render_item->depth_enabled, i.render_item->depth_write,
+                         i.render_item->cull_face_enabled, i.render_item->cull_front_face);
+        dga::hashCombine(hash, i.vb, i.decl, i.program, i.framebuffer);
         return hash;
     }
 };
@@ -278,6 +281,10 @@ class RenderContextVK : public RenderContext {
 public:
     explicit RenderContextVK(Logger& logger);
     ~RenderContextVK() override;
+
+    // Capabilities / customisations.
+    Mat4 adjustProjectionMatrix(Mat4 projection_matrix) const override;
+    bool hasFlippedViewport() const override;
 
     // Window management. Executed on the main thread.
     tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title,

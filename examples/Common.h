@@ -133,19 +133,18 @@ private:
     }
 
 namespace util {
-inline Mat4 createProjMatrix(float n, float f, float fov_y, float aspect) {
+inline Mat4 createProjMatrix(Renderer& r, float n, float f, float fov_y, float aspect) {
     auto tangent = static_cast<float>(tan(fov_y * M_DEGTORAD_OVER_2));  // tangent of half fovY
     float v = n * tangent * 2;                                          // half height of near plane
     float h = v * aspect;                                               // half width of near plane
     auto mat = Mat4::D3DPerspProjRH(n, f, h, v);
-    mat[1][1] *= -1.0f;
-    return mat;
+    return r.adjustProjectionMatrix(mat);
 }
 
 inline uint createFullscreenQuad(Renderer& r, VertexBufferHandle& vb) {
     // clang-format off
     float vertices[] = {
-        // Position       | UV
+        // Position | UV
         -1.0f, -1.0f, 0.0f, 0.0f,
         3.0f,  -1.0f, 2.0f, 0.0f,
         -1.0f,  3.0f, 0.0f, 2.0f};

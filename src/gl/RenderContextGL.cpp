@@ -430,6 +430,21 @@ RenderContextGL::~RenderContextGL() {
     // TODO: detect resource leaks.
 }
 
+Mat4 RenderContextGL::adjustProjectionMatrix(Mat4 projection_matrix) const {
+    // To map from a D3D projection matrix to an OpenGL projection matrix, we need to make the following transformations:
+    // p[2][2]: f / (n-f) -> (n+f) / (n-f)
+    // p[2][3]: nf / (n-f) -> 2nf / (n-f)
+    float n = projection_matrix[2][3] / projection_matrix[2][2];
+    float f = projection_matrix[2][3] / (1.0f + projection_matrix[2][2]);
+    projection_matrix[2][2] += n / (n - f);
+    projection_matrix[2][3] *= 2.0f;
+    return projection_matrix;
+}
+
+bool RenderContextGL::hasFlippedViewport() const {
+    return false;
+}
+
 tl::expected<void, std::string> RenderContextGL::createWindow(u16 width, u16 height,
                                                               const std::string& title,
                                                               InputCallbacks input_callbacks) {
@@ -777,23 +792,35 @@ bool RenderContextGL::frame(const Frame* frame) {
 
             // Bind uniforms.
             UniformBinder binder;
-            for (auto& uniform_pair : current->uniforms) {
-                auto location = program_data.uniform_location_map.find(uniform_pair.first);
+            for (auto& entry : current->uniforms) {
+                auto uniform_name = entry.first;
+                auto location = program_data.uniform_location_map.find(uniform_name);
                 GLint uniform_location;
                 if (location != program_data.uniform_location_map.end()) {
                     uniform_location = (*location).second;
                 } else {
-                    GL_CHECK(uniform_location = glGetUniformLocation(program_data.program,
-                                                                     uniform_pair.first.c_str()));
-                    program_data.uniform_location_map.emplace(uniform_pair.first, uniform_location);
+                    // A uniform inside a (converted) uniform block may have been remapped to a
+                    // location inside a struct uniform caled _<id>. When looking up the uniform
+                    // location, take this into account.
+                    auto uniform_remap_id = program_data.uniform_remap_ids.find(uniform_name);
+                    std::string remapped_uniform_name =
+                        uniform_remap_id == program_data.uniform_remap_ids.end()
+                            ? uniform_name
+                            : fmt::format("_{}.{}", uniform_remap_id->second, uniform_name);
+
+                    // Look up the uniform location.
+                    GL_CHECK(uniform_location = glGetUniformLocation(
+                                 program_data.program, remapped_uniform_name.c_str()));
+                    program_data.uniform_location_map.emplace(uniform_name, uniform_location);
                     if (uniform_location == -1) {
-                        logger_.warn("[Frame] Unknown uniform '{}', skipping.", uniform_pair.first);
+                        logger_.warn("[Frame] Unknown or optimised out uniform '{}', skipping.",
+                                     uniform_name);
                     }
                 }
                 if (uniform_location == -1) {
                     continue;
                 }
-                binder.updateUniform(uniform_location, uniform_pair.second);
+                binder.updateUniform(uniform_location, entry.second);
             }
 
             // Bind textures.
@@ -974,57 +1001,107 @@ void RenderContextGL::operator()(const cmd::CreateShader& c) {
     GLuint shader = 0;
     GL_CHECK(shader = glCreateShader(shader_type_map.at(c.stage)));
 
-#if DGA_PLATFORM == DGA_WIN32
-    bool use_spirv = false;
-#else
-    bool use_spirv = GLAD_GL_ARB_gl_spirv;
-#endif
-    if (use_spirv) {
-        glShaderBinary(1, &shader, GL_SHADER_BINARY_FORMAT_SPIR_V, c.data.data(), c.data.size());
-        auto error = glGetError();
-        if (error == GL_INVALID_VALUE) {
-            int info_log_length;
-            glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length);
-            std::string error_message(info_log_length, '\0');
-            glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data());
-            logger_.error("[CreateShader] Shader Load Error: {}", error_message);
+    // Convert SPIR-V into GLSL.
+    spirv_cross::CompilerGLSL glsl{reinterpret_cast<const u32*>(c.data.data()),
+                                   c.data.size() / sizeof(u32)};
+    spirv_cross::ShaderResources resources = glsl.get_shader_resources();
+
+    // Remap texture binding locations.
+    u32 next_texture_binding_location = 0;
+    for (const auto& resource : resources.sampled_images) {
+        u32 set = glsl.get_decoration(resource.id, spv::DecorationDescriptorSet);
+        u32 binding = glsl.get_decoration(resource.id, spv::DecorationBinding);
+        u32 new_binding = next_texture_binding_location++;
+        logger_.debug(
+            "Remapping sampled image with location(set={}, binding={}) to location(binding={})",
+            set, binding, new_binding);
+        glsl.unset_decoration(resource.id, spv::DecorationDescriptorSet);
+        glsl.set_decoration(resource.id, spv::DecorationBinding, new_binding);
+    }
+
+    // If we use the 'emit_uniform_buffer_as_plain_uniforms' option on an empty uniform block,
+    // variables are going to be prefixed with _<id>, where <id> is the resource ID in SPIR-V.
+    // In those cases, we need to store that information so it can be looked up during frame().
+    std::unordered_map<std::string, u32> uniform_remap_ids;
+    for (const auto& resource : resources.uniform_buffers) {
+        if (!glsl.get_name(resource.id).empty()) {
+            continue;
         }
 
-        // Specialize the shader.
-        GL_CHECK(
-            glSpecializeShader(shader, (const GLchar*)c.entry_point.c_str(), 0, nullptr, nullptr));
-    } else {
-        // Convert SPIR-V into GLSL.
-        spirv_cross::CompilerGLSL glsl_out{reinterpret_cast<const u32*>(c.data.data()),
-                                           c.data.size() / sizeof(u32)};
-        spirv_cross::ShaderResources resources = glsl_out.get_shader_resources();
+        const spirv_cross::SPIRType& type = glsl.get_type(resource.base_type_id);
+        usize member_count = type.member_types.size();
+        for (usize i = 0; i < member_count; ++i) {
+            uniform_remap_ids[glsl.get_member_name(type.self, i)] = resource.id;
+        }
+    }
 
-        // Compile to GLSL, ready to give to GL driver.
-        spirv_cross::CompilerGLSL::Options options;
+    // Compile to GLSL, ready to give to GL driver.
+    spirv_cross::CompilerGLSL::Options options;
+    options.emit_push_constant_as_uniform_buffer = true;
+    options.emit_uniform_buffer_as_plain_uniforms = true;
 #if DW_GL_VERSION == DW_GL_410
-        options.version = 410;
-        options.es = false;
+    options.version = 410;
+    options.es = false;
 #elif DW_GL_VERSION == DW_GLES_300
-        options.version = 300;
-        options.es = true;
+    options.version = 300;
+    options.es = true;
 #else
 #error "Unsupported DW_GL_VERSION"
 #endif
-        glsl_out.set_common_options(options);
-        std::string source = glsl_out.compile();
+    glsl.set_common_options(options);
+    std::string source = glsl.compile();
 
-        // Postprocess the GLSL to remove a GL 4.2 extension, which doesn't exist on macOS.
+    // Postprocess the GLSL to remove a GL 4.2 extension, which doesn't exist on macOS.
 #if DGA_PLATFORM == DGA_MACOS
-        source = dga::strReplaceAll(source, "#extension GL_ARB_shading_language_420pack : require",
-                                    "#extension GL_ARB_shading_language_420pack : disable");
+    source = dga::strReplaceAll(source, "#extension GL_ARB_shading_language_420pack : require",
+                                "#extension GL_ARB_shading_language_420pack : disable");
 #endif
-        // logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
+    /*
+    // Post process source to extract uniform buffers.
+    for (std::size_t next_ubo = source.find(", std140) uniform"); next_ubo != std::string::npos;
+         next_ubo = source.find(", std140) uniform")) {
+        std::size_t ubo_begin = source.rfind("layout", next_ubo);
+        std::size_t ubo_brace = source.find('{', next_ubo);
+        std::size_t ubo_end = source.find('}', ubo_begin);
 
-        // Compile the shader.
-        const char* sources[] = {source.c_str()};
-        GL_CHECK(glShaderSource(shader, 1, sources, nullptr));
-        GL_CHECK(glCompileShader(shader));
+        // Extract UBO name
+        std::size_t ubo_semicolon = source.find(';', ubo_end);
+        std::string ubo_name = source.substr(ubo_end + 2, ubo_semicolon - (ubo_end + 2));
+        std::string ubo_prefix = ubo_name + "_";
+
+        // Erase footer.
+        source.erase(ubo_end, ubo_semicolon + 1 - ubo_end);
+
+        // Erase header.
+        source.erase(ubo_begin, ubo_brace - ubo_begin + 1);  // include \n character
+
+        // Update uniforms.
+        for (std::size_t uniform_begin = source.find("    ", ubo_begin + 1);
+             uniform_begin < ubo_end; uniform_begin = source.find("    ", ubo_begin + 1)) {
+            source.replace(uniform_begin, 4, "uniform ");
+            std::size_t space_before_identifier = source.find(' ', uniform_begin + 9);
+
+            // Extract uniform name.
+            std::size_t semicolon_after_identifier = source.find(';', space_before_identifier + 1);
+            std::string uniform_name =
+                source.substr(space_before_identifier + 1,
+                              semicolon_after_identifier - (space_before_identifier + 1));
+
+            // Append prefix.
+            source.insert(space_before_identifier + 1, ubo_prefix);
+
+            // Replace usage in the rest of the shader.
+            source = dga::strReplaceAll(source, ubo_name + "." + uniform_name,
+                                        ubo_prefix + uniform_name);
+        }
     }
+     */
+
+    // Compile the shader.
+    logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
+    const char* sources[] = {source.c_str()};
+    GL_CHECK(glShaderSource(shader, 1, sources, nullptr));
+    GL_CHECK(glCompileShader(shader));
 
     // Check compilation result.
     GLint result;
@@ -1038,12 +1115,12 @@ void RenderContextGL::operator()(const cmd::CreateShader& c) {
         return;
     }
 
-    shader_map_.emplace(c.handle, shader);
+    shader_map_.emplace(c.handle, ShaderData{shader, std::move(uniform_remap_ids)});
 }
 
 void RenderContextGL::operator()(const cmd::DeleteShader& c) {
     auto it = shader_map_.find(c.handle);
-    GL_CHECK(glDeleteShader(it->second));
+    GL_CHECK(glDeleteShader(it->second.shader));
     shader_map_.erase(it);
 }
 
@@ -1055,7 +1132,11 @@ void RenderContextGL::operator()(const cmd::CreateProgram& c) {
 }
 
 void RenderContextGL::operator()(const cmd::AttachShader& c) {
-    GL_CHECK(glAttachShader(program_map_.at(c.handle).program, shader_map_.at(c.shader_handle)));
+    const auto& shader_data = shader_map_.at(c.shader_handle);
+    auto& program_data = program_map_.at(c.handle);
+    GL_CHECK(glAttachShader(program_data.program, shader_data.shader));
+    program_data.uniform_remap_ids.insert(shader_data.uniform_remap_ids.begin(),
+                                          shader_data.uniform_remap_ids.end());
 }
 
 void RenderContextGL::operator()(const cmd::LinkProgram& c) {

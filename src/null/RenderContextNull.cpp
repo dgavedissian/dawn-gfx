@@ -9,6 +9,14 @@ namespace gfx {
 RenderContextNull::RenderContextNull(Logger& logger) : RenderContext{logger} {
 }
 
+Mat4 RenderContextNull::adjustProjectionMatrix(Mat4 projection_matrix) const {
+    return projection_matrix;
+}
+
+bool RenderContextNull::hasFlippedViewport() const {
+    return false;
+}
+
 tl::expected<void, std::string> RenderContextNull::createWindow(u16, u16, const std::string&,
                                                                 InputCallbacks) {
     return {};

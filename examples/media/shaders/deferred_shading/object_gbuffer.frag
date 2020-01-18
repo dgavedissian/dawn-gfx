@@ -18,13 +18,13 @@ layout(location = 2) out vec4 gb2;
 
 layout(binding = 1) uniform PerSubmit {
     vec2 texcoord_scale;
-} u;
+};
 
 layout(binding = 2) uniform sampler2D diffuse_texture;
 
 void main() {
-    vec4 diffuse = texture(diffuse_texture, i.texcoord * u.texcoord_scale);
-    gb0.rgb = diffuse.rgb;
-    gb1.rgb = i.world_position;
-    gb2.rgb = normalize(i.normal);
+    vec4 diffuse = texture(diffuse_texture, i.texcoord * texcoord_scale);
+    gb0 = vec4(diffuse.rgb, 0.0);
+    gb1 = vec4(i.world_position, 0.0);
+    gb2 = vec4(normalize(i.normal), 0.0);
 }

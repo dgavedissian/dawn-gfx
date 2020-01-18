@@ -107,8 +107,8 @@ target_include_directories(MathGeoLib PUBLIC $<BUILD_INTERFACE:${mathgeolib_SOUR
 
 FetchContent_Declare(
     spirv-cross
-    URL https://github.com/KhronosGroup/SPIRV-Cross/archive/ed16b3e69985feaf565efbecea70a1cc2fca2a58.tar.gz
-    URL_MD5 970fa559c40cee3ba603246a1696a6c9
+    URL https://github.com/KhronosGroup/SPIRV-Cross/archive/2020-01-16.tar.gz
+    URL_MD5 0cb174fe01ffb9f6d14f4c3c53af003d
 )
 FetchContent_GetProperties(spirv-cross)
 if(NOT spirv-cross_POPULATED)

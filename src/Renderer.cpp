@@ -123,6 +123,20 @@ tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16
     return {};
 }
 
+Mat4 Renderer::adjustProjectionMatrix(Mat4 projection_matrix) const {
+    if (shared_render_context_) {
+        return shared_render_context_->adjustProjectionMatrix(projection_matrix);
+    }
+    return projection_matrix;
+}
+
+bool Renderer::hasFlippedViewport() const {
+    if (shared_render_context_) {
+        return shared_render_context_->hasFlippedViewport();
+    }
+    return false;
+}
+
 VertexBufferHandle Renderer::createVertexBuffer(Memory data, const VertexDecl& decl,
                                                 BufferUsage usage) {
     // TODO: Validate data.
