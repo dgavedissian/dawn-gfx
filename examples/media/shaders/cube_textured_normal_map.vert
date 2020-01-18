@@ -1,13 +1,11 @@
-#version 420 core
-#extension GL_ARB_separate_shader_objects : enable
-#extension GL_ARB_enhanced_layouts : enable
+#version 450 core
 
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
 layout(location = 2) in vec2 in_texcoord;
 layout(location = 3) in vec3 in_tangent;
 
-layout(binding = 0) uniform UniformBufferObject {
+layout(binding = 0) uniform PerSubmit {
     mat4 model_matrix;
     mat4 mvp_matrix;
 } u;
@@ -17,8 +15,7 @@ layout(location = 0) out VertexData {
     mat3 tbn;
 } o;
 
-void main()
-{
+void main() {
     vec3 t = normalize((u.model_matrix * vec4(in_tangent, 0.0)).xyz);
     vec3 n = normalize((u.model_matrix * vec4(in_normal, 0.0)).xyz);
     vec3 b = cross(n, t);

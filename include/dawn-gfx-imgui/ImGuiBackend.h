@@ -1,6 +1,6 @@
 /*
- * Dawn Engine
- * Written by David Avedissian (c) 2012-2019 (git@dga.dev)
+ * Dawn Graphics
+ * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
 #pragma once
 
@@ -82,9 +82,7 @@ ImGuiBackend::ImGuiBackend(Renderer& r, ImGuiIO& io) : r_(r), io_(io) {
 
     // Create shader.
     auto compiled_vs_result = compileGLSL(ShaderStage::Vertex, R"(
-        #version 420 core
-        #extension GL_ARB_separate_shader_objects : enable
-        #extension GL_ARB_enhanced_layouts : enable
+        #version 450 core
 
         layout(location = 0) in vec2 in_position;
         layout(location = 1) in vec2 in_texcoord;
@@ -111,9 +109,7 @@ ImGuiBackend::ImGuiBackend(Renderer& r, ImGuiIO& io) : r_(r), io_(io) {
                                  compiled_vs_result.error().compile_error);
     }
     auto compiled_fs_result = compileGLSL(ShaderStage::Fragment, R"(
-        #version 420 core
-        #extension GL_ARB_separate_shader_objects : enable
-        #extension GL_ARB_enhanced_layouts : enable
+        #version 450 core
 
         layout(location = 0) in VertexData {
             vec2 texcoord;

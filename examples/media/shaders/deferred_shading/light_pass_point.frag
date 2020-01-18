@@ -1,6 +1,4 @@
-#version 420 core
-#extension GL_ARB_separate_shader_objects : enable
-#extension GL_ARB_enhanced_layouts : enable
+#version 450 core
 
 layout(location = 0) out vec4 out_colour;
 
@@ -14,7 +12,7 @@ layout(binding = 1) uniform sampler2D gb0_texture;
 layout(binding = 2) uniform sampler2D gb1_texture;
 layout(binding = 3) uniform sampler2D gb2_texture;
 
-layout(binding = 4) uniform Parameters {
+layout(binding = 4) uniform PerSubmit {
     vec2 screen_size;
 
     vec3 light_position;
@@ -23,8 +21,7 @@ layout(binding = 4) uniform Parameters {
     float quadratic_term;
 } u;
 
-void main()
-{
+void main() {
     vec2 screen_coord = gl_FragCoord.xy / u.screen_size;
 
     vec3 diffuse_colour = texture(gb0_texture, screen_coord).rgb;

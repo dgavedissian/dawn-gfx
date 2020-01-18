@@ -1449,7 +1449,10 @@ void RenderContextVK::operator()(const cmd::CreateFrameBuffer& c) {
     textures.reserve(c.textures.size());
     for (const auto& texture_handle : c.textures) {
         textures.push_back(&texture_map_.at(texture_handle));
-    }
+    }/*
+ * Dawn Engine
+ * Written by David Avedissian (c) 2012-2019 (git@dga.dev)
+ */
 
     FramebufferVK framebuffer{device_.get(), c.width, c.height, std::move(textures)};
     framebuffer_map_.emplace(c.handle, std::move(framebuffer));
@@ -1501,12 +1504,19 @@ void RenderContextVK::createInstance(bool enable_validation_layers) {
     }
 
     auto all_extensions = vk::enumerateInstanceExtensionProperties();
+    auto all_layers = vk::enumerateInstanceLayerProperties();
     std::ostringstream extension_list;
     extension_list << "Vulkan extensions supported:";
     for (const auto& extension : all_extensions) {
         extension_list << " " << extension.extensionName;
     }
     logger_.info(extension_list.str());
+    std::ostringstream layer_list;
+    layer_list << "Vulkan layers available:";
+    for (const auto& layer : all_layers) {
+        layer_list << " " << layer.layerName;
+    }
+    logger_.info(layer_list.str());
 
     vk::ApplicationInfo app_info;
     app_info.pApplicationName = "RenderContextVK";
@@ -1592,6 +1602,10 @@ void RenderContextVK::createDevice() {
     vk::PhysicalDevice physical_device;
     std::vector<vk::PhysicalDevice> physical_devices = instance_.enumeratePhysicalDevices();
     for (const auto& device : physical_devices) {
+        auto properties = device.getProperties();
+        logger_.info("Considering GPU: {}", properties.deviceName);
+    }
+    for (const auto& device : physical_devices) {
         if (is_device_suitable(device)) {
             physical_device = device;
             break;
@@ -1600,6 +1614,7 @@ void RenderContextVK::createDevice() {
     if (!physical_device) {
         throw std::runtime_error("failed to find a suitable GPU.");
     }
+    logger_.info("Selected GPU: {}", physical_device.getProperties().deviceName);
     auto indices = QueueFamilyIndices::fromPhysicalDevice(physical_device, surface_);
     graphics_queue_family_index_ = indices.graphics_family.value();
     present_queue_family_index_ = indices.present_family.value();

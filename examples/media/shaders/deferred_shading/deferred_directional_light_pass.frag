@@ -1,6 +1,4 @@
-#version 420 core
-#extension GL_ARB_separate_shader_objects : enable
-#extension GL_ARB_enhanced_layouts : enable
+#version 450 core
 
 layout(location = 0) in VertexData {
     vec2 texcoord;
@@ -18,12 +16,11 @@ layout(binding = 1) uniform sampler2D gb0_texture;
 layout(binding = 2) uniform sampler2D gb1_texture;
 layout(binding = 3) uniform sampler2D gb2_texture;
 
-layout(binding = 4) uniform Parameters {
+layout(binding = 4) uniform PerSubmit {
     vec3 light_direction;
 } u;
 
-void main()
-{
+void main() {
     vec4 gb0 = texture(gb0_texture, i.texcoord);
     vec4 gb1 = texture(gb1_texture, i.texcoord);
     vec4 gb2 = texture(gb2_texture, i.texcoord);
