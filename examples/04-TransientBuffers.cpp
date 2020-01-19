@@ -25,7 +25,7 @@ public:
 
         static float angle = 0.0f;
         angle += dt;
-        float size_multiplier = 1.0f;  //((float)sin(angle) + 1.0f) * 0.25f;
+        float size_multiplier = (float(sin(angle)) + 1.5f) / 4;
         float vertices[] = {
             -0.5f * size_multiplier, 0.5f * size_multiplier,  1.0f, 0.0f, 0.0f,  // Top-left
             0.5f * size_multiplier,  0.5f * size_multiplier,  0.0f, 1.0f, 0.0f,  // Top-right
