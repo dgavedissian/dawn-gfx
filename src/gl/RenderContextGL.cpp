@@ -12,6 +12,7 @@
 #include <locale>
 #include <exception>
 #include <codecvt>
+#include <map>
 
 /**
  * RenderContextGL. A render context implementation which targets GL
@@ -88,8 +89,8 @@ void GLAPIENTRY debugMessageCallback(GLenum source, GLenum type, GLuint id, GLen
     if (type == GL_DEBUG_TYPE_ERROR) {
         logger.debug("GL error: severity = {:#x}, message = {}", severity, message_str);
     } else {
-        logger.debug("GL message: type = {:#x}, severity = {:#x}, message = {}", type, severity,
-                     message_str);
+        // logger.debug("GL message: type = {:#x}, severity = {:#x}, message = {}", type, severity,
+        //             message_str);
     }
 }
 
@@ -376,8 +377,10 @@ GLuint SamplerCacheGL::findOrCreate(RenderItem::SamplerInfo info) {
     const std::unordered_map<u32, GLuint> wrapping_mode_map = {
         {0b01, GL_REPEAT}, {0b10, GL_MIRRORED_REPEAT}, {0b11, GL_CLAMP_TO_EDGE}};
     const std::unordered_map<u32, GLuint> mag_filter_map = {{0b01, GL_NEAREST}, {0b10, GL_LINEAR}};
-    const std::unordered_map<u32, GLuint> min_filter_map = {{0b0101, GL_NEAREST_MIPMAP_NEAREST},
+    const std::unordered_map<u32, GLuint> min_filter_map = {{0b0100, GL_NEAREST},
+                                                            {0b0101, GL_NEAREST_MIPMAP_NEAREST},
                                                             {0b0110, GL_NEAREST_MIPMAP_LINEAR},
+                                                            {0b1000, GL_LINEAR},
                                                             {0b1001, GL_LINEAR_MIPMAP_NEAREST},
                                                             {0b1010, GL_LINEAR_MIPMAP_LINEAR}};
 
@@ -431,9 +434,9 @@ RenderContextGL::~RenderContextGL() {
 }
 
 Mat4 RenderContextGL::adjustProjectionMatrix(Mat4 projection_matrix) const {
-    // To map from a D3D projection matrix to an OpenGL projection matrix, we need to make the following transformations:
-    // p[2][2]: f / (n-f) -> (n+f) / (n-f)
-    // p[2][3]: nf / (n-f) -> 2nf / (n-f)
+    // To map from a D3D projection matrix to an OpenGL projection matrix, we need to make the
+    // following transformations: p[2][2]: f / (n-f) -> (n+f) / (n-f) p[2][3]: nf / (n-f) -> 2nf /
+    // (n-f)
     float n = projection_matrix[2][3] / projection_matrix[2][2];
     float f = projection_matrix[2][3] / (1.0f + projection_matrix[2][2]);
     projection_matrix[2][2] += n / (n - f);
@@ -841,10 +844,17 @@ bool RenderContextGL::frame(const Frame* frame) {
                     GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
                     GL_CHECK(glBindSampler(j, 0));
                 } else {
-                    GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture_map_.at(texture->handle)));
+                    const auto& texture_data = texture_map_.at(texture->handle);
+                    GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture_data.texture));
                     if (texture->sampler_info.sampler_flags != 0) {
-                        GLuint sampler = sampler_cache_.findOrCreate(texture->sampler_info);
+                        auto sampler_info = texture->sampler_info;
+                        if (!texture_data.has_mip_maps) {
+                            sampler_info.sampler_flags &= ~SamplerFlag::maskMipFilter;
+                        }
+                        GLuint sampler = sampler_cache_.findOrCreate(sampler_info);
                         GL_CHECK(glBindSampler(j, sampler));
+                    } else {
+                        GL_CHECK(glBindSampler(j, 0));
                     }
                 }
             }
@@ -1008,7 +1018,13 @@ void RenderContextGL::operator()(const cmd::CreateShader& c) {
 
     // Remap texture binding locations.
     u32 next_texture_binding_location = 0;
+    std::map<u32, const spirv_cross::Resource*> sampled_images_by_binding;
     for (const auto& resource : resources.sampled_images) {
+        sampled_images_by_binding[glsl.get_decoration(resource.id, spv::DecorationBinding)] =
+            &resource;
+    }
+    for (const auto& entry : sampled_images_by_binding) {
+        const auto& resource = *entry.second;
         u32 set = glsl.get_decoration(resource.id, spv::DecorationDescriptorSet);
         u32 binding = glsl.get_decoration(resource.id, spv::DecorationBinding);
         u32 new_binding = next_texture_binding_location++;
@@ -1056,49 +1072,9 @@ void RenderContextGL::operator()(const cmd::CreateShader& c) {
     source = dga::strReplaceAll(source, "#extension GL_ARB_shading_language_420pack : require",
                                 "#extension GL_ARB_shading_language_420pack : disable");
 #endif
-    /*
-    // Post process source to extract uniform buffers.
-    for (std::size_t next_ubo = source.find(", std140) uniform"); next_ubo != std::string::npos;
-         next_ubo = source.find(", std140) uniform")) {
-        std::size_t ubo_begin = source.rfind("layout", next_ubo);
-        std::size_t ubo_brace = source.find('{', next_ubo);
-        std::size_t ubo_end = source.find('}', ubo_begin);
-
-        // Extract UBO name
-        std::size_t ubo_semicolon = source.find(';', ubo_end);
-        std::string ubo_name = source.substr(ubo_end + 2, ubo_semicolon - (ubo_end + 2));
-        std::string ubo_prefix = ubo_name + "_";
-
-        // Erase footer.
-        source.erase(ubo_end, ubo_semicolon + 1 - ubo_end);
-
-        // Erase header.
-        source.erase(ubo_begin, ubo_brace - ubo_begin + 1);  // include \n character
-
-        // Update uniforms.
-        for (std::size_t uniform_begin = source.find("    ", ubo_begin + 1);
-             uniform_begin < ubo_end; uniform_begin = source.find("    ", ubo_begin + 1)) {
-            source.replace(uniform_begin, 4, "uniform ");
-            std::size_t space_before_identifier = source.find(' ', uniform_begin + 9);
-
-            // Extract uniform name.
-            std::size_t semicolon_after_identifier = source.find(';', space_before_identifier + 1);
-            std::string uniform_name =
-                source.substr(space_before_identifier + 1,
-                              semicolon_after_identifier - (space_before_identifier + 1));
-
-            // Append prefix.
-            source.insert(space_before_identifier + 1, ubo_prefix);
-
-            // Replace usage in the rest of the shader.
-            source = dga::strReplaceAll(source, ubo_name + "." + uniform_name,
-                                        ubo_prefix + uniform_name);
-        }
-    }
-     */
 
     // Compile the shader.
-    logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
+    // logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
     const char* sources[] = {source.c_str()};
     GL_CHECK(glShaderSource(shader, 1, sources, nullptr));
     GL_CHECK(glCompileShader(shader));
@@ -1186,12 +1162,12 @@ void RenderContextGL::operator()(const cmd::CreateTexture2D& c) {
     }
 
     // Add texture.
-    texture_map_.emplace(c.handle, texture);
+    texture_map_.emplace(c.handle, TextureData{texture, c.generate_mipmaps});
 }
 
 void RenderContextGL::operator()(const cmd::DeleteTexture& c) {
     auto it = texture_map_.find(c.handle);
-    GL_CHECK(glDeleteTextures(1, &it->second));
+    GL_CHECK(glDeleteTextures(1, &it->second.texture));
     texture_map_.erase(it);
 }
 
@@ -1212,7 +1188,7 @@ void RenderContextGL::operator()(const cmd::CreateFrameBuffer& c) {
         assert(gl_texture != texture_map_.end());
         draw_buffers.emplace_back(GL_COLOR_ATTACHMENT0 + attachment++);
         GL_CHECK(glFramebufferTexture2D(GL_FRAMEBUFFER, draw_buffers.back(), GL_TEXTURE_2D,
-                                        gl_texture->second, 0));
+                                        gl_texture->second.texture, 0));
     }
     GL_CHECK(glDrawBuffers(static_cast<GLsizei>(draw_buffers.size()), draw_buffers.data()));
 

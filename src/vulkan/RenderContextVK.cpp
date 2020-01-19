@@ -823,6 +823,7 @@ RenderContextVK::~RenderContextVK() {
 }
 
 Mat4 RenderContextVK::adjustProjectionMatrix(Mat4 projection_matrix) const {
+    // projection_matrix[1][1] *= -1.0f;
     return projection_matrix;
 }
 
@@ -1868,28 +1869,17 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(PipelineVK::Info info) 
     input_assembly.primitiveRestartEnable = VK_FALSE;
 
     vk::Viewport viewport;
-    bool viewport_inverted = !info.framebuffer;
-    if (!info.framebuffer) {
-        // The window should be flipped.
-        viewport.width = static_cast<float>(swap_chain_extent_.width);
-        viewport.height = -static_cast<float>(swap_chain_extent_.height);
-        viewport.x = 0.0f;
-        viewport.y = static_cast<float>(swap_chain_extent_.height);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-    } else {
-        // Viewports on framebuffer attachments should not be flipped.
-        viewport.width = static_cast<float>(info.framebuffer->extent.width);
-        viewport.height = static_cast<float>(info.framebuffer->extent.height);
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-    }
+    vk::Extent2D viewport_extent = info.framebuffer ? info.framebuffer->extent : swap_chain_extent_;
+    viewport.width = static_cast<float>(viewport_extent.width);
+    viewport.height = -static_cast<float>(viewport_extent.height);
+    viewport.x = 0.0f;
+    viewport.y = static_cast<float>(viewport_extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
 
     vk::Rect2D scissor;
     scissor.offset = vk::Offset2D{0, 0};
-    scissor.extent = info.framebuffer ? info.framebuffer->extent : swap_chain_extent_;
+    scissor.extent = viewport_extent;
 
     vk::PipelineViewportStateCreateInfo viewport_state;
     viewport_state.viewportCount = 1;
@@ -1902,14 +1892,11 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(PipelineVK::Info info) 
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = vk::PolygonMode::eFill;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = info.render_item->cull_face_enabled ? vk::CullModeFlagBits::eBack
+    rasterizer.cullMode = info.render_item->cull_face_enabled ? vk::CullModeFlagBits::eNone
                                                               : vk::CullModeFlagBits::eNone;
-    bool clockwise_front_face = info.render_item->cull_front_face == CullFrontFace::CW;
-    if (!viewport_inverted) {
-        clockwise_front_face = !clockwise_front_face;
-    }
-    rasterizer.frontFace =
-        clockwise_front_face ? vk::FrontFace::eClockwise : vk::FrontFace::eCounterClockwise;
+    rasterizer.frontFace = info.render_item->cull_front_face == CullFrontFace::CW
+                               ? vk::FrontFace::eClockwise
+                               : vk::FrontFace::eCounterClockwise;
     rasterizer.depthBiasEnable = VK_FALSE;
     rasterizer.depthBiasConstantFactor = 0.0f;  // Optional
     rasterizer.depthBiasClamp = 0.0f;           // Optional
@@ -2096,7 +2083,8 @@ vk::Sampler RenderContextVK::findOrCreateSampler(RenderItem::SamplerInfo info) {
     const std::unordered_map<u32, vk::Filter> filter_map = {{0b01, vk::Filter::eNearest},
                                                             {0b10, vk::Filter::eLinear}};
     const std::unordered_map<u32, vk::SamplerMipmapMode> mipmap_mode = {
-        {0b01, vk::SamplerMipmapMode::eNearest}, {0b10, vk::SamplerMipmapMode::eLinear}};
+        {0b00, vk::SamplerMipmapMode::eNearest}, {0b01, vk::SamplerMipmapMode::eNearest},
+        {0b10, vk::SamplerMipmapMode::eLinear}};
     auto flags = info.sampler_flags;
     auto u_wrapping_mode =
         (flags & SamplerFlag::maskUWrappingMode) >> SamplerFlag::shiftUWrappingMode;

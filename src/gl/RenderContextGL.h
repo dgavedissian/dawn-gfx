@@ -124,7 +124,11 @@ private:
     std::unordered_map<ProgramHandle, ProgramData> program_map_;
 
     // Textures.
-    std::unordered_map<TextureHandle, GLuint> texture_map_;
+    struct TextureData {
+        GLuint texture;
+        bool has_mip_maps;
+    };
+    std::unordered_map<TextureHandle, TextureData> texture_map_;
     SamplerCacheGL sampler_cache_;
 
     // Frame buffers.

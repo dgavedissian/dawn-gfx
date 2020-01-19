@@ -143,18 +143,28 @@ inline Mat4 createProjMatrix(Renderer& r, float n, float f, float fov_y, float a
 
 inline uint createFullscreenQuad(Renderer& r, VertexBufferHandle& vb) {
     // clang-format off
-    float vertices[] = {
+    float flipped_vertices[] = {
+        // Position | UV
+        3.0f,  1.0f, 2.0f, 0.0f,
+        -1.0f, 1.0f, 0.0f, 0.0f,
+        -1.0f, -3.0f, 0.0f, 2.0f
+    };
+    float non_flipped_vertices[] = {
         // Position | UV
         -1.0f, -1.0f, 0.0f, 0.0f,
         3.0f,  -1.0f, 2.0f, 0.0f,
-        -1.0f,  3.0f, 0.0f, 2.0f};
+        -1.0f, 3.0f, 0.0f, 2.0f
+    };
     // clang-format on
     VertexDecl decl;
     decl.begin()
         .add(VertexDecl::Attribute::Position, 2, VertexDecl::AttributeType::Float)
         .add(VertexDecl::Attribute::TexCoord0, 2, VertexDecl::AttributeType::Float)
         .end();
-    vb = r.createVertexBuffer(Memory(vertices, sizeof(vertices)), decl);
+    vb = r.createVertexBuffer(
+        Memory(r.hasFlippedViewport() ? flipped_vertices : non_flipped_vertices,
+               sizeof(flipped_vertices)),
+        decl);
     return 3;
 }
 
@@ -164,7 +174,8 @@ inline ShaderHandle loadShader(Renderer& r, ShaderStage type, const std::string&
                               std::istreambuf_iterator<char>());
     auto spv_result = compileGLSL(type, shader_source);
     if (!spv_result) {
-        throw std::runtime_error("Compile error whilst loading " + source_file + ": " + spv_result.error().compile_error);
+        throw std::runtime_error("Compile error whilst loading " + source_file + ": " +
+                                 spv_result.error().compile_error);
     }
     return r.createShader(type, spv_result.value().entry_point,
                           Memory(std::move(spv_result.value().spirv)));

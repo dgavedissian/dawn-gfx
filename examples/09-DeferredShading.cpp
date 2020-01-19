@@ -4,6 +4,8 @@
  */
 #include "Common.h"
 
+//#define DEBUG_GBUFFER
+
 class PointLight {
 public:
     PointLight(Renderer& r, Colour colour, float linear_term, float quadratic_term,
@@ -31,9 +33,6 @@ public:
         r.linkProgram(program_);
 
         r.setUniform("screen_size", screen_size);
-        // r.setUniform("gb0_texture", 0);
-        // r.setUniform("gb1_texture", 1);
-        // r.setUniform("gb2_texture", 2);
         r.setUniform("light_colour", colour.rgb());
         r.setUniform("linear_term", linear_term);
         r.setUniform("quadratic_term", quadratic_term);
@@ -129,7 +128,6 @@ public:
         r.attachShader(ground_program_, vs);
         r.attachShader(ground_program_, fs);
         r.linkProgram(ground_program_);
-        r.setUniform("diffuse_texture", 0);
         r.setUniform("texcoord_scale", Vec2{kGroundSize / 5.0f, kGroundSize / 5.0f});
         r.submit(ground_program_);
 
@@ -137,7 +135,6 @@ public:
         r.attachShader(sphere_program_, vs);
         r.attachShader(sphere_program_, fs);
         r.linkProgram(sphere_program_);
-        r.setUniform("diffuse_texture", 0);
         r.setUniform("texcoord_scale", Vec2{1.0f, 1.0f});
         r.submit(sphere_program_);
 
@@ -164,16 +161,19 @@ public:
         // Load post process shader.
         auto pp_vs =
             util::loadShader(r, ShaderStage::Vertex, util::media("shaders/post_process.vert"));
+#ifdef DEBUG_GBUFFER
         auto pp_fs =
             util::loadShader(r, ShaderStage::Fragment,
-                             util::media("shaders/deferred_shading/deferred_ambient_light_pass.frag"));
+                             util::media("shaders/deferred_shading/deferred_debug_gbuffer.frag"));
+#else
+        auto pp_fs = util::loadShader(
+            r, ShaderStage::Fragment,
+            util::media("shaders/deferred_shading/deferred_ambient_light_pass.frag"));
+#endif
         post_process_ = r.createProgram();
         r.attachShader(post_process_, pp_vs);
         r.attachShader(post_process_, pp_fs);
         r.linkProgram(post_process_);
-        // r.setUniform("gb0_texture", 0);
-        // r.setUniform("gb1_texture", 1);
-        // r.setUniform("gb2_texture", 2);
         r.setUniform("ambient_light", Vec3{0.1f, 0.1f, 0.1f});
         r.submit(post_process_);
 
@@ -254,6 +254,7 @@ public:
         r.submit(post_process_, 3);
 
         // Update and draw point lights.
+#ifndef DEBUG_GBUFFER
         static float angle = 0.0f;
         angle += dt;
         for (auto& light_info : point_lights) {
@@ -268,6 +269,7 @@ public:
             r.setTexture(r.getFrameBufferTexture(gbuffer_, 2), 2);
             light_info.light->draw(view, proj);
         }
+#endif
     }
 
     void stop() override {
