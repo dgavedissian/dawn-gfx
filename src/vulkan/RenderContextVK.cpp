@@ -2083,7 +2083,8 @@ vk::Sampler RenderContextVK::findOrCreateSampler(RenderItem::SamplerInfo info) {
     const std::unordered_map<u32, vk::Filter> filter_map = {{0b01, vk::Filter::eNearest},
                                                             {0b10, vk::Filter::eLinear}};
     const std::unordered_map<u32, vk::SamplerMipmapMode> mipmap_mode = {
-        {0b00, vk::SamplerMipmapMode::eNearest}, {0b01, vk::SamplerMipmapMode::eNearest},
+        {0b00, vk::SamplerMipmapMode::eNearest},
+        {0b01, vk::SamplerMipmapMode::eNearest},
         {0b10, vk::SamplerMipmapMode::eLinear}};
     auto flags = info.sampler_flags;
     auto u_wrapping_mode =

@@ -31,6 +31,19 @@ public:
     }
 };
 
+const char* rendererTypeToString(RendererType renderer) {
+    switch (renderer) {
+        case RendererType::Vulkan:
+            return "Vulkan";
+        case RendererType::OpenGL:
+            return "OpenGL";
+        case RendererType::Null:
+            return "Null";
+        default:
+            return "<unknown>";
+    }
+}
+
 class Example {
 public:
     static int runMain(std::unique_ptr<Example> example, const char* window_title) {
@@ -69,8 +82,8 @@ public:
 
         render(dt_);
 
-        ImGui::SetNextWindowPos({10, 10});
-        ImGui::SetNextWindowSize({150, 50});
+        ImGui::SetNextWindowPos({5, 5});
+        ImGui::SetNextWindowSize({160, 65});
         if (!ImGui::Begin("FPS", nullptr,
                           ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                               ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings)) {
@@ -79,6 +92,7 @@ public:
         }
         ImGui::Text("FPS:   %f", 1.0f / dt_);
         ImGui::Text("Frame: %.4f ms", dt_ * 1000.0f);
+        ImGui::Text("Renderer: %s", rendererTypeToString(r.rendererType()));
         ImGui::End();
 
         // Render frame.

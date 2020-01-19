@@ -14,6 +14,10 @@ public:
     explicit RenderContextNull(Logger& logger);
     ~RenderContextNull() override = default;
 
+    RendererType type() const override {
+        return RendererType::Null;
+    }
+
     // Capabilities / customisations.
     Mat4 adjustProjectionMatrix(Mat4 projection_matrix) const override;
     bool hasFlippedViewport() const override;

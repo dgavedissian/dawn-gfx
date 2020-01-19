@@ -16,6 +16,8 @@ public:
     }
     virtual ~RenderContext() = default;
 
+    virtual RendererType type() const = 0;
+
     // Capabilities / customisations.
     virtual Mat4 adjustProjectionMatrix(Mat4 projection_matrix) const = 0;
     virtual bool hasFlippedViewport() const = 0;

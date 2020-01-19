@@ -660,5 +660,9 @@ bool Renderer::renderFrame(Frame* frame) {
     frame->clear();
     return true;
 }
+
+RendererType Renderer::rendererType() const {
+    return shared_render_context_->type();
+}
 }  // namespace gfx
 }  // namespace dw

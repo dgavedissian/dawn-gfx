@@ -613,6 +613,9 @@ public:
     /// Get the current backbuffer size.
     Vec2i backbufferSize() const;
 
+    /// Get the currently active renderer.
+    RendererType rendererType() const;
+
 private:
     Logger& logger_;
 

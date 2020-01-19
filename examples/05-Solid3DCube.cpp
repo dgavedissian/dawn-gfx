@@ -12,8 +12,7 @@ public:
 
     void start() override {
         // Load shaders.
-        auto vs =
-            util::loadShader(r, ShaderStage::Vertex, util::media("shaders/cube_solid.vert"));
+        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("shaders/cube_solid.vert"));
         auto fs =
             util::loadShader(r, ShaderStage::Fragment, util::media("shaders/cube_solid.frag"));
         program_ = r.createProgram();
