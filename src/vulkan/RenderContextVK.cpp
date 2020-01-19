@@ -8,8 +8,6 @@
 #include <cstdint>
 #include <map>
 
-#include "dawn-gfx/Shader.h"
-
 #include <spirv_cross.hpp>
 #include <dawn-gfx/Renderer.h>
 
@@ -613,6 +611,8 @@ UniformScratchBuffer::UniformScratchBuffer(
 
 UniformScratchBuffer::~UniformScratchBuffer() {
     device_->getDevice().unmapMemory(buffer_memory_);
+    device_->getDevice().destroy(buffer_);
+    device_->getDevice().free(buffer_memory_);
 }
 
 UniformScratchBuffer::Allocation UniformScratchBuffer::alloc(usize size) {
@@ -823,7 +823,6 @@ RenderContextVK::~RenderContextVK() {
 }
 
 Mat4 RenderContextVK::adjustProjectionMatrix(Mat4 projection_matrix) const {
-    // projection_matrix[1][1] *= -1.0f;
     return projection_matrix;
 }
 
@@ -979,7 +978,7 @@ bool RenderContextVK::frame(const Frame* frame) {
         } else {
             // Bind to backbuffer.
             target_framebuffer = swap_chain_framebuffers_[next_frame_index_];
-            target_render_pass = render_pass_;
+            target_render_pass = swapchain_render_pass_;
             target_extent = swap_chain_extent_;
         }
 
@@ -1391,7 +1390,7 @@ void RenderContextVK::operator()(const cmd::DeleteProgram& c) {
 void RenderContextVK::operator()(const cmd::CreateTexture2D& c) {
     TextureVK texture;
 
-    texture.image_format = kTextureFormatMap[usize(c.format)].format;
+    texture.image_format = kTextureFormatMap.at(usize(c.format)).format;
 
     vk::DeviceSize buffer_size = c.width * c.height * 4;
     assert(c.data.size() <= buffer_size);
@@ -1454,11 +1453,7 @@ void RenderContextVK::operator()(const cmd::CreateFrameBuffer& c) {
     textures.reserve(c.textures.size());
     for (const auto& texture_handle : c.textures) {
         textures.push_back(&texture_map_.at(texture_handle));
-    } /*
-       * Dawn Engine
-       * Written by David Avedissian (c) 2012-2019 (git@dga.dev)
-       */
-
+    }
     FramebufferVK framebuffer{device_.get(), c.width, c.height, std::move(textures)};
     framebuffer_map_.emplace(c.handle, std::move(framebuffer));
 }
@@ -1784,7 +1779,7 @@ void RenderContextVK::createRenderPass() {
     render_pass_info.pSubpasses = &subpass;
     render_pass_info.dependencyCount = 1;
     render_pass_info.pDependencies = &dependency;
-    render_pass_ = vk_device_.createRenderPass(render_pass_info);
+    swapchain_render_pass_ = vk_device_.createRenderPass(render_pass_info);
 }
 
 void RenderContextVK::createFramebuffers() {
@@ -1793,7 +1788,7 @@ void RenderContextVK::createFramebuffers() {
         std::array<vk::ImageView, 2> attachments = {image_view, depth_image_view_};
 
         vk::FramebufferCreateInfo framebuffer_info;
-        framebuffer_info.renderPass = render_pass_;
+        framebuffer_info.renderPass = swapchain_render_pass_;
         framebuffer_info.attachmentCount = attachments.size();
         framebuffer_info.pAttachments = attachments.data();
         framebuffer_info.width = swap_chain_extent_.width;
@@ -1898,21 +1893,21 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(PipelineVK::Info info) 
                                ? vk::FrontFace::eClockwise
                                : vk::FrontFace::eCounterClockwise;
     rasterizer.depthBiasEnable = VK_FALSE;
-    rasterizer.depthBiasConstantFactor = 0.0f;  // Optional
-    rasterizer.depthBiasClamp = 0.0f;           // Optional
-    rasterizer.depthBiasSlopeFactor = 0.0f;     // Optional
+    rasterizer.depthBiasConstantFactor = 0.0f;
+    rasterizer.depthBiasClamp = 0.0f;
+    rasterizer.depthBiasSlopeFactor = 0.0f;
 
     vk::PipelineMultisampleStateCreateInfo multisampling;
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
-    multisampling.minSampleShading = 1.0f;           // Optional
-    multisampling.pSampleMask = nullptr;             // Optional
-    multisampling.alphaToCoverageEnable = VK_FALSE;  // Optional
-    multisampling.alphaToOneEnable = VK_FALSE;       // Optional
+    multisampling.minSampleShading = 1.0f;
+    multisampling.pSampleMask = nullptr;
+    multisampling.alphaToCoverageEnable = VK_FALSE;
+    multisampling.alphaToOneEnable = VK_FALSE;
 
     std::vector<vk::PipelineColorBlendAttachmentState> colour_blend_attachments;
-    int colour_attachment_count = info.framebuffer ? info.framebuffer->images.size() : 1;
-    for (int i = 0; i < colour_attachment_count; ++i) {
+    usize colour_attachment_count = info.framebuffer ? info.framebuffer->images.size() : 1;
+    for (usize i = 0; i < colour_attachment_count; ++i) {
         vk::PipelineColorBlendAttachmentState colour_blend_attachment;
         if (info.render_item->colour_write) {
             colour_blend_attachment.colorWriteMask =
@@ -1937,13 +1932,13 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(PipelineVK::Info info) 
 
     vk::PipelineColorBlendStateCreateInfo colour_blending;
     colour_blending.logicOpEnable = VK_FALSE;
-    colour_blending.logicOp = vk::LogicOp::eCopy;  // Optional
+    colour_blending.logicOp = vk::LogicOp::eCopy;
     colour_blending.attachmentCount = colour_blend_attachments.size();
     colour_blending.pAttachments = colour_blend_attachments.data();
-    colour_blending.blendConstants[0] = 0.0f;  // Optional
-    colour_blending.blendConstants[1] = 0.0f;  // Optional
-    colour_blending.blendConstants[2] = 0.0f;  // Optional
-    colour_blending.blendConstants[3] = 0.0f;  // Optional
+    colour_blending.blendConstants[0] = 0.0f;
+    colour_blending.blendConstants[1] = 0.0f;
+    colour_blending.blendConstants[2] = 0.0f;
+    colour_blending.blendConstants[3] = 0.0f;
 
     vk::DynamicState dynamic_states[] = {vk::DynamicState::eScissor};
     vk::PipelineDynamicStateCreateInfo dynamic_state;
@@ -1963,11 +1958,11 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(PipelineVK::Info info) 
     depth_stencil.depthWriteEnable = info.render_item->depth_write ? VK_TRUE : VK_FALSE;
     depth_stencil.depthCompareOp = vk::CompareOp::eLess;
     depth_stencil.depthBoundsTestEnable = VK_FALSE;
-    depth_stencil.minDepthBounds = 0.0f;  // Optional
-    depth_stencil.maxDepthBounds = 1.0f;  // Optional
+    depth_stencil.minDepthBounds = 0.0f;
+    depth_stencil.maxDepthBounds = 1.0f;
     depth_stencil.stencilTestEnable = VK_FALSE;
-    depth_stencil.front = vk::StencilOpState{};  // Optional
-    depth_stencil.back = vk::StencilOpState{};   // Optional
+    depth_stencil.front = vk::StencilOpState{};
+    depth_stencil.back = vk::StencilOpState{};
 
     // Create pipeline.
     vk::GraphicsPipelineCreateInfo pipeline_info;
@@ -1982,7 +1977,8 @@ PipelineVK RenderContextVK::findOrCreateGraphicsPipeline(PipelineVK::Info info) 
     pipeline_info.pColorBlendState = &colour_blending;
     pipeline_info.pDynamicState = &dynamic_state;
     pipeline_info.layout = graphics_pipeline.layout;
-    pipeline_info.renderPass = info.framebuffer ? info.framebuffer->render_pass : render_pass_;
+    pipeline_info.renderPass =
+        info.framebuffer ? info.framebuffer->render_pass : swapchain_render_pass_;
     pipeline_info.subpass = 0;
 
     graphics_pipeline.pipeline =
@@ -2026,9 +2022,19 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(DescriptorSetVK::Info
                     buffer_info_storage.emplace_back(std::make_unique<vk::DescriptorBufferInfo>());
                     auto& buffer_info = *buffer_info_storage.back();
 
+                    // TODO: Consider storing the uniform buffers in a more convenient way that
+                    // avoids the O(n) search, although for almost all cases linear search shouldn't
+                    // matter as we won't really ever have more than 10 uniform buffers.
+                    auto uniform_buffer_it = std::find_if(
+                        info.program->uniform_buffers.begin(), info.program->uniform_buffers.end(),
+                        [binding = binding.binding](const ProgramVK::UniformBuffer& buffer) {
+                            return buffer.binding == binding;
+                        });
+                    assert(uniform_buffer_it != info.program->uniform_buffers.end());
+
                     buffer_info.buffer = uniform_scratch_buffers_[i]->getBuffer();
                     buffer_info.offset = 0;
-                    buffer_info.range = VK_WHOLE_SIZE;
+                    buffer_info.range = uniform_buffer_it->size;
                     descriptor_write.pBufferInfo = &buffer_info;
                 } break;
                 case vk::DescriptorType::eCombinedImageSampler: {
@@ -2124,27 +2130,84 @@ vk::Sampler RenderContextVK::findOrCreateSampler(RenderItem::SamplerInfo info) {
 void RenderContextVK::cleanup() {
     vk_device_.waitIdle();
 
+    // Clear cached objects.
+    for (const auto& entry : sampler_cache_) {
+        vk_device_.destroy(entry.second);
+    }
+    sampler_cache_.clear();
+    descriptor_set_cache_.clear();
+    for (const auto& entry : graphics_pipeline_cache_) {
+        vk_device_.destroy(entry.second.layout);
+        vk_device_.destroy(entry.second.pipeline);
+    }
+    graphics_pipeline_cache_.clear();
+    vertex_decl_cache_.clear();
+
+    // Free resources.
+    for (const auto& entry : framebuffer_map_) {
+        vk_device_.destroy(entry.second.render_pass);
+        vk_device_.destroy(entry.second.framebuffer);
+        vk_device_.destroy(entry.second.depth.image_view);
+        vk_device_.destroy(entry.second.depth.image);
+        vk_device_.free(entry.second.depth.image_memory);
+    }
+    framebuffer_map_.clear();
+    for (const auto& entry : texture_map_) {
+        vk_device_.destroy(entry.second.image_view);
+        vk_device_.destroy(entry.second.image);
+        vk_device_.free(entry.second.image_memory);
+    }
+    texture_map_.clear();
+    for (const auto& entry : program_map_) {
+        vk_device_.destroy(entry.second.descriptor_set_layout);
+        for (const auto& stage : entry.second.stages) {
+            // vk_device_.destroy(stage.second.module);
+        }
+    }
+    program_map_.clear();
+    for (const auto& entry : shader_map_) {
+        vk_device_.destroy(entry.second.module);
+    }
+    shader_map_.clear();
+    index_buffer_map_.clear();
+    vertex_buffer_map_.clear();
+
+    uniform_scratch_buffers_.clear();
+    vk_device_.destroy(descriptor_pool_);
+
+    // Destroy swapchain.
     for (const auto& fence : in_flight_fences_) {
         vk_device_.destroy(fence);
     }
+    images_in_flight_.clear();
+    in_flight_fences_.clear();
     for (const auto& semaphore : render_finished_semaphores_) {
         vk_device_.destroy(semaphore);
     }
+    render_finished_semaphores_.clear();
     for (const auto& semaphore : image_available_semaphores_) {
         vk_device_.destroy(semaphore);
     }
+    image_available_semaphores_.clear();
 
-    vk_device_.destroy(descriptor_pool_);
-
+    vk_device_.destroy(swapchain_render_pass_);
     for (const auto& framebuffer : swap_chain_framebuffers_) {
         vk_device_.destroy(framebuffer);
     }
-    vk_device_.destroy(render_pass_);
+    swap_chain_framebuffers_.clear();
+
+    vk_device_.destroy(depth_image_view_);
+    vk_device_.destroy(depth_image_);
+    vk_device_.free(depth_image_memory_);
+
     for (const auto& image_view : swap_chain_image_views_) {
         vk_device_.destroy(image_view);
     }
+    swap_chain_image_views_.clear();
+    swap_chain_images_.clear();
     vk_device_.destroy(swap_chain_);
 
+    // Destroy device and instance.
     device_.reset();
     instance_.destroy(surface_);
     if (debug_messenger_) {

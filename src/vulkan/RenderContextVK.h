@@ -15,6 +15,17 @@
 
 #include <map>
 
+/*
+ * TODOs:
+ * - Move all the helper classes / structs into separate files.
+ * - Refactor TextureVK into a real fully contained class that handles a texture resource properly.
+ * Similar for other types like ShaderVK and ProgramVK.
+ * - Use a real Vulkan memory allocator rather than directly allocating from the device.
+ * - Revisit the way uniforms are handled to avoid all the heap allocating hash maps.
+ * - Support recreation of the swapchain (when the window is resized etc).
+ * - Refactor GLFW into a separate abstraction (that can be shared with RenderContextGL).
+ */
+
 namespace dw {
 namespace gfx {
 // Device wrapper.
@@ -162,6 +173,11 @@ public:
     UniformScratchBuffer(DeviceVK* device, usize size);
     ~UniformScratchBuffer();
 
+    UniformScratchBuffer(const UniformScratchBuffer&) = delete;
+    UniformScratchBuffer(UniformScratchBuffer&&) = delete;
+    UniformScratchBuffer& operator=(const UniformScratchBuffer&) = delete;
+    UniformScratchBuffer& operator=(UniformScratchBuffer&&) = delete;
+
     Allocation alloc(usize size);
     void reset();
 
@@ -222,7 +238,8 @@ struct PipelineVK {
     vk::Pipeline pipeline;
 
     struct Info {
-        // TODO: Replace RenderItem with just the render state used by the pipeline.
+        // TODO: Replace RenderItem ptr with a copy of the render state used by the pipeline, which
+        // we can hash separately.
         const RenderItem* render_item;
         const VertexBufferVK* vb;
         const VertexDeclVK* decl;
@@ -343,6 +360,9 @@ private:
     u32 graphics_queue_family_index_;
     u32 present_queue_family_index_;
 
+    // Swapchain
+    // =========
+
     vk::SwapchainKHR swap_chain_;
     vk::Format swap_chain_image_format_;
     vk::Extent2D swap_chain_extent_;
@@ -354,13 +374,12 @@ private:
     vk::DeviceMemory depth_image_memory_;
     vk::ImageView depth_image_view_;
 
-    vk::RenderPass render_pass_;
-
     std::vector<vk::Framebuffer> swap_chain_framebuffers_;
+    vk::RenderPass swapchain_render_pass_;
+
     std::vector<vk::CommandBuffer> command_buffers_;
 
-    vk::DescriptorPool descriptor_pool_;
-
+    // Concurrency primitives for frame tracking.
     std::vector<vk::Semaphore> image_available_semaphores_;
     std::vector<vk::Semaphore> render_finished_semaphores_;
     std::vector<vk::Fence> in_flight_fences_;
@@ -368,22 +387,31 @@ private:
     std::size_t current_frame_;
     u32 next_frame_index_;
 
+    // Resources
+    // =========
+
+    vk::DescriptorPool descriptor_pool_;
+
+    // Per frame uniform scratch buffers (one per swapchain image).
     std::vector<std::unique_ptr<UniformScratchBuffer>> uniform_scratch_buffers_;
 
     // Resource maps.
     std::unordered_map<VertexBufferHandle, VertexBufferVK> vertex_buffer_map_;
     std::unordered_map<IndexBufferHandle, IndexBufferVK> index_buffer_map_;
-    // Note: Pointers to ShaderVK objects should be stable.
     std::unordered_map<ShaderHandle, ShaderVK> shader_map_;
     std::unordered_map<ProgramHandle, ProgramVK> program_map_;
     std::unordered_map<TextureHandle, TextureVK> texture_map_;
     std::unordered_map<FrameBufferHandle, FramebufferVK> framebuffer_map_;
 
     // Cached objects.
+    // TODO: Implement some form of cache eviction.
     std::unordered_map<VertexDecl, VertexDeclVK> vertex_decl_cache_;
     std::unordered_map<PipelineVK::Info, PipelineVK> graphics_pipeline_cache_;
     std::unordered_map<DescriptorSetVK::Info, DescriptorSetVK> descriptor_set_cache_;
     std::unordered_map<RenderItem::SamplerInfo, vk::Sampler> sampler_cache_;
+
+    // Helper functions
+    // ================
 
     bool checkValidationLayerSupport();
     std::vector<const char*> getRequiredExtensions(bool enable_validation_layers);
