@@ -14,6 +14,7 @@
 #include "Input.h"
 
 #include <dga/barrier.h>
+#include <dga/hash_combine.h>
 #include <tl/expected.hpp>
 #include <vector>
 #include <variant>
@@ -29,33 +30,39 @@
 #define DW_MAX_TRANSIENT_INDEX_BUFFER_SIZE (1 << 20)
 
 // Handles.
-#define DEFINE_HANDLE_TYPE(_Name)                                     \
-    namespace dw {                                                    \
-    namespace gfx {                                                   \
-    struct _Name : BaseHandle<_Name> {                                \
-        using BaseHandle::BaseHandle;                                 \
-    };                                                                \
-    }                                                                 \
-    }                                                                 \
-    namespace std {                                                   \
-    template <> struct hash<dw::gfx::_Name> {                         \
-        using argument_type = dw::gfx::_Name;                         \
-        using result_type = std::size_t;                              \
-        result_type operator()(const argument_type& k) const {        \
-            std::hash<dw::gfx::BaseHandle<dw::gfx::_Name>> base_hash; \
-            return base_hash(k);                                      \
-        }                                                             \
-    };                                                                \
+#define DEFINE_HANDLE_TYPE(_Name)                                                                 \
+    namespace dw {                                                                                \
+    namespace gfx {                                                                               \
+    struct _Name : BaseHandle<_Name> {                                                            \
+        using BaseHandle::BaseHandle;                                                             \
+    };                                                                                            \
+    }                                                                                             \
+    }                                                                                             \
+    template <>                                                                                   \
+    struct fmt::formatter<dw::gfx::_Name> : fmt::formatter<dw::gfx::_Name::base_type> {           \
+        template <typename FormatCtx> auto format(const dw::gfx::_Name& handle, FormatCtx& ctx) { \
+            return fmt::formatter<dw::gfx::_Name::base_type>::format(                             \
+                static_cast<dw::gfx::_Name::base_type>(handle), ctx);                             \
+        }                                                                                         \
+    };                                                                                            \
+    template <> struct std::hash<dw::gfx::_Name> {                                                \
+        using argument_type = dw::gfx::_Name;                                                     \
+        using result_type = std::size_t;                                                          \
+        result_type operator()(const argument_type& k) const {                                    \
+            std::hash<dw::gfx::BaseHandle<dw::gfx::_Name>> base_hash;                             \
+            return base_hash(k);                                                                  \
+        }                                                                                         \
     }
 
-DEFINE_HANDLE_TYPE(VertexBufferHandle)
-DEFINE_HANDLE_TYPE(TransientVertexBufferHandle)
-DEFINE_HANDLE_TYPE(IndexBufferHandle)
-DEFINE_HANDLE_TYPE(TransientIndexBufferHandle)
-DEFINE_HANDLE_TYPE(ShaderHandle)
-DEFINE_HANDLE_TYPE(ProgramHandle)
-DEFINE_HANDLE_TYPE(TextureHandle)
-DEFINE_HANDLE_TYPE(FrameBufferHandle)
+DEFINE_HANDLE_TYPE(VertexBufferHandle);
+DEFINE_HANDLE_TYPE(TransientVertexBufferHandle);
+DEFINE_HANDLE_TYPE(IndexBufferHandle);
+DEFINE_HANDLE_TYPE(TransientIndexBufferHandle);
+DEFINE_HANDLE_TYPE(ShaderHandle);
+DEFINE_HANDLE_TYPE(ProgramHandle);
+DEFINE_HANDLE_TYPE(UniformBufferHandle);
+DEFINE_HANDLE_TYPE(TextureHandle);
+DEFINE_HANDLE_TYPE(FrameBufferHandle);
 
 namespace dw {
 namespace gfx {
@@ -132,10 +139,6 @@ enum class TextureFormat {
     RGBA32I,
     RGBA32U,
     RGBA32F,
-    RGBA4,
-    RGB5A1,
-    RGB10A2,
-    RG11B10F,
     // Depth formats.
     D16,
     D24,
@@ -304,6 +307,7 @@ struct CreateTexture2D {
     TextureFormat format;
     Memory data;
     bool generate_mipmaps;
+    bool framebuffer_usage;
 };
 
 struct DeleteTexture {
@@ -347,10 +351,22 @@ using UniformData = std::variant<int, float, Vec2, Vec3, Vec4, Mat3, Mat4>;
 
 // Current render state.
 struct RenderItem {
-    struct TextureBinding {
-        TextureHandle handle;
+    struct SamplerInfo {
         u32 sampler_flags;
         float max_anisotropy;
+
+        bool operator==(const SamplerInfo& other) const {
+            return sampler_flags == other.sampler_flags && max_anisotropy == other.max_anisotropy;
+        }
+    };
+
+    struct TextureBinding {
+        TextureHandle handle;
+        SamplerInfo sampler_info;
+
+        bool operator==(const TextureBinding& other) const {
+            return handle == other.handle && sampler_info == other.sampler_info;
+        }
     };
 
     // Vertices and indices.
@@ -463,6 +479,14 @@ public:
                                          const std::string& title, InputCallbacks input_callbacks,
                                          bool use_render_thread);
 
+    /// Adjusts a RH D3D projection matrix to be compatible with the underlying renderer type.
+    /// Does nothing unless init() has been called.
+    Mat4 adjustProjectionMatrix(Mat4 projection_matrix) const;
+
+    /// Returns true if viewport coordinates are from the top-left (Vulkan) rather than bottom-left
+    /// (OpenGL, D3D).
+    bool hasFlippedViewport() const;
+
     /// Create vertex buffer.
     VertexBufferHandle createVertexBuffer(Memory data, const VertexDecl& decl,
                                           BufferUsage usage = BufferUsage::Static);
@@ -510,7 +534,7 @@ public:
 
     // Create texture.
     TextureHandle createTexture2D(u16 width, u16 height, TextureFormat format, Memory data,
-                                  bool generate_mipmaps = true);
+                                  bool generate_mipmaps = true, bool framebuffer_usage = false);
     void setTexture(TextureHandle handle, uint sampler_unit,
                     u32 sampler_flags = SamplerFlag::Default, float max_anisotropy = 0.0f);
     // get texture information.
@@ -531,11 +555,15 @@ public:
     /// Returns the last created render queue.
     uint lastCreatedRenderQueue() const;
 
-    /// Causes the last created render queue to clear the framebuffer to a specific colour when processed.
-    void setRenderQueueClear(const Colour& colour, bool clear_colour = true, bool clear_depth = true);
+    /// Causes the last created render queue to clear the framebuffer to a specific colour when
+    /// processed.
+    void setRenderQueueClear(const Colour& colour, bool clear_colour = true,
+                             bool clear_depth = true);
 
-    /// Causes the current render queue to clear the framebuffer to a specific colour when processed.
-    void setRenderQueueClear(uint render_queue, const Colour& colour, bool clear_colour = true, bool clear_depth = true);
+    /// Causes the current render queue to clear the framebuffer to a specific colour when
+    /// processed.
+    void setRenderQueueClear(uint render_queue, const Colour& colour, bool clear_colour = true,
+                             bool clear_depth = true);
 
     /// Update state.
     void setStateEnable(RenderState state);
@@ -551,7 +579,8 @@ public:
     /// Scissor.
     void setScissor(u16 x, u16 y, u16 width, u16 height);
 
-    /// Update uniform and draw state, but submit no geometry. Submits to the last created render queue.
+    /// Update uniform and draw state, but submit no geometry. Submits to the last created render
+    /// queue.
     void submit(ProgramHandle program);
 
     /// Update uniform and draw state, but submit no geometry.
@@ -565,6 +594,13 @@ public:
     /// Offset is in vertices/indices depending on whether an index buffer is being used.
     void submit(uint render_queue, ProgramHandle program, uint vertex_count, uint offset = 0);
 
+    /// Update uniform and draw state, then draws a full screen quad. Submits to the last created
+    /// render queue.
+    void submitFullscreenQuad(ProgramHandle program);
+
+    /// Update uniform and draw state, then draws a full screen quad.
+    void submitFullscreenQuad(uint render_queue, ProgramHandle program);
+
     /// Render a single frame.
     bool frame();
 
@@ -576,6 +612,9 @@ public:
 
     /// Get the current backbuffer size.
     Vec2i backbufferSize() const;
+
+    /// Get the currently active renderer.
+    RendererType rendererType() const;
 
 private:
     Logger& logger_;
@@ -596,7 +635,11 @@ private:
     HandleGenerator<FrameBufferHandle> frame_buffer_handle_;
 
     // Vertex/index buffers.
-    std::unordered_map<VertexBufferHandle, VertexDecl> vertex_buffer_decl_;
+    struct VertexBufferInfo {
+        VertexDecl decl;
+        BufferUsage usage;
+    };
+    std::unordered_map<VertexBufferHandle, VertexBufferInfo> vertex_buffer_info_;
     std::unordered_map<IndexBufferHandle, IndexBufferType> index_buffer_types_;
     VertexBufferHandle transient_vb;
     uint transient_vb_max_size;
@@ -613,6 +656,9 @@ private:
 
     // Framebuffers.
     std::unordered_map<FrameBufferHandle, std::vector<TextureHandle>> frame_buffer_textures_;
+
+    // Fullscreen quad.
+    VertexBufferHandle fullscreen_quad_vb_;
 
     // Shared.
     std::atomic<bool> shared_rt_should_exit_;
@@ -639,3 +685,13 @@ private:
 };
 }  // namespace gfx
 }  // namespace dw
+
+namespace std {
+template <> struct hash<dw::gfx::RenderItem::SamplerInfo> {
+    std::size_t operator()(const dw::gfx::RenderItem::SamplerInfo& i) const {
+        std::size_t hash = 0;
+        dga::hashCombine(hash, i.sampler_flags, i.max_anisotropy);
+        return hash;
+    }
+};
+}  // namespace std

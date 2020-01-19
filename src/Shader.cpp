@@ -1,6 +1,6 @@
 /*
- * Dawn Engine
- * Written by David Avedissian (c) 2012-2019 (git@dga.dev)
+ * Dawn Graphics
+ * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
 #include "Shader.h"
 #include "Glslang.h"
@@ -163,10 +163,23 @@ tl::expected<CompiledShader, ShaderCompileError> compileGLSL(
 
     // Parse GLSL code.
     glslang::TShader shader{esh_stage};
+
     const char* shader_strings[1];
     shader_strings[0] = glsl_source_with_definitions.c_str();
     shader.setStrings(shader_strings, 1);
-    if (!shader.parse(&kDefaultTBuiltInResource, 110, false, EShMsgDefault)) {
+
+    int ClientInputSemanticsVersion = 100;  // maps to, say, #define VULKAN 100
+    glslang::EShTargetClientVersion VulkanClientVersion = glslang::EShTargetVulkan_1_0;
+    glslang::EShTargetLanguageVersion TargetVersion = glslang::EShTargetSpv_1_0;
+
+    shader.setEnvInput(glslang::EShSourceGlsl, esh_stage, glslang::EShClientVulkan,
+                       ClientInputSemanticsVersion);
+    shader.setEnvClient(glslang::EShClientVulkan, VulkanClientVersion);
+    shader.setEnvTarget(glslang::EShTargetSpv, TargetVersion);
+
+    EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
+
+    if (!shader.parse(&kDefaultTBuiltInResource, 100, false, messages)) {
         return tl::make_unexpected(
             ShaderCompileError{shader.getInfoLog(), shader.getInfoDebugLog()});
     }
@@ -174,7 +187,7 @@ tl::expected<CompiledShader, ShaderCompileError> compileGLSL(
     // Link to program.
     glslang::TProgram program;
     program.addShader(&shader);
-    if (!program.link(EShMsgDefault)) {
+    if (!program.link(messages)) {
         return tl::make_unexpected(
             ShaderCompileError{program.getInfoLog(), program.getInfoDebugLog()});
     }

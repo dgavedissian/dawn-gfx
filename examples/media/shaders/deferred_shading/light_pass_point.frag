@@ -1,4 +1,4 @@
-#version 330 core
+#version 450 core
 
 layout(location = 0) out vec4 out_colour;
 
@@ -8,18 +8,20 @@ gb0: |diffuse.rgb|X|
 gb1: |position.xyz|X|
 gb2: |normal.xyz|X|
 */
-uniform sampler2D gb0_texture;
-uniform sampler2D gb1_texture;
-uniform sampler2D gb2_texture;
-uniform vec2 screen_size;
+layout(binding = 1) uniform sampler2D gb0_texture;
+layout(binding = 2) uniform sampler2D gb1_texture;
+layout(binding = 3) uniform sampler2D gb2_texture;
 
-uniform vec3 light_position;
-uniform vec3 light_colour;
-uniform float linear_term;
-uniform float quadratic_term;
+layout(binding = 4) uniform PerSubmit {
+    vec2 screen_size;
 
-void main()
-{
+    vec3 light_position;
+    vec3 light_colour;
+    float linear_term;
+    float quadratic_term;
+};
+
+void main() {
     vec2 screen_coord = gl_FragCoord.xy / screen_size;
 
     vec3 diffuse_colour = texture(gb0_texture, screen_coord).rgb;

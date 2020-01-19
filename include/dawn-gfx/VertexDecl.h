@@ -9,6 +9,8 @@
 #include <utility>
 #include <cstddef>
 
+#include <dga/hash_combine.h>
+
 namespace dw {
 namespace gfx {
 // Vertex Declaration.
@@ -22,13 +24,18 @@ public:
     ~VertexDecl() = default;
 
     VertexDecl& begin();
+    // TODO: Combine type, count and normalised, so it's a compiler error if the user gets these wrong.
+    // TODO: Alternatively, combine type and normalised, and make count an enum.
     VertexDecl& add(Attribute attribute, usize count, AttributeType type, bool normalised = false);
     VertexDecl& end();
+
+    bool operator==(const VertexDecl& other) const;
+    bool operator!=(const VertexDecl& other) const;
 
     u16 stride() const;
     bool empty() const;
 
-private:
+    // TODO: Remove this weird encoding magic. Not sure why it's like this.
     static u16 encodeAttributes(Attribute attribute, usize count, AttributeType type,
                                 bool normalised);
     static void decodeAttributes(u16 encoded_attribute, Attribute& attribute, usize& count,
@@ -41,10 +48,17 @@ private:
     // Normalised: 1
     std::vector<std::pair<u16, byte*>> attributes_;
     u16 stride_;
-
-    friend class Renderer;
-    friend class GLRenderContext;
 };
 }  // namespace gfx
 }  // namespace dw
 
+template <> struct std::hash<dw::gfx::VertexDecl> {
+    std::size_t operator()(const dw::gfx::VertexDecl& decl) const {
+        std::size_t hash = 0;
+        dga::hashCombine(hash, decl.stride_);
+        for (const auto& entry : decl.attributes_) {
+            dga::hashCombine(hash, entry.first, entry.second);
+        }
+        return hash;
+    }
+};

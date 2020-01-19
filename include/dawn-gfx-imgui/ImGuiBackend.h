@@ -1,6 +1,6 @@
 /*
- * Dawn Engine
- * Written by David Avedissian (c) 2012-2019 (git@dga.dev)
+ * Dawn Graphics
+ * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
 #pragma once
 
@@ -82,15 +82,17 @@ ImGuiBackend::ImGuiBackend(Renderer& r, ImGuiIO& io) : r_(r), io_(io) {
 
     // Create shader.
     auto compiled_vs_result = compileGLSL(ShaderStage::Vertex, R"(
-        #version 330 core
+        #version 450 core
 
         layout(location = 0) in vec2 in_position;
         layout(location = 1) in vec2 in_texcoord;
         layout(location = 2) in vec4 in_colour;
 
-        uniform mat4 proj_matrix;
+        layout(binding = 0) uniform PerFrame {
+            mat4 proj_matrix;
+        };
 
-        out VertexData {
+        layout(location = 0) out VertexData {
             vec2 texcoord;
             vec4 colour;
         } o;
@@ -107,14 +109,14 @@ ImGuiBackend::ImGuiBackend(Renderer& r, ImGuiIO& io) : r_(r), io_(io) {
                                  compiled_vs_result.error().compile_error);
     }
     auto compiled_fs_result = compileGLSL(ShaderStage::Fragment, R"(
-        #version 330 core
+        #version 450 core
 
-        in VertexData {
+        layout(location = 0) in VertexData {
             vec2 texcoord;
             vec4 colour;
         } i;
 
-        uniform sampler2D ui_texture;
+        layout(binding = 1) uniform sampler2D ui_texture;
 
         layout(location = 0) out vec4 out_colour;
 
@@ -137,9 +139,6 @@ ImGuiBackend::ImGuiBackend(Renderer& r, ImGuiIO& io) : r_(r), io_(io) {
     r_.linkProgram(shader_program_);
     r_.deleteShader(vs);
     r_.deleteShader(fs);
-
-    // Set UI texture unit.
-    r_.setUniform("ui_texture", 0);
     r_.submit(shader_program_);
 }
 

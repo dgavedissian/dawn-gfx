@@ -1,6 +1,6 @@
 /*
- * Dawn Engine
- * Written by David Avedissian (c) 2012-2019 (git@dga.dev)
+ * Dawn Graphics
+ * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
 #pragma once
 
@@ -12,8 +12,15 @@ namespace dw {
 namespace gfx {
 class RenderContext {
 public:
-    RenderContext(Logger& logger) : logger_{logger} {}
+    RenderContext(Logger& logger) : logger_{logger} {
+    }
     virtual ~RenderContext() = default;
+
+    virtual RendererType type() const = 0;
+
+    // Capabilities / customisations.
+    virtual Mat4 adjustProjectionMatrix(Mat4 projection_matrix) const = 0;
+    virtual bool hasFlippedViewport() const = 0;
 
     // Window management. Executed on the main thread.
     virtual tl::expected<void, std::string> createWindow(u16 width, u16 height,
@@ -24,16 +31,17 @@ public:
     virtual bool isWindowClosed() const = 0;
     virtual Vec2i windowSize() const = 0;
     virtual Vec2 windowScale() const = 0;
-    virtual Vec2i backbufferSize() const = 0;
+    virtual Vec2i framebufferSize() const = 0;
 
     // Command buffer processing. Executed on the render thread.
     virtual void startRendering() = 0;
     virtual void stopRendering() = 0;
+    virtual void prepareFrame() = 0;
     virtual void processCommandList(std::vector<RenderCommand>& command_list) = 0;
     virtual bool frame(const Frame* frame) = 0;
 
 protected:
     Logger& logger_;
 };
-}
+}  // namespace gfx
 }  // namespace dw

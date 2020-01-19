@@ -1,6 +1,6 @@
 /*
- * Dawn Engine
- * Written by David Avedissian (c) 2012-2019 (git@dga.dev)
+ * Dawn Graphics
+ * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
 #include "Common.h"
 
@@ -11,9 +11,10 @@ public:
 
     void start() override {
         // Load shaders.
-        auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("shaders/basic_colour.vs"));
+        auto vs =
+            util::loadShader(r, ShaderStage::Vertex, util::media("shaders/basic_colour.vert"));
         auto fs =
-            util::loadShader(r, ShaderStage::Fragment, util::media("shaders/basic_colour.fs"));
+            util::loadShader(r, ShaderStage::Fragment, util::media("shaders/basic_colour.frag"));
         program_ = r.createProgram();
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);

@@ -13,25 +13,33 @@
 
 namespace dw {
 namespace gfx {
-class GLSamplerCache {
+class SamplerCacheGL {
 public:
     void setMaxSupportedAnisotropy(float max_supported_anisotropy);
 
     // Find a sampler object given a set of sampler flags. If the object does not exist, create it.
-    GLuint findOrCreate(u32 sampler_flags, float max_anisotropy);
+    GLuint findOrCreate(RenderItem::SamplerInfo info);
 
     // Clear the cache.
     void clear();
 
 private:
-    std::unordered_map<std::size_t, GLuint> cache_;
+    std::unordered_map<RenderItem::SamplerInfo, GLuint> cache_;
     float max_supported_anisotropy_;
 };
 
-class GLRenderContext : public RenderContext {
+class RenderContextGL : public RenderContext {
 public:
-    explicit GLRenderContext(Logger& logger);
-    ~GLRenderContext() override;
+    explicit RenderContextGL(Logger& logger);
+    ~RenderContextGL() override;
+
+    RendererType type() const override {
+        return RendererType::Null;
+    }
+
+    // Capabilities / customisations.
+    Mat4 adjustProjectionMatrix(Mat4 projection_matrix) const override;
+    bool hasFlippedViewport() const override;
 
     // Window management. Executed on the main thread.
     tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title,
@@ -41,11 +49,12 @@ public:
     bool isWindowClosed() const override;
     Vec2i windowSize() const override;
     Vec2 windowScale() const override;
-    Vec2i backbufferSize() const override;
+    Vec2i framebufferSize() const override;
 
     // Command buffer processing. Executed on the render thread.
     void startRendering() override;
     void stopRendering() override;
+    void prepareFrame() override;
     void processCommandList(std::vector<RenderCommand>& command_list) override;
     bool frame(const Frame* frame) override;
 
@@ -106,16 +115,25 @@ private:
     std::unordered_map<IndexBufferHandle, IndexBufferData> index_buffer_map_;
 
     // Shaders and programs.
+    struct ShaderData {
+        GLuint shader;
+        std::unordered_map<std::string, u32> uniform_remap_ids;
+    };
     struct ProgramData {
         GLuint program;
         std::unordered_map<std::string, GLint> uniform_location_map;
+        std::unordered_map<std::string, u32> uniform_remap_ids;
     };
-    std::unordered_map<ShaderHandle, GLuint> shader_map_;
+    std::unordered_map<ShaderHandle, ShaderData> shader_map_;
     std::unordered_map<ProgramHandle, ProgramData> program_map_;
 
     // Textures.
-    std::unordered_map<TextureHandle, GLuint> texture_map_;
-    GLSamplerCache sampler_cache_;
+    struct TextureData {
+        GLuint texture;
+        bool has_mip_maps;
+    };
+    std::unordered_map<TextureHandle, TextureData> texture_map_;
+    SamplerCacheGL sampler_cache_;
 
     // Frame buffers.
     struct FrameBufferData {

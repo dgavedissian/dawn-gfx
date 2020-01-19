@@ -69,5 +69,13 @@ u16 VertexDecl::attributeTypeSize(AttributeType type) {
             return 0;
     }
 }
+
+bool VertexDecl::operator==(const VertexDecl& other) const {
+    return stride_ == other.stride_ && attributes_ == other.attributes_;
+}
+
+bool VertexDecl::operator!=(const VertexDecl& other) const {
+    return stride_ != other.stride_ || attributes_ != other.attributes_;
+}
 }  // namespace gfx
 }  // namespace dw

@@ -4,8 +4,10 @@
  */
 #include "Base.h"
 #include "Renderer.h"
-#include "gl/GLRenderContext.h"
-#include "null/NullRenderContext.h"
+
+#include "gl/RenderContextGL.h"
+#include "null/RenderContextNull.h"
+#include "vulkan/RenderContextVK.h"
 
 namespace dw {
 namespace gfx {
@@ -60,6 +62,9 @@ Renderer::~Renderer() {
             render_thread_.join();
         }
     }
+
+    // Delete renderer.
+    shared_render_context_.reset();
 }
 
 tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16 height,
@@ -93,15 +98,15 @@ tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16
     switch (type) {
         case RendererType::Null:
             logger_.info("Using Null renderer.");
-            shared_render_context_ = std::make_unique<NullRenderContext>(logger_);
+            shared_render_context_ = std::make_unique<RenderContextNull>(logger_);
             break;
         case RendererType::OpenGL:
             logger_.info("Using OpenGL renderer.");
-            shared_render_context_ = std::make_unique<GLRenderContext>(logger_);
+            shared_render_context_ = std::make_unique<RenderContextGL>(logger_);
             break;
         case RendererType::Vulkan:
-            logger_.error("Vulkan renderer unimplemented. Falling back to OpenGL.");
-            shared_render_context_ = std::make_unique<GLRenderContext>(logger_);
+            logger_.info("Using Vulkan renderer.");
+            shared_render_context_ = std::make_unique<RenderContextVK>(logger_);
             break;
     }
     auto window_result =
@@ -115,7 +120,47 @@ tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16
     } else {
         shared_render_context_->startRendering();
     }
+
+    // Create fullscreen quad object.
+    // clang-format off
+    float flipped_vertices[] = {
+        // Position | UV
+        3.0f,  1.0f, 2.0f, 0.0f,
+        -1.0f, 1.0f, 0.0f, 0.0f,
+        -1.0f, -3.0f, 0.0f, 2.0f
+    };
+    float non_flipped_vertices[] = {
+        // Position | UV
+        -1.0f, -1.0f, 0.0f, 0.0f,
+        3.0f,  -1.0f, 2.0f, 0.0f,
+        -1.0f, 3.0f, 0.0f, 2.0f
+    };
+    // clang-format on
+    VertexDecl decl;
+    decl.begin()
+        .add(VertexDecl::Attribute::Position, 2, VertexDecl::AttributeType::Float)
+        .add(VertexDecl::Attribute::TexCoord0, 2, VertexDecl::AttributeType::Float)
+        .end();
+    fullscreen_quad_vb_ =
+        createVertexBuffer(Memory(hasFlippedViewport() ? flipped_vertices : non_flipped_vertices,
+                                  sizeof(flipped_vertices)),
+                           decl);
+
     return {};
+}
+
+Mat4 Renderer::adjustProjectionMatrix(Mat4 projection_matrix) const {
+    if (shared_render_context_) {
+        return shared_render_context_->adjustProjectionMatrix(projection_matrix);
+    }
+    return projection_matrix;
+}
+
+bool Renderer::hasFlippedViewport() const {
+    if (shared_render_context_) {
+        return shared_render_context_->hasFlippedViewport();
+    }
+    return false;
 }
 
 VertexBufferHandle Renderer::createVertexBuffer(Memory data, const VertexDecl& decl,
@@ -124,7 +169,7 @@ VertexBufferHandle Renderer::createVertexBuffer(Memory data, const VertexDecl& d
     auto handle = vertex_buffer_handle_.next();
     uint data_size = data.size();
     submitPreFrameCommand(cmd::CreateVertexBuffer{handle, std::move(data), data_size, decl, usage});
-    vertex_buffer_decl_[handle] = decl;
+    vertex_buffer_info_[handle] = VertexBufferInfo{decl, usage};
     return handle;
 }
 
@@ -135,7 +180,16 @@ void Renderer::setVertexBuffer(VertexBufferHandle handle) {
 }
 
 void Renderer::updateVertexBuffer(VertexBufferHandle handle, Memory data, uint offset) {
-    // TODO: Validate data.
+    auto vbd = vertex_buffer_info_.find(handle);
+    if (vbd == vertex_buffer_info_.end()) {
+        logger_.error("Vertex buffer handle {} invalid.", static_cast<u32>(handle));
+        return;
+    }
+    if (vbd->second.usage == BufferUsage::Static) {
+        logger_.error("Attempted to update a static vertex buffer {}, skipping.",
+                      static_cast<u32>(handle));
+        return;
+    }
     submitPreFrameCommand(cmd::UpdateVertexBuffer{handle, std::move(data), offset});
 
 #ifdef DW_DEBUG
@@ -303,15 +357,22 @@ void Renderer::setUniform(const std::string& uniform_name, const Mat4& value) {
 }
 
 void Renderer::setUniform(const std::string& uniform_name, UniformData data) {
+    // MathGeoLib stores matrices in row-major order, but render contexts expect matrices in
+    // column-major order.
+    if (Mat3* mat3_data = std::get_if<Mat3>(&data)) {
+        mat3_data->Transpose();
+    } else if (Mat4* mat4_data = std::get_if<Mat4>(&data)) {
+        mat4_data->Transpose();
+    }
     submit_->pending_item.uniforms[uniform_name] = data;
 }
 
 TextureHandle Renderer::createTexture2D(u16 width, u16 height, TextureFormat format, Memory data,
-                                        bool generate_mipmaps) {
+                                        bool generate_mipmaps, bool framebuffer_usage) {
     auto handle = texture_handle_.next();
     texture_data_[handle] = {width, height, format};
-    submitPreFrameCommand(
-        cmd::CreateTexture2D{handle, width, height, format, std::move(data), generate_mipmaps});
+    submitPreFrameCommand(cmd::CreateTexture2D{handle, width, height, format, std::move(data),
+                                               generate_mipmaps, framebuffer_usage});
     return handle;
 }
 
@@ -329,7 +390,7 @@ void Renderer::deleteTexture(TextureHandle handle) {
 
 FrameBufferHandle Renderer::createFrameBuffer(u16 width, u16 height, TextureFormat format) {
     auto handle = frame_buffer_handle_.next();
-    auto texture_handle = createTexture2D(width, height, format, Memory());
+    auto texture_handle = createTexture2D(width, height, format, Memory(), false, true);
     frame_buffer_textures_[handle] = {texture_handle};
     submitPreFrameCommand(cmd::CreateFrameBuffer{handle, width, height, {texture_handle}});
     return handle;
@@ -470,7 +531,7 @@ void Renderer::submit(uint render_queue, ProgramHandle program, uint vertex_coun
             IndexBufferType type = index_buffer_types_.at(*item.ib);
             item.ib_offset += offset * (type == IndexBufferType::U16 ? sizeof(u16) : sizeof(u32));
         } else if (item.vb.has_value()) {
-            const VertexDecl& decl = vertex_buffer_decl_.at(*item.vb);
+            const VertexDecl& decl = vertex_buffer_info_.at(*item.vb).decl;
             item.vb_offset += offset * decl.stride();
         } else {
             logger_.error("Submitted item with no vertex or index buffer bound.");
@@ -480,6 +541,17 @@ void Renderer::submit(uint render_queue, ProgramHandle program, uint vertex_coun
     // Move the "pending" render item to the specified render queue.
     submit_->render_queues[render_queue].render_items.emplace_back(std::move(item));
     item = RenderItem();
+}
+
+void Renderer::submitFullscreenQuad(ProgramHandle program) {
+    submitFullscreenQuad(lastCreatedRenderQueue(), program);
+}
+
+void Renderer::submitFullscreenQuad(uint render_queue, ProgramHandle program) {
+    setVertexBuffer(fullscreen_quad_vb_);
+    submit_->pending_item.ib.reset();
+    submit_->pending_item.ib_offset = 0;
+    submit(render_queue, program, 3, 0);
 }
 
 bool Renderer::frame() {
@@ -530,7 +602,7 @@ Vec2 Renderer::windowScale() const {
 }
 
 Vec2i Renderer::backbufferSize() const {
-    return shared_render_context_->backbufferSize();
+    return shared_render_context_->framebufferSize();
 }
 
 void Renderer::submitPreFrameCommand(RenderCommand command) {
@@ -577,6 +649,7 @@ void Renderer::renderThread() {
 
 bool Renderer::renderFrame(Frame* frame) {
     // Hand off commands to the render context.
+    shared_render_context_->prepareFrame();
     shared_render_context_->processCommandList(frame->commands_pre);
     if (!shared_render_context_->frame(frame)) {
         return false;
@@ -586,6 +659,10 @@ bool Renderer::renderFrame(Frame* frame) {
     // Clear the frame state.
     frame->clear();
     return true;
+}
+
+RendererType Renderer::rendererType() const {
+    return shared_render_context_->type();
 }
 }  // namespace gfx
 }  // namespace dw

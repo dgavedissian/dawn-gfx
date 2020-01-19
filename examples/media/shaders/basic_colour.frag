@@ -1,12 +1,11 @@
-#version 330 core
+#version 450 core
 
-in VertexData {
+layout(location = 0) in VertexData {
     vec3 colour;
 } i;
 
 layout(location = 0) out vec4 out_colour;
 
-void main()
-{
+void main() {
     out_colour = vec4(i.colour, 1.0);
 }

@@ -4,7 +4,7 @@
  */
 #include "Base.h"
 #include "SPIRV.h"
-#include "gl/GLRenderContext.h"
+#include "gl/RenderContextGL.h"
 #include "Input.h"
 
 #include <dga/string_algorithms.h>
@@ -12,13 +12,14 @@
 #include <locale>
 #include <exception>
 #include <codecvt>
+#include <map>
 
 /**
- * GLRenderContext. A render context implementation which targets GL 4.0 on desktop platforms,
+ * RenderContextGL. A render context implementation which targets GL
+#define DW_GL_410 1 4.0 on desktop platforms,
  * and WebGL 2 on HTML5.
  */
 
-#define DW_GL_410 1
 #define DW_GLES_300 2
 
 #ifndef DGA_EMSCRIPTEN
@@ -88,8 +89,8 @@ void GLAPIENTRY debugMessageCallback(GLenum source, GLenum type, GLuint id, GLen
     if (type == GL_DEBUG_TYPE_ERROR) {
         logger.debug("GL error: severity = {:#x}, message = {}", severity, message_str);
     } else {
-        logger.debug("GL message: type = {:#x}, severity = {:#x}, message = {}", type, severity,
-                     message_str);
+        // logger.debug("GL message: type = {:#x}, severity = {:#x}, message = {}", type, severity,
+        //             message_str);
     }
 }
 
@@ -108,81 +109,75 @@ GLenum mapBufferUsage(BufferUsage usage) {
     }
 }
 
-// GL TextureFormatInfo.
-struct TextureFormatInfo {
+struct TextureFormatGL {
     GLenum internal_format;
     GLenum internal_format_srgb;
     GLenum format;
     GLenum type;
     bool supported;
 };
-
 // clang-format off
-TextureFormatInfo s_texture_format[] = {
-    {GL_ALPHA,              GL_ZERO,         GL_ALPHA,            GL_UNSIGNED_BYTE,                false}, // A8
-    {GL_R8,                 GL_ZERO,         GL_RED,              GL_UNSIGNED_BYTE,                false}, // R8
-    {GL_R8I,                GL_ZERO,         GL_RED,              GL_BYTE,                         false}, // R8I
-    {GL_R8UI,               GL_ZERO,         GL_RED,              GL_UNSIGNED_BYTE,                false}, // R8U
-    {GL_R8_SNORM,           GL_ZERO,         GL_RED,              GL_BYTE,                         false}, // R8S
-    {GL_R16,                GL_ZERO,         GL_RED,              GL_UNSIGNED_SHORT,               false}, // R16
-    {GL_R16I,               GL_ZERO,         GL_RED,              GL_SHORT,                        false}, // R16I
-    {GL_R16UI,              GL_ZERO,         GL_RED,              GL_UNSIGNED_SHORT,               false}, // R16U
-    {GL_R16F,               GL_ZERO,         GL_RED,              GL_HALF_FLOAT,                   false}, // R16F
-    {GL_R16_SNORM,          GL_ZERO,         GL_RED,              GL_SHORT,                        false}, // R16S
-    {GL_R32I,               GL_ZERO,         GL_RED,              GL_INT,                          false}, // R32I
-    {GL_R32UI,              GL_ZERO,         GL_RED,              GL_UNSIGNED_INT,                 false}, // R32U
-    {GL_R32F,               GL_ZERO,         GL_RED,              GL_FLOAT,                        false}, // R32F
-    {GL_RG8,                GL_ZERO,         GL_RG,               GL_UNSIGNED_BYTE,                false}, // RG8
-    {GL_RG8I,               GL_ZERO,         GL_RG,               GL_BYTE,                         false}, // RG8I
-    {GL_RG8UI,              GL_ZERO,         GL_RG,               GL_UNSIGNED_BYTE,                false}, // RG8U
-    {GL_RG8_SNORM,          GL_ZERO,         GL_RG,               GL_BYTE,                         false}, // RG8S
-    {GL_RG16,               GL_ZERO,         GL_RG,               GL_UNSIGNED_SHORT,               false}, // RG16
-    {GL_RG16I,              GL_ZERO,         GL_RG,               GL_SHORT,                        false}, // RG16I
-    {GL_RG16UI,             GL_ZERO,         GL_RG,               GL_UNSIGNED_SHORT,               false}, // RG16U
-    {GL_RG16F,              GL_ZERO,         GL_RG,               GL_FLOAT,                        false}, // RG16F
-    {GL_RG16_SNORM,         GL_ZERO,         GL_RG,               GL_SHORT,                        false}, // RG16S
-    {GL_RG32I,              GL_ZERO,         GL_RG,               GL_INT,                          false}, // RG32I
-    {GL_RG32UI,             GL_ZERO,         GL_RG,               GL_UNSIGNED_INT,                 false}, // RG32U
-    {GL_RG32F,              GL_ZERO,         GL_RG,               GL_FLOAT,                        false}, // RG32F
-    {GL_RGB8,               GL_SRGB8,        GL_RGB,              GL_UNSIGNED_BYTE,                false}, // RGB8
-    {GL_RGB8I,              GL_ZERO,         GL_RGB,              GL_BYTE,                         false}, // RGB8I
-    {GL_RGB8UI,             GL_ZERO,         GL_RGB,              GL_UNSIGNED_BYTE,                false}, // RGB8U
-    {GL_RGB8_SNORM,         GL_ZERO,         GL_RGB,              GL_BYTE,                         false}, // RGB8S
-    {GL_RGBA8,              GL_SRGB8_ALPHA8, GL_BGRA,             GL_UNSIGNED_BYTE,                false}, // BGRA8
-    {GL_RGBA8,              GL_SRGB8_ALPHA8, GL_RGBA,             GL_UNSIGNED_BYTE,                false}, // RGBA8
-    {GL_RGBA8I,             GL_ZERO,         GL_RGBA,             GL_BYTE,                         false}, // RGBA8I
-    {GL_RGBA8UI,            GL_ZERO,         GL_RGBA,             GL_UNSIGNED_BYTE,                false}, // RGBA8U
-    {GL_RGBA8_SNORM,        GL_ZERO,         GL_RGBA,             GL_BYTE,                         false}, // RGBA8S
-    {GL_RGBA16,             GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT,               false}, // RGBA16
-    {GL_RGBA16I,            GL_ZERO,         GL_RGBA,             GL_SHORT,                        false}, // RGBA16I
-    {GL_RGBA16UI,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT,               false}, // RGBA16U
-    {GL_RGBA16F,            GL_ZERO,         GL_RGBA,             GL_HALF_FLOAT,                   false}, // RGBA16F
-    {GL_RGBA16_SNORM,       GL_ZERO,         GL_RGBA,             GL_SHORT,                        false}, // RGBA16S
-    {GL_RGBA32I,            GL_ZERO,         GL_RGBA,             GL_INT,                          false}, // RGBA32I
-    {GL_RGBA32UI,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_INT,                 false}, // RGBA32U
-    {GL_RGBA32F,            GL_ZERO,         GL_RGBA,             GL_FLOAT,                        false}, // RGBA32F
-    {GL_RGBA4,              GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT_4_4_4_4_REV,   false}, // RGBA4
-    {GL_RGB5_A1,            GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT_1_5_5_5_REV,   false}, // RGB5A1
-    {GL_RGB10_A2,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_INT_2_10_10_10_REV,  false}, // RGB10A2
-    {GL_R11F_G11F_B10F,     GL_ZERO,         GL_RGB,              GL_UNSIGNED_INT_10F_11F_11F_REV, false}, // RG11B10F
-    {GL_DEPTH_COMPONENT16,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_SHORT,               false}, // D16
-    {GL_DEPTH_COMPONENT24,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_INT,                 false}, // D24
-    {GL_DEPTH24_STENCIL8,   GL_ZERO,         GL_DEPTH_STENCIL,    GL_UNSIGNED_INT_24_8,            false}, // D24S8
-    {GL_DEPTH_COMPONENT32,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_INT,                 false}, // D32
-    {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,                        false}, // D16F
-    {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,                        false}, // D24F
-    {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,                        false}, // D32F
-    {GL_STENCIL_INDEX8,     GL_ZERO,         GL_STENCIL_INDEX,    GL_UNSIGNED_BYTE,                false}, // D0S8
-};
+const std::array<TextureFormatGL, usize(TextureFormat::Count)> kTextureFormatMap = {{
+    {GL_ALPHA,              GL_ZERO,         GL_ALPHA,            GL_UNSIGNED_BYTE,     false}, // A8
+    {GL_R8,                 GL_ZERO,         GL_RED,              GL_UNSIGNED_BYTE,     false}, // R8
+    {GL_R8I,                GL_ZERO,         GL_RED,              GL_BYTE,              false}, // R8I
+    {GL_R8UI,               GL_ZERO,         GL_RED,              GL_UNSIGNED_BYTE,     false}, // R8U
+    {GL_R8_SNORM,           GL_ZERO,         GL_RED,              GL_BYTE,              false}, // R8S
+    {GL_R16,                GL_ZERO,         GL_RED,              GL_UNSIGNED_SHORT,    false}, // R16
+    {GL_R16I,               GL_ZERO,         GL_RED,              GL_SHORT,             false}, // R16I
+    {GL_R16UI,              GL_ZERO,         GL_RED,              GL_UNSIGNED_SHORT,    false}, // R16U
+    {GL_R16F,               GL_ZERO,         GL_RED,              GL_HALF_FLOAT,        false}, // R16F
+    {GL_R16_SNORM,          GL_ZERO,         GL_RED,              GL_SHORT,             false}, // R16S
+    {GL_R32I,               GL_ZERO,         GL_RED,              GL_INT,               false}, // R32I
+    {GL_R32UI,              GL_ZERO,         GL_RED,              GL_UNSIGNED_INT,      false}, // R32U
+    {GL_R32F,               GL_ZERO,         GL_RED,              GL_FLOAT,             false}, // R32F
+    {GL_RG8,                GL_ZERO,         GL_RG,               GL_UNSIGNED_BYTE,     false}, // RG8
+    {GL_RG8I,               GL_ZERO,         GL_RG,               GL_BYTE,              false}, // RG8I
+    {GL_RG8UI,              GL_ZERO,         GL_RG,               GL_UNSIGNED_BYTE,     false}, // RG8U
+    {GL_RG8_SNORM,          GL_ZERO,         GL_RG,               GL_BYTE,              false}, // RG8S
+    {GL_RG16,               GL_ZERO,         GL_RG,               GL_UNSIGNED_SHORT,    false}, // RG16
+    {GL_RG16I,              GL_ZERO,         GL_RG,               GL_SHORT,             false}, // RG16I
+    {GL_RG16UI,             GL_ZERO,         GL_RG,               GL_UNSIGNED_SHORT,    false}, // RG16U
+    {GL_RG16F,              GL_ZERO,         GL_RG,               GL_FLOAT,             false}, // RG16F
+    {GL_RG16_SNORM,         GL_ZERO,         GL_RG,               GL_SHORT,             false}, // RG16S
+    {GL_RG32I,              GL_ZERO,         GL_RG,               GL_INT,               false}, // RG32I
+    {GL_RG32UI,             GL_ZERO,         GL_RG,               GL_UNSIGNED_INT,      false}, // RG32U
+    {GL_RG32F,              GL_ZERO,         GL_RG,               GL_FLOAT,             false}, // RG32F
+    {GL_RGB8,               GL_SRGB8,        GL_RGB,              GL_UNSIGNED_BYTE,     false}, // RGB8
+    {GL_RGB8I,              GL_ZERO,         GL_RGB,              GL_BYTE,              false}, // RGB8I
+    {GL_RGB8UI,             GL_ZERO,         GL_RGB,              GL_UNSIGNED_BYTE,     false}, // RGB8U
+    {GL_RGB8_SNORM,         GL_ZERO,         GL_RGB,              GL_BYTE,              false}, // RGB8S
+    {GL_RGBA8,              GL_SRGB8_ALPHA8, GL_BGRA,             GL_UNSIGNED_BYTE,     false}, // BGRA8
+    {GL_RGBA8,              GL_SRGB8_ALPHA8, GL_RGBA,             GL_UNSIGNED_BYTE,     false}, // RGBA8
+    {GL_RGBA8I,             GL_ZERO,         GL_RGBA,             GL_BYTE,              false}, // RGBA8I
+    {GL_RGBA8UI,            GL_ZERO,         GL_RGBA,             GL_UNSIGNED_BYTE,     false}, // RGBA8U
+    {GL_RGBA8_SNORM,        GL_ZERO,         GL_RGBA,             GL_BYTE,              false}, // RGBA8S
+    {GL_RGBA16,             GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT,    false}, // RGBA16
+    {GL_RGBA16I,            GL_ZERO,         GL_RGBA,             GL_SHORT,             false}, // RGBA16I
+    {GL_RGBA16UI,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_SHORT,    false}, // RGBA16U
+    {GL_RGBA16F,            GL_ZERO,         GL_RGBA,             GL_HALF_FLOAT,        false}, // RGBA16F
+    {GL_RGBA16_SNORM,       GL_ZERO,         GL_RGBA,             GL_SHORT,             false}, // RGBA16S
+    {GL_RGBA32I,            GL_ZERO,         GL_RGBA,             GL_INT,               false}, // RGBA32I
+    {GL_RGBA32UI,           GL_ZERO,         GL_RGBA,             GL_UNSIGNED_INT,      false}, // RGBA32U
+    {GL_RGBA32F,            GL_ZERO,         GL_RGBA,             GL_FLOAT,             false}, // RGBA32F
+    {GL_DEPTH_COMPONENT16,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_SHORT,    false}, // D16
+    {GL_DEPTH_COMPONENT24,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_INT,      false}, // D24
+    {GL_DEPTH24_STENCIL8,   GL_ZERO,         GL_DEPTH_STENCIL,    GL_UNSIGNED_INT_24_8, false}, // D24S8
+    {GL_DEPTH_COMPONENT32,  GL_ZERO,         GL_DEPTH_COMPONENT,  GL_UNSIGNED_INT,      false}, // D32
+    {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,             false}, // D16F
+    {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,             false}, // D24F
+    {GL_DEPTH_COMPONENT32F, GL_ZERO,         GL_DEPTH_COMPONENT,  GL_FLOAT,             false}, // D32F
+    {GL_STENCIL_INDEX8,     GL_ZERO,         GL_STENCIL_INDEX,    GL_UNSIGNED_BYTE,     false}, // D0S8
+}};
 
-std::unordered_map<BlendEquation, GLenum> s_blend_equation_map = {
+const std::unordered_map<BlendEquation, GLenum> kBlendEquationMap = {
     {BlendEquation::Add, GL_FUNC_ADD},
     {BlendEquation::Subtract, GL_FUNC_SUBTRACT},
     {BlendEquation::ReverseSubtract, GL_FUNC_REVERSE_SUBTRACT},
     {BlendEquation::Min, GL_MIN},
     {BlendEquation::Max, GL_MAX}
 };
-std::unordered_map<BlendFunc, GLenum> s_blend_func_map = {
+const std::unordered_map<BlendFunc, GLenum> kBlendFuncMap = {
     {BlendFunc::Zero, GL_ZERO},
     {BlendFunc::One, GL_ONE},
     {BlendFunc::SrcColor, GL_SRC_COLOR},
@@ -201,7 +196,7 @@ std::unordered_map<BlendFunc, GLenum> s_blend_func_map = {
 };
 
 // GLFW key map.
-std::unordered_map<int, Key::Enum> s_key_map = {
+const std::unordered_map<int, Key::Enum> kGlfwKeyMap = {
     {GLFW_KEY_SPACE, Key::Space},
     {GLFW_KEY_APOSTROPHE, Key::Apostrophe},
     {GLFW_KEY_COMMA, Key::Comma},
@@ -316,7 +311,7 @@ std::unordered_map<int, MouseButton::Enum> s_mouse_button_map = {
 };
 // clang-format on
 static_assert(static_cast<int>(TextureFormat::Count) ==
-                  sizeof(s_texture_format) / sizeof(s_texture_format[0]),
+                  sizeof(kTextureFormatMap) / sizeof(kTextureFormatMap[0]),
               "Texture format mapping mismatch.");
 
 // Uniform binder.
@@ -346,11 +341,11 @@ public:
     }
 
     void operator()(const Mat3& value) {
-        GL_CHECK(glUniformMatrix3fv(uniform_location_, 1, GL_TRUE, value.ptr()));
+        GL_CHECK(glUniformMatrix3fv(uniform_location_, 1, GL_FALSE, value.ptr()));
     }
 
     void operator()(const Mat4& value) {
-        GL_CHECK(glUniformMatrix4fv(uniform_location_, 1, GL_TRUE, value.ptr()));
+        GL_CHECK(glUniformMatrix4fv(uniform_location_, 1, GL_FALSE, value.ptr()));
     }
 
     void updateUniform(GLint location, const UniformData& data) {
@@ -366,21 +361,12 @@ private:
 int last_error_code = 0;
 std::string last_error_description;
 
-template <class T> inline void hash_combine(std::size_t& seed, const T& v) {
-    std::hash<T> hasher;
-    seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-}
-
-void GLSamplerCache::setMaxSupportedAnisotropy(float max_anisotropy) {
+void SamplerCacheGL::setMaxSupportedAnisotropy(float max_anisotropy) {
     max_supported_anisotropy_ = max_anisotropy;
 }
 
-GLuint GLSamplerCache::findOrCreate(u32 sampler_flags, float max_anisotropy) {
-    std::size_t hash = 0;
-    hash_combine(hash, sampler_flags);
-    hash_combine(hash, max_anisotropy);
-
-    auto it = cache_.find(hash);
+GLuint SamplerCacheGL::findOrCreate(RenderItem::SamplerInfo info) {
+    auto it = cache_.find(info);
     if (it != cache_.end()) {
         return it->second;
     }
@@ -391,21 +377,26 @@ GLuint GLSamplerCache::findOrCreate(u32 sampler_flags, float max_anisotropy) {
     const std::unordered_map<u32, GLuint> wrapping_mode_map = {
         {0b01, GL_REPEAT}, {0b10, GL_MIRRORED_REPEAT}, {0b11, GL_CLAMP_TO_EDGE}};
     const std::unordered_map<u32, GLuint> mag_filter_map = {{0b01, GL_NEAREST}, {0b10, GL_LINEAR}};
-    const std::unordered_map<u32, GLuint> min_filter_map = {{0b0101, GL_NEAREST_MIPMAP_NEAREST},
+    const std::unordered_map<u32, GLuint> min_filter_map = {{0b0100, GL_NEAREST},
+                                                            {0b0101, GL_NEAREST_MIPMAP_NEAREST},
                                                             {0b0110, GL_NEAREST_MIPMAP_LINEAR},
+                                                            {0b1000, GL_LINEAR},
                                                             {0b1001, GL_LINEAR_MIPMAP_NEAREST},
                                                             {0b1010, GL_LINEAR_MIPMAP_LINEAR}};
 
     // Parse sampler flags.
+    auto flags = info.sampler_flags;
     auto u_wrapping_mode =
-        (sampler_flags & SamplerFlag::maskUWrappingMode) >> SamplerFlag::shiftUWrappingMode;
+        (flags & SamplerFlag::maskUWrappingMode) >> SamplerFlag::shiftUWrappingMode;
     auto v_wrapping_mode =
-        (sampler_flags & SamplerFlag::maskVWrappingMode) >> SamplerFlag::shiftVWrappingMode;
+        (flags & SamplerFlag::maskVWrappingMode) >> SamplerFlag::shiftVWrappingMode;
     auto w_wrapping_mode =
-        (sampler_flags & SamplerFlag::maskWWrappingMode) >> SamplerFlag::shiftWWrappingMode;
-    auto min_filter = (sampler_flags & SamplerFlag::maskMinFilter) >> SamplerFlag::shiftMinFilter;
-    auto mag_filter = (sampler_flags & SamplerFlag::maskMagFilter) >> SamplerFlag::shiftMagFilter;
-    auto mip_filter = (sampler_flags & SamplerFlag::maskMipFilter) >> SamplerFlag::shiftMipFilter;
+        (flags & SamplerFlag::maskWWrappingMode) >> SamplerFlag::shiftWWrappingMode;
+    auto min_filter = (flags & SamplerFlag::maskMinFilter) >> SamplerFlag::shiftMinFilter;
+    auto mag_filter = (flags & SamplerFlag::maskMagFilter) >> SamplerFlag::shiftMagFilter;
+    auto mip_filter = (flags & SamplerFlag::maskMipFilter) >> SamplerFlag::shiftMipFilter;
+
+    // Setup sampler object.
     GL_CHECK(glSamplerParameteri(sampler_object, GL_TEXTURE_WRAP_S,
                                  wrapping_mode_map.at(u_wrapping_mode)));
     GL_CHECK(glSamplerParameteri(sampler_object, GL_TEXTURE_WRAP_T,
@@ -417,32 +408,47 @@ GLuint GLSamplerCache::findOrCreate(u32 sampler_flags, float max_anisotropy) {
     GL_CHECK(glSamplerParameteri(sampler_object, GL_TEXTURE_MIN_FILTER,
                                  min_filter_map.at(min_filter << 2u | mip_filter)));
 
-    if (GLAD_GL_EXT_texture_filter_anisotropic && max_anisotropy >= 1.0f) {
+    if (GLAD_GL_EXT_texture_filter_anisotropic && info.max_anisotropy >= 1.0f) {
         GL_CHECK(glSamplerParameterf(sampler_object, GL_TEXTURE_MAX_ANISOTROPY,
-                                     std::min(max_anisotropy, max_supported_anisotropy_)));
+                                     std::min(info.max_anisotropy, max_supported_anisotropy_)));
     }
 
-    cache_.emplace(hash, sampler_object);
+    cache_.emplace(info, sampler_object);
 
     return sampler_object;
 }
 
-void GLSamplerCache::clear() {
+void SamplerCacheGL::clear() {
     for (const auto& sampler : cache_) {
         GL_CHECK(glDeleteSamplers(1, &sampler.second));
     }
     cache_.clear();
 }
 
-GLRenderContext::GLRenderContext(Logger& logger)
+RenderContextGL::RenderContextGL(Logger& logger)
     : RenderContext(logger), max_supported_anisotropy_(0.0f) {
 }
 
-GLRenderContext::~GLRenderContext() {
+RenderContextGL::~RenderContextGL() {
     // TODO: detect resource leaks.
 }
 
-tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 height,
+Mat4 RenderContextGL::adjustProjectionMatrix(Mat4 projection_matrix) const {
+    // To map from a D3D projection matrix to an OpenGL projection matrix, we need to make the
+    // following transformations: p[2][2]: f / (n-f) -> (n+f) / (n-f) p[2][3]: nf / (n-f) -> 2nf /
+    // (n-f)
+    float n = projection_matrix[2][3] / projection_matrix[2][2];
+    float f = projection_matrix[2][3] / (1.0f + projection_matrix[2][2]);
+    projection_matrix[2][2] += n / (n - f);
+    projection_matrix[2][3] *= 2.0f;
+    return projection_matrix;
+}
+
+bool RenderContextGL::hasFlippedViewport() const {
+    return false;
+}
+
+tl::expected<void, std::string> RenderContextGL::createWindow(u16 width, u16 height,
                                                               const std::string& title,
                                                               InputCallbacks input_callbacks) {
     logger_.info("Creating window.");
@@ -482,6 +488,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
 #elif !defined(DGA_EMSCRIPTEN)
 #error Unsupported: GLES 3.0 on non Web platform.
 #endif
+    // TODO: Support resizing.
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     // Select monitor.
@@ -505,7 +512,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
             fmt::format("glfwCreateWindow failed. Code: {:#x}. Description: {}", last_error_code,
                         last_error_description));
     }
-    Vec2i fb_size = backbufferSize();
+    Vec2i fb_size = framebufferSize();
     backbuffer_width_ = static_cast<u16>(fb_size.x);
     backbuffer_height_ = static_cast<u16>(fb_size.y);
     glfwMakeContextCurrent(window_);
@@ -521,14 +528,14 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
     on_mouse_move_ = input_callbacks.on_mouse_move;
     on_mouse_scroll_ = input_callbacks.on_mouse_scroll;
     glfwSetKeyCallback(window_, [](GLFWwindow* window, int key, int, int action, int) {
-        auto& ctx = *static_cast<GLRenderContext*>(glfwGetWindowUserPointer(window));
+        auto& ctx = *static_cast<RenderContextGL*>(glfwGetWindowUserPointer(window));
         if (!ctx.on_key_) {
             return;
         }
 
         // Look up key.
-        auto key_it = s_key_map.find(key);
-        if (key_it == s_key_map.end()) {
+        auto key_it = kGlfwKeyMap.find(key);
+        if (key_it == kGlfwKeyMap.end()) {
             ctx.logger_.warn("Unknown key code {}", key);
             return;
         }
@@ -545,7 +552,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
         }
     });
     glfwSetCharCallback(window_, [](GLFWwindow* window, unsigned int c) {
-        auto& ctx = *static_cast<GLRenderContext*>(glfwGetWindowUserPointer(window));
+        auto& ctx = *static_cast<RenderContextGL*>(glfwGetWindowUserPointer(window));
         if (!ctx.on_char_input_) {
             return;
         }
@@ -557,7 +564,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
         ctx.on_char_input_(conv.to_bytes(static_cast<char32_t>(c)));
     });
     glfwSetMouseButtonCallback(window_, [](GLFWwindow* window, int button, int action, int) {
-        auto& ctx = *static_cast<GLRenderContext*>(glfwGetWindowUserPointer(window));
+        auto& ctx = *static_cast<RenderContextGL*>(glfwGetWindowUserPointer(window));
         if (!ctx.on_mouse_button_) {
             return;
         }
@@ -574,7 +581,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
         }
     });
     glfwSetCursorPosCallback(window_, [](GLFWwindow* window, double x, double y) {
-        auto& ctx = *static_cast<GLRenderContext*>(glfwGetWindowUserPointer(window));
+        auto& ctx = *static_cast<RenderContextGL*>(glfwGetWindowUserPointer(window));
         if (!ctx.on_mouse_move_) {
             return;
         }
@@ -582,7 +589,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
         ctx.on_mouse_move_({static_cast<int>(x), static_cast<int>(y)});
     });
     glfwSetScrollCallback(window_, [](GLFWwindow* window, double xoffset, double yoffset) {
-        auto& ctx = *static_cast<GLRenderContext*>(glfwGetWindowUserPointer(window));
+        auto& ctx = *static_cast<RenderContextGL*>(glfwGetWindowUserPointer(window));
         if (!ctx.on_mouse_scroll_) {
             return;
         }
@@ -624,7 +631,7 @@ tl::expected<void, std::string> GLRenderContext::createWindow(u16 width, u16 hei
     return {};
 }
 
-void GLRenderContext::destroyWindow() {
+void RenderContextGL::destroyWindow() {
     if (window_) {
         sampler_cache_.clear();
 
@@ -634,60 +641,63 @@ void GLRenderContext::destroyWindow() {
     }
 }
 
-void GLRenderContext::processEvents() {
+void RenderContextGL::processEvents() {
     glfwPollEvents();
 }
 
-bool GLRenderContext::isWindowClosed() const {
+bool RenderContextGL::isWindowClosed() const {
     return glfwWindowShouldClose(window_) != 0;
 }
 
-Vec2i GLRenderContext::windowSize() const {
+Vec2i RenderContextGL::windowSize() const {
     int window_width, window_height;
     glfwGetWindowSize(window_, &window_width, &window_height);
     return Vec2i{window_width, window_height};
 }
 
-Vec2 GLRenderContext::windowScale() const {
+Vec2 RenderContextGL::windowScale() const {
     return window_scale_;
 }
 
-Vec2i GLRenderContext::backbufferSize() const {
+Vec2i RenderContextGL::framebufferSize() const {
     int fb_width, fb_height;
     glfwGetFramebufferSize(window_, &fb_width, &fb_height);
     return Vec2i{fb_width, fb_height};
 }
 
-void GLRenderContext::startRendering() {
+void RenderContextGL::startRendering() {
     glfwMakeContextCurrent(window_);
 
     GL_CHECK(glGenVertexArrays(1, &vao_));
     GL_CHECK(glBindVertexArray(vao_));
 }
 
-void GLRenderContext::stopRendering() {
+void RenderContextGL::stopRendering() {
     GL_CHECK(glBindVertexArray(0));
     GL_CHECK(glDeleteVertexArrays(1, &vao_));
 }
 
-void GLRenderContext::processCommandList(std::vector<RenderCommand>& command_list) {
+void RenderContextGL::prepareFrame() {
+}
+
+void RenderContextGL::processCommandList(std::vector<RenderCommand>& command_list) {
     assert(window_);
     for (auto& command : command_list) {
         visit(*this, command);
     }
 }
 
-bool GLRenderContext::frame(const Frame* frame) {
+bool RenderContextGL::frame(const Frame* frame) {
     assert(window_);
 
     // Upload transient vertex/element buffer data.
     auto& tvb = frame->transient_vb_storage;
-    if (tvb.handle) {
+    if (tvb.handle && tvb.size > 0) {
         GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_map_.at(*tvb.handle).vertex_buffer));
         GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, tvb.size, tvb.data.data()));
     }
     auto& tib = frame->transient_ib_storage;
-    if (tib.handle) {
+    if (tib.handle && tib.size > 0) {
         GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,
                               index_buffer_map_.at(*tib.handle).element_buffer));
         GL_CHECK(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, tib.size, tib.data.data()));
@@ -764,18 +774,17 @@ bool GLRenderContext::frame(const Frame* frame) {
             }
             if (!previous || previous->blend_equation_rgb != current->blend_equation_rgb ||
                 previous->blend_equation_a != current->blend_equation_a) {
-                GL_CHECK(
-                    glBlendEquationSeparate(s_blend_equation_map.at(current->blend_equation_rgb),
-                                            s_blend_equation_map.at(current->blend_equation_a)));
+                GL_CHECK(glBlendEquationSeparate(kBlendEquationMap.at(current->blend_equation_rgb),
+                                                 kBlendEquationMap.at(current->blend_equation_a)));
             }
             if (!previous || previous->blend_src_rgb != current->blend_src_rgb ||
                 previous->blend_src_a != current->blend_src_a ||
                 previous->blend_dest_rgb != current->blend_dest_rgb ||
                 previous->blend_dest_a != current->blend_dest_a) {
-                GL_CHECK(glBlendFuncSeparate(s_blend_func_map.at(current->blend_src_rgb),
-                                             s_blend_func_map.at(current->blend_dest_rgb),
-                                             s_blend_func_map.at(current->blend_src_a),
-                                             s_blend_func_map.at(current->blend_dest_a)));
+                GL_CHECK(glBlendFuncSeparate(kBlendFuncMap.at(current->blend_src_rgb),
+                                             kBlendFuncMap.at(current->blend_dest_rgb),
+                                             kBlendFuncMap.at(current->blend_src_a),
+                                             kBlendFuncMap.at(current->blend_dest_a)));
             }
 
             // Bind Program.
@@ -786,23 +795,35 @@ bool GLRenderContext::frame(const Frame* frame) {
 
             // Bind uniforms.
             UniformBinder binder;
-            for (auto& uniform_pair : current->uniforms) {
-                auto location = program_data.uniform_location_map.find(uniform_pair.first);
+            for (auto& entry : current->uniforms) {
+                auto uniform_name = entry.first;
+                auto location = program_data.uniform_location_map.find(uniform_name);
                 GLint uniform_location;
                 if (location != program_data.uniform_location_map.end()) {
                     uniform_location = (*location).second;
                 } else {
-                    GL_CHECK(uniform_location = glGetUniformLocation(program_data.program,
-                                                                     uniform_pair.first.c_str()));
-                    program_data.uniform_location_map.emplace(uniform_pair.first, uniform_location);
+                    // A uniform inside a (converted) uniform block may have been remapped to a
+                    // location inside a struct uniform caled _<id>. When looking up the uniform
+                    // location, take this into account.
+                    auto uniform_remap_id = program_data.uniform_remap_ids.find(uniform_name);
+                    std::string remapped_uniform_name =
+                        uniform_remap_id == program_data.uniform_remap_ids.end()
+                            ? uniform_name
+                            : fmt::format("_{}.{}", uniform_remap_id->second, uniform_name);
+
+                    // Look up the uniform location.
+                    GL_CHECK(uniform_location = glGetUniformLocation(
+                                 program_data.program, remapped_uniform_name.c_str()));
+                    program_data.uniform_location_map.emplace(uniform_name, uniform_location);
                     if (uniform_location == -1) {
-                        logger_.warn("[Frame] Unknown uniform '{}', skipping.", uniform_pair.first);
+                        logger_.warn("[Frame] Unknown or optimised out uniform '{}', skipping.",
+                                     uniform_name);
                     }
                 }
                 if (uniform_location == -1) {
                     continue;
                 }
-                binder.updateUniform(uniform_location, uniform_pair.second);
+                binder.updateUniform(uniform_location, entry.second);
             }
 
             // Bind textures.
@@ -823,11 +844,17 @@ bool GLRenderContext::frame(const Frame* frame) {
                     GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
                     GL_CHECK(glBindSampler(j, 0));
                 } else {
-                    GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture_map_.at(texture->handle)));
-                    if (texture->sampler_flags != 0) {
-                        GLuint sampler = sampler_cache_.findOrCreate(texture->sampler_flags,
-                                                                     texture->max_anisotropy);
+                    const auto& texture_data = texture_map_.at(texture->handle);
+                    GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture_data.texture));
+                    if (texture->sampler_info.sampler_flags != 0) {
+                        auto sampler_info = texture->sampler_info;
+                        if (!texture_data.has_mip_maps) {
+                            sampler_info.sampler_flags &= ~SamplerFlag::maskMipFilter;
+                        }
+                        GLuint sampler = sampler_cache_.findOrCreate(sampler_info);
                         GL_CHECK(glBindSampler(j, sampler));
+                    } else {
+                        GL_CHECK(glBindSampler(j, 0));
                     }
                 }
             }
@@ -910,7 +937,7 @@ bool GLRenderContext::frame(const Frame* frame) {
     return true;
 }
 
-void GLRenderContext::operator()(const cmd::CreateVertexBuffer& c) {
+void RenderContextGL::operator()(const cmd::CreateVertexBuffer& c) {
     // Create vertex buffer object.
     GLenum usage = mapBufferUsage(c.usage);
     GLuint vbo;
@@ -924,7 +951,7 @@ void GLRenderContext::operator()(const cmd::CreateVertexBuffer& c) {
     vertex_buffer_map_.insert({c.handle, VertexBufferData{vbo, c.decl, usage, c.size}});
 }
 
-void GLRenderContext::operator()(const cmd::UpdateVertexBuffer& c) {
+void RenderContextGL::operator()(const cmd::UpdateVertexBuffer& c) {
     auto& vb_data = vertex_buffer_map_.at(c.handle);
     GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, vb_data.vertex_buffer));
     if (c.data.size() > vb_data.size) {
@@ -935,13 +962,13 @@ void GLRenderContext::operator()(const cmd::UpdateVertexBuffer& c) {
     }
 }
 
-void GLRenderContext::operator()(const cmd::DeleteVertexBuffer& c) {
+void RenderContextGL::operator()(const cmd::DeleteVertexBuffer& c) {
     auto it = vertex_buffer_map_.find(c.handle);
     GL_CHECK(glDeleteBuffers(1, &it->second.vertex_buffer));
     vertex_buffer_map_.erase(it);
 }
 
-void GLRenderContext::operator()(const cmd::CreateIndexBuffer& c) {
+void RenderContextGL::operator()(const cmd::CreateIndexBuffer& c) {
     // Create element buffer object.
     GLenum usage = mapBufferUsage(c.usage);
     GLuint ebo;
@@ -960,7 +987,7 @@ void GLRenderContext::operator()(const cmd::CreateIndexBuffer& c) {
                          usage, c.size}});
 }
 
-void GLRenderContext::operator()(const cmd::UpdateIndexBuffer& c) {
+void RenderContextGL::operator()(const cmd::UpdateIndexBuffer& c) {
     auto& ib_data = index_buffer_map_.at(c.handle);
     GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ib_data.element_buffer));
     if (c.data.size() > ib_data.size) {
@@ -972,69 +999,85 @@ void GLRenderContext::operator()(const cmd::UpdateIndexBuffer& c) {
     }
 }
 
-void GLRenderContext::operator()(const cmd::DeleteIndexBuffer& c) {
+void RenderContextGL::operator()(const cmd::DeleteIndexBuffer& c) {
     auto it = index_buffer_map_.find(c.handle);
     GL_CHECK(glDeleteBuffers(1, &it->second.element_buffer));
     index_buffer_map_.erase(it);
 }
 
-void GLRenderContext::operator()(const cmd::CreateShader& c) {
+void RenderContextGL::operator()(const cmd::CreateShader& c) {
     static std::unordered_map<ShaderStage, GLenum> shader_type_map = {
         {ShaderStage::Vertex, GL_VERTEX_SHADER}, {ShaderStage::Fragment, GL_FRAGMENT_SHADER}};
     GLuint shader = 0;
     GL_CHECK(shader = glCreateShader(shader_type_map.at(c.stage)));
 
-#if DGA_PLATFORM == DGA_WIN32
-    bool use_spirv = false;
-#else
-    bool use_spirv = GLAD_GL_ARB_gl_spirv;
-#endif
-    if (use_spirv) {
-        glShaderBinary(1, &shader, GL_SHADER_BINARY_FORMAT_SPIR_V, c.data.data(), c.data.size());
-        auto error = glGetError();
-        if (error == GL_INVALID_VALUE) {
-            int info_log_length;
-            glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length);
-            std::string error_message(info_log_length, '\0');
-            glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data());
-            logger_.error("[CreateShader] Shader Load Error: {}", error_message);
+    // Convert SPIR-V into GLSL.
+    spirv_cross::CompilerGLSL glsl{reinterpret_cast<const u32*>(c.data.data()),
+                                   c.data.size() / sizeof(u32)};
+    spirv_cross::ShaderResources resources = glsl.get_shader_resources();
+
+    // Remap texture binding locations.
+    u32 next_texture_binding_location = 0;
+    std::map<u32, const spirv_cross::Resource*> sampled_images_by_binding;
+    for (const auto& resource : resources.sampled_images) {
+        sampled_images_by_binding[glsl.get_decoration(resource.id, spv::DecorationBinding)] =
+            &resource;
+    }
+    for (const auto& entry : sampled_images_by_binding) {
+        const auto& resource = *entry.second;
+        u32 set = glsl.get_decoration(resource.id, spv::DecorationDescriptorSet);
+        u32 binding = glsl.get_decoration(resource.id, spv::DecorationBinding);
+        u32 new_binding = next_texture_binding_location++;
+        logger_.debug(
+            "Remapping sampled image with location(set={}, binding={}) to location(binding={})",
+            set, binding, new_binding);
+        glsl.unset_decoration(resource.id, spv::DecorationDescriptorSet);
+        glsl.set_decoration(resource.id, spv::DecorationBinding, new_binding);
+    }
+
+    // If we use the 'emit_uniform_buffer_as_plain_uniforms' option on an empty uniform block,
+    // variables are going to be prefixed with _<id>, where <id> is the resource ID in SPIR-V.
+    // In those cases, we need to store that information so it can be looked up during frame().
+    std::unordered_map<std::string, u32> uniform_remap_ids;
+    for (const auto& resource : resources.uniform_buffers) {
+        if (!glsl.get_name(resource.id).empty()) {
+            continue;
         }
 
-        // Specialize the shader.
-        GL_CHECK(
-            glSpecializeShader(shader, (const GLchar*)c.entry_point.c_str(), 0, nullptr, nullptr));
-    } else {
-        // Convert SPIR-V into GLSL.
-        spirv_cross::CompilerGLSL glsl_out{reinterpret_cast<const u32*>(c.data.data()),
-                                           c.data.size() / sizeof(u32)};
-        spirv_cross::ShaderResources resources = glsl_out.get_shader_resources();
+        const spirv_cross::SPIRType& type = glsl.get_type(resource.base_type_id);
+        usize member_count = type.member_types.size();
+        for (usize i = 0; i < member_count; ++i) {
+            uniform_remap_ids[glsl.get_member_name(type.self, i)] = resource.id;
+        }
+    }
 
-        // Compile to GLSL, ready to give to GL driver.
-        spirv_cross::CompilerGLSL::Options options;
+    // Compile to GLSL, ready to give to GL driver.
+    spirv_cross::CompilerGLSL::Options options;
+    options.emit_push_constant_as_uniform_buffer = true;
+    options.emit_uniform_buffer_as_plain_uniforms = true;
 #if DW_GL_VERSION == DW_GL_410
-        options.version = 410;
-        options.es = false;
+    options.version = 410;
+    options.es = false;
 #elif DW_GL_VERSION == DW_GLES_300
-        options.version = 300;
-        options.es = true;
+    options.version = 300;
+    options.es = true;
 #else
 #error "Unsupported DW_GL_VERSION"
 #endif
-        glsl_out.set_common_options(options);
-        std::string source = glsl_out.compile();
+    glsl.set_common_options(options);
+    std::string source = glsl.compile();
 
-        // Postprocess the GLSL to remove a GL 4.2 extension, which doesn't exist on macOS.
+    // Postprocess the GLSL to remove a GL 4.2 extension, which doesn't exist on macOS.
 #if DGA_PLATFORM == DGA_MACOS
-        source = dga::strReplaceAll(source, "#extension GL_ARB_shading_language_420pack : require",
-                                    "#extension GL_ARB_shading_language_420pack : disable");
+    source = dga::strReplaceAll(source, "#extension GL_ARB_shading_language_420pack : require",
+                                "#extension GL_ARB_shading_language_420pack : disable");
 #endif
-        // logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
 
-        // Compile the shader.
-        const char* sources[] = {source.c_str()};
-        GL_CHECK(glShaderSource(shader, 1, sources, nullptr));
-        GL_CHECK(glCompileShader(shader));
-    }
+    // Compile the shader.
+    // logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
+    const char* sources[] = {source.c_str()};
+    GL_CHECK(glShaderSource(shader, 1, sources, nullptr));
+    GL_CHECK(glCompileShader(shader));
 
     // Check compilation result.
     GLint result;
@@ -1048,27 +1091,31 @@ void GLRenderContext::operator()(const cmd::CreateShader& c) {
         return;
     }
 
-    shader_map_.emplace(c.handle, shader);
+    shader_map_.emplace(c.handle, ShaderData{shader, std::move(uniform_remap_ids)});
 }
 
-void GLRenderContext::operator()(const cmd::DeleteShader& c) {
+void RenderContextGL::operator()(const cmd::DeleteShader& c) {
     auto it = shader_map_.find(c.handle);
-    GL_CHECK(glDeleteShader(it->second));
+    GL_CHECK(glDeleteShader(it->second.shader));
     shader_map_.erase(it);
 }
 
-void GLRenderContext::operator()(const cmd::CreateProgram& c) {
+void RenderContextGL::operator()(const cmd::CreateProgram& c) {
     ProgramData program_data;
     program_data.program = glCreateProgram();
     assert(program_data.program != 0);
     program_map_.emplace(c.handle, program_data);
 }
 
-void GLRenderContext::operator()(const cmd::AttachShader& c) {
-    GL_CHECK(glAttachShader(program_map_.at(c.handle).program, shader_map_.at(c.shader_handle)));
+void RenderContextGL::operator()(const cmd::AttachShader& c) {
+    const auto& shader_data = shader_map_.at(c.shader_handle);
+    auto& program_data = program_map_.at(c.handle);
+    GL_CHECK(glAttachShader(program_data.program, shader_data.shader));
+    program_data.uniform_remap_ids.insert(shader_data.uniform_remap_ids.begin(),
+                                          shader_data.uniform_remap_ids.end());
 }
 
-void GLRenderContext::operator()(const cmd::LinkProgram& c) {
+void RenderContextGL::operator()(const cmd::LinkProgram& c) {
     GLuint program = program_map_.at(c.handle).program;
     GL_CHECK(glLinkProgram(program));
 
@@ -1084,7 +1131,7 @@ void GLRenderContext::operator()(const cmd::LinkProgram& c) {
     }
 }
 
-void GLRenderContext::operator()(const cmd::DeleteProgram& c) {
+void RenderContextGL::operator()(const cmd::DeleteProgram& c) {
     auto it = program_map_.find(c.handle);
     if (it != program_map_.end()) {
         GL_CHECK(glDeleteProgram(it->second.program));
@@ -1094,13 +1141,13 @@ void GLRenderContext::operator()(const cmd::DeleteProgram& c) {
     }
 }
 
-void GLRenderContext::operator()(const cmd::CreateTexture2D& c) {
+void RenderContextGL::operator()(const cmd::CreateTexture2D& c) {
     GLuint texture;
     GL_CHECK(glGenTextures(1, &texture));
     GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture));
 
     // Give image data to OpenGL.
-    TextureFormatInfo format = s_texture_format[static_cast<int>(c.format)];
+    TextureFormatGL format = kTextureFormatMap[static_cast<int>(c.format)];
     logger_.debug(
         "[CreateTexture2D] format {} - internal fmt: {:#x} - internal fmt srgb: {:#x} - fmt: {:#x} "
         "- type: {:#x}",
@@ -1115,16 +1162,16 @@ void GLRenderContext::operator()(const cmd::CreateTexture2D& c) {
     }
 
     // Add texture.
-    texture_map_.emplace(c.handle, texture);
+    texture_map_.emplace(c.handle, TextureData{texture, c.generate_mipmaps});
 }
 
-void GLRenderContext::operator()(const cmd::DeleteTexture& c) {
+void RenderContextGL::operator()(const cmd::DeleteTexture& c) {
     auto it = texture_map_.find(c.handle);
-    GL_CHECK(glDeleteTextures(1, &it->second));
+    GL_CHECK(glDeleteTextures(1, &it->second.texture));
     texture_map_.erase(it);
 }
 
-void GLRenderContext::operator()(const cmd::CreateFrameBuffer& c) {
+void RenderContextGL::operator()(const cmd::CreateFrameBuffer& c) {
     FrameBufferData fb_data;
     fb_data.textures = c.textures;
     fb_data.width = c.width;
@@ -1141,7 +1188,7 @@ void GLRenderContext::operator()(const cmd::CreateFrameBuffer& c) {
         assert(gl_texture != texture_map_.end());
         draw_buffers.emplace_back(GL_COLOR_ATTACHMENT0 + attachment++);
         GL_CHECK(glFramebufferTexture2D(GL_FRAMEBUFFER, draw_buffers.back(), GL_TEXTURE_2D,
-                                        gl_texture->second, 0));
+                                        gl_texture->second.texture, 0));
     }
     GL_CHECK(glDrawBuffers(static_cast<GLsizei>(draw_buffers.size()), draw_buffers.data()));
 
@@ -1166,11 +1213,11 @@ void GLRenderContext::operator()(const cmd::CreateFrameBuffer& c) {
     frame_buffer_map_.emplace(c.handle, fb_data);
 }
 
-void GLRenderContext::operator()(const cmd::DeleteFrameBuffer&) {
+void RenderContextGL::operator()(const cmd::DeleteFrameBuffer&) {
     // TODO: unimplemented.
 }
 
-void GLRenderContext::setupVertexArrayAttributes(const VertexDecl& decl, uint vb_offset) {
+void RenderContextGL::setupVertexArrayAttributes(const VertexDecl& decl, uint vb_offset) {
     static std::unordered_map<VertexDecl::AttributeType, GLenum> attribute_type_map = {
         {VertexDecl::AttributeType::Float, GL_FLOAT},
         {VertexDecl::AttributeType::Uint8, GL_UNSIGNED_BYTE}};

@@ -31,10 +31,23 @@ public:
     }
 };
 
+const char* rendererTypeToString(RendererType renderer) {
+    switch (renderer) {
+        case RendererType::Vulkan:
+            return "Vulkan";
+        case RendererType::OpenGL:
+            return "OpenGL";
+        case RendererType::Null:
+            return "Null";
+        default:
+            return "<unknown>";
+    }
+}
+
 class Example {
 public:
     static int runMain(std::unique_ptr<Example> example, const char* window_title) {
-        example->initRenderer(RendererType::OpenGL, 1024, 768, window_title);
+        example->initRenderer(RendererType::Vulkan, 1024, 768, window_title);
         example->start();
 #ifdef DGA_EMSCRIPTEN
         // void emscripten_set_main_loop(em_callback_func func, int fps, int
@@ -54,8 +67,10 @@ public:
     Example() : r(logger_), frame_start_time_(std::chrono::steady_clock::now()) {
     }
 
+    virtual ~Example() = default;
+
     void initRenderer(RendererType type, u16 width, u16 height, const char* window_title) {
-        r.init(type, width, height, window_title, InputCallbacks{}, true);
+        r.init(type, width, height, window_title, InputCallbacks{}, false);
 
         ImGui::SetCurrentContext(ImGui::CreateContext());
         imgui_backend_ = std::make_unique<ImGuiBackend>(r, ImGui::GetIO());
@@ -67,8 +82,8 @@ public:
 
         render(dt_);
 
-        ImGui::SetNextWindowPos({10, 10});
-        ImGui::SetNextWindowSize({150, 50});
+        ImGui::SetNextWindowPos({5, 5});
+        ImGui::SetNextWindowSize({160, 65});
         if (!ImGui::Begin("FPS", nullptr,
                           ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                               ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings)) {
@@ -77,6 +92,7 @@ public:
         }
         ImGui::Text("FPS:   %f", 1.0f / dt_);
         ImGui::Text("Frame: %.4f ms", dt_ * 1000.0f);
+        ImGui::Text("Renderer: %s", rendererTypeToString(r.rendererType()));
         ImGui::End();
 
         // Render frame.
@@ -131,28 +147,12 @@ private:
     }
 
 namespace util {
-inline Mat4 createProjMatrix(float n, float f, float fov_y, float aspect) {
+inline Mat4 createProjMatrix(Renderer& r, float n, float f, float fov_y, float aspect) {
     auto tangent = static_cast<float>(tan(fov_y * M_DEGTORAD_OVER_2));  // tangent of half fovY
     float v = n * tangent * 2;                                          // half height of near plane
     float h = v * aspect;                                               // half width of near plane
-    return Mat4::OpenGLPerspProjRH(n, f, h, v);
-}
-
-inline uint createFullscreenQuad(Renderer& r, VertexBufferHandle& vb) {
-    // clang-format off
-    float vertices[] = {
-        // Position       | UV
-        -1.0f, -1.0f, 0.0f, 0.0f,
-        3.0f,  -1.0f, 2.0f, 0.0f,
-        -1.0f,  3.0f, 0.0f, 2.0f};
-    // clang-format on
-    VertexDecl decl;
-    decl.begin()
-        .add(VertexDecl::Attribute::Position, 2, VertexDecl::AttributeType::Float)
-        .add(VertexDecl::Attribute::TexCoord0, 2, VertexDecl::AttributeType::Float)
-        .end();
-    vb = r.createVertexBuffer(Memory(vertices, sizeof(vertices)), decl);
-    return 3;
+    auto mat = Mat4::D3DPerspProjRH(n, f, h, v);
+    return r.adjustProjectionMatrix(mat);
 }
 
 inline ShaderHandle loadShader(Renderer& r, ShaderStage type, const std::string& source_file) {
@@ -161,7 +161,8 @@ inline ShaderHandle loadShader(Renderer& r, ShaderStage type, const std::string&
                               std::istreambuf_iterator<char>());
     auto spv_result = compileGLSL(type, shader_source);
     if (!spv_result) {
-        throw std::runtime_error("Compile error: " + spv_result.error().compile_error);
+        throw std::runtime_error("Compile error whilst loading " + source_file + ": " +
+                                 spv_result.error().compile_error);
     }
     return r.createShader(type, spv_result.value().entry_point,
                           Memory(std::move(spv_result.value().spirv)));

@@ -1,8 +1,87 @@
 /*
- * Dawn Engine
- * Written by David Avedissian (c) 2012-2019 (git@dga.dev)
+ * Dawn Graphics
+ * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
 #include "Common.h"
+
+//#define DEBUG_GBUFFER
+
+class PointLight {
+public:
+    PointLight(Renderer& r, Colour colour, float linear_term, float quadratic_term,
+               const Vec2& screen_size)
+        : r(r) {
+        // Calculate radius.
+        float light_max = std::fmaxf(std::fmaxf(colour.r(), colour.g()), colour.b());
+        float min_light_level = 256.0f / 4.0f;
+        light_sphere_radius_ =
+            (-linear_term +
+             std::sqrt(linear_term * linear_term -
+                       4.0f * quadratic_term * (1.0f - min_light_level * light_max))) /
+            (2.0f * quadratic_term);
+
+        setPosition(Vec3::zero);
+
+        // Load shaders.
+        auto vs = util::loadShader(r, ShaderStage::Vertex,
+                                   util::media("shaders/deferred_shading/light_pass.vert"));
+        auto fs = util::loadShader(r, ShaderStage::Fragment,
+                                   util::media("shaders/deferred_shading/light_pass_point.frag"));
+        program_ = r.createProgram();
+        r.attachShader(program_, vs);
+        r.attachShader(program_, fs);
+        r.linkProgram(program_);
+
+        r.setUniform("screen_size", screen_size);
+        r.setUniform("light_colour", colour.rgb());
+        r.setUniform("linear_term", linear_term);
+        r.setUniform("quadratic_term", quadratic_term);
+        r.submit(program_);
+        sphere_ =
+            MeshBuilder{r}.normals(false).texcoords(false).createSphere(light_sphere_radius_, 8, 8);
+    }
+
+    ~PointLight() {
+        r.deleteProgram(program_);
+    }
+
+    void setPosition(const Vec3& position) {
+        position_ = position;
+        model_ = Mat4::Translate(position);
+    }
+
+    void draw(const Mat4& view_matrix, const Mat4& proj_matrix) {
+        Mat4 mvp = proj_matrix * view_matrix * model_;
+
+        // Invert culling when inside the light sphere.
+        Vec3 view_space_position = (view_matrix * Vec4(position_, 1.0f)).xyz();
+        if (view_space_position.LengthSq() < (light_sphere_radius_ * light_sphere_radius_)) {
+            r.setStateCullFrontFace(CullFrontFace::CW);
+        }
+
+        // Disable depth, and enable blending.
+        r.setStateDisable(RenderState::Depth);
+        r.setStateEnable(RenderState::Blending);
+        r.setStateBlendEquation(BlendEquation::Add, BlendFunc::One, BlendFunc::One);
+
+        // Draw sphere.
+        r.setVertexBuffer(sphere_.vb);
+        r.setIndexBuffer(sphere_.ib);
+        r.setUniform("mvp_matrix", mvp);
+        r.setUniform("light_position", position_);
+        r.submit(program_, sphere_.index_count);
+    }
+
+private:
+    Renderer& r;
+    Mesh sphere_;
+    ProgramHandle program_;
+
+    Vec3 position_;
+    Mat4 model_;
+
+    float light_sphere_radius_;
+};
 
 class DeferredShading : public Example {
 public:
@@ -15,88 +94,7 @@ public:
 
     ProgramHandle post_process_;
 
-    VertexBufferHandle fsq_vb_;
     FrameBufferHandle gbuffer_;
-
-    class PointLight {
-    public:
-        PointLight(Renderer& r, Colour colour, float linear_term, float quadratic_term,
-                   const Vec2& screen_size)
-            : r(r) {
-            // Calculate radius.
-            float light_max = std::fmaxf(std::fmaxf(colour.r(), colour.g()), colour.b());
-            float min_light_level = 256.0f / 4.0f;
-            light_sphere_radius_ =
-                (-linear_term +
-                 std::sqrt(linear_term * linear_term -
-                           4.0f * quadratic_term * (1.0f - min_light_level * light_max))) /
-                (2.0f * quadratic_term);
-
-            setPosition(Vec3::zero);
-
-            // Load shaders.
-            auto vs =
-                util::loadShader(r, ShaderStage::Vertex, util::media("shaders/light_pass.vs"));
-            auto fs = util::loadShader(r, ShaderStage::Fragment,
-                                       util::media("shaders/point_light_pass.fs"));
-            program_ = r.createProgram();
-            r.attachShader(program_, vs);
-            r.attachShader(program_, fs);
-            r.linkProgram(program_);
-
-            r.setUniform("screen_size", screen_size);
-            r.setUniform("gb0_texture", 0);
-            r.setUniform("gb1_texture", 1);
-            r.setUniform("gb2_texture", 2);
-            r.setUniform("light_colour", colour.rgb());
-            r.setUniform("linear_term", linear_term);
-            r.setUniform("quadratic_term", quadratic_term);
-            r.submit(program_);
-            sphere_ = MeshBuilder{r}.normals(false).texcoords(false).createSphere(
-                light_sphere_radius_, 8, 8);
-        }
-
-        ~PointLight() {
-            r.deleteProgram(program_);
-        }
-
-        void setPosition(const Vec3& position) {
-            position_ = position;
-            model_ = Mat4::Translate(position);
-        }
-
-        void draw(const Mat4& view_matrix, const Mat4& proj_matrix) {
-            Mat4 mvp = proj_matrix * view_matrix * model_;
-
-            // Invert culling when inside the light sphere.
-            Vec3 view_space_position = (view_matrix * Vec4(position_, 1.0f)).xyz();
-            if (view_space_position.LengthSq() < (light_sphere_radius_ * light_sphere_radius_)) {
-                r.setStateCullFrontFace(CullFrontFace::CW);
-            }
-
-            // Disable depth, and enable blending.
-            r.setStateDisable(RenderState::Depth);
-            r.setStateEnable(RenderState::Blending);
-            r.setStateBlendEquation(BlendEquation::Add, BlendFunc::One, BlendFunc::One);
-
-            // Draw sphere.
-            r.setVertexBuffer(sphere_.vb);
-            r.setIndexBuffer(sphere_.ib);
-            r.setUniform("mvp_matrix", mvp);
-            r.setUniform("light_position", position_);
-            r.submit(program_, sphere_.index_count);
-        }
-
-    private:
-        Renderer& r;
-        Mesh sphere_;
-        ProgramHandle program_;
-
-        Vec3 position_;
-        Mat4 model_;
-
-        float light_sphere_radius_;
-    };
 
     struct PointLightInfo {
         std::unique_ptr<PointLight> light;
@@ -121,15 +119,14 @@ public:
         r.startRenderQueue();
 
         // Load shaders.
-        auto vs =
-            util::loadShader(r, ShaderStage::Vertex, util::media("shaders/object_gbuffer.vs"));
-        auto fs =
-            util::loadShader(r, ShaderStage::Fragment, util::media("shaders/object_gbuffer.fs"));
+        auto vs = util::loadShader(r, ShaderStage::Vertex,
+                                   util::media("shaders/deferred_shading/object_gbuffer.vert"));
+        auto fs = util::loadShader(r, ShaderStage::Fragment,
+                                   util::media("shaders/deferred_shading/object_gbuffer.frag"));
         ground_program_ = r.createProgram();
         r.attachShader(ground_program_, vs);
         r.attachShader(ground_program_, fs);
         r.linkProgram(ground_program_);
-        r.setUniform("diffuse_texture", 0);
         r.setUniform("texcoord_scale", Vec2{kGroundSize / 5.0f, kGroundSize / 5.0f});
         r.submit(ground_program_);
 
@@ -137,7 +134,6 @@ public:
         r.attachShader(sphere_program_, vs);
         r.attachShader(sphere_program_, fs);
         r.linkProgram(sphere_program_);
-        r.setUniform("diffuse_texture", 0);
         r.setUniform("texcoord_scale", Vec2{1.0f, 1.0f});
         r.submit(sphere_program_);
 
@@ -146,32 +142,34 @@ public:
                                                                            kGroundSize * 2.0f);
 
         // Create ground.
-        sphere_ = MeshBuilder{r}.normals(true).texcoords(true).createSphere(3.0f);
+        sphere_ = MeshBuilder{r}.normals(true).texcoords(true).createSphere(3.0f, 15, 15);
 
         // Load texture.
         texture_ = util::loadTexture(r, util::media("wall.jpg"));
 
-        // Create full screen quad.
-        util::createFullscreenQuad(r, fsq_vb_);
-
         // Set up frame buffer.
         auto format = TextureFormat::RGBA32F;
-        gbuffer_ = r.createFrameBuffer({r.createTexture2D(width(), height(), format, Memory()),
-                                        r.createTexture2D(width(), height(), format, Memory()),
-                                        r.createTexture2D(width(), height(), format, Memory())});
+        gbuffer_ = r.createFrameBuffer(
+            {r.createTexture2D(width(), height(), format, Memory(), false, true),
+             r.createTexture2D(width(), height(), format, Memory(), false, true),
+             r.createTexture2D(width(), height(), format, Memory(), false, true)});
 
         // Load post process shader.
         auto pp_vs =
-            util::loadShader(r, ShaderStage::Vertex, util::media("shaders/post_process.vs"));
-        auto pp_fs = util::loadShader(r, ShaderStage::Fragment,
-                                      util::media("shaders/deferred_ambient_light_pass.fs"));
+            util::loadShader(r, ShaderStage::Vertex, util::media("shaders/post_process.vert"));
+#ifdef DEBUG_GBUFFER
+        auto pp_fs =
+            util::loadShader(r, ShaderStage::Fragment,
+                             util::media("shaders/deferred_shading/deferred_debug_gbuffer.frag"));
+#else
+        auto pp_fs = util::loadShader(
+            r, ShaderStage::Fragment,
+            util::media("shaders/deferred_shading/deferred_ambient_light_pass.frag"));
+#endif
         post_process_ = r.createProgram();
         r.attachShader(post_process_, pp_vs);
         r.attachShader(post_process_, pp_fs);
         r.linkProgram(post_process_);
-        r.setUniform("gb0_texture", 0);
-        r.setUniform("gb1_texture", 1);
-        r.setUniform("gb2_texture", 2);
         r.setUniform("ambient_light", Vec3{0.1f, 0.1f, 0.1f});
         r.submit(post_process_);
 
@@ -211,20 +209,23 @@ public:
         r.startRenderQueue(gbuffer_);
         r.setRenderQueueClear({0.0f, 0.0f, 0.0f});
 
-        // Calculate matrices.
-        Mat4 model = Mat4::RotateX(math::pi * -0.5f);
+        // Calculate view and proj matrices.
         static Mat4 view = (Mat4::Translate(Vec3{0.0f, 30.0f, 40.0f}).ToFloat4x4() *
                             Mat4::RotateX(math::pi * -0.25f))
                                .Inverted();
-        static Mat4 proj = util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
-        r.setUniform("model_matrix", model);
-        r.setUniform("mvp_matrix", proj * view * model);
+        static Mat4 proj = util::createProjMatrix(r, 0.1f, 1000.0f, 60.0f, aspect());
 
         // Draw ground.
-        r.setVertexBuffer(ground_.vb);
-        r.setIndexBuffer(ground_.ib);
-        r.setTexture(texture_, 0);
-        r.submit(ground_program_, ground_.index_count);
+        {
+            Mat4 model = Mat4::RotateX(math::pi * -0.5f);
+            r.setUniform("model_matrix", model);
+            r.setUniform("mvp_matrix", proj * view * model);
+
+            r.setVertexBuffer(ground_.vb);
+            r.setIndexBuffer(ground_.ib);
+            r.setTexture(texture_, 0);
+            r.submit(ground_program_, ground_.index_count);
+        }
 
         // Draw spheres.
         for (const auto& sphere_info : spheres) {
@@ -245,10 +246,10 @@ public:
         r.setTexture(r.getFrameBufferTexture(gbuffer_, 0), 0);
         r.setTexture(r.getFrameBufferTexture(gbuffer_, 1), 1);
         r.setTexture(r.getFrameBufferTexture(gbuffer_, 2), 2);
-        r.setVertexBuffer(fsq_vb_);
-        r.submit(post_process_, 3);
+        r.submitFullscreenQuad(post_process_);
 
         // Update and draw point lights.
+#ifndef DEBUG_GBUFFER
         static float angle = 0.0f;
         angle += dt;
         for (auto& light_info : point_lights) {
@@ -263,11 +264,11 @@ public:
             r.setTexture(r.getFrameBufferTexture(gbuffer_, 2), 2);
             light_info.light->draw(view, proj);
         }
+#endif
     }
 
     void stop() override {
         r.deleteProgram(post_process_);
-        r.deleteVertexBuffer(fsq_vb_);
         r.deleteTexture(texture_);
         r.deleteProgram(ground_program_);
     }

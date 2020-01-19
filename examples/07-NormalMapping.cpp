@@ -1,6 +1,6 @@
 /*
- * Dawn Engine
- * Written by David Avedissian (c) 2012-2019 (git@dga.dev)
+ * Dawn Graphics
+ * Written by David Avedissian (c) 2017-2020 (git@dga.dev)
  */
 #include "Common.h"
 
@@ -14,16 +14,13 @@ public:
     void start() override {
         // Load shaders.
         auto vs = util::loadShader(r, ShaderStage::Vertex,
-                                   util::media("shaders/cube_textured_normal_map.vs"));
+                                   util::media("shaders/cube_textured_normal_map.vert"));
         auto fs = util::loadShader(r, ShaderStage::Fragment,
-                                   util::media("shaders/cube_textured_normal_map.fs"));
+                                   util::media("shaders/cube_textured_normal_map.frag"));
         program_ = r.createProgram();
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
         r.linkProgram(program_);
-        r.setUniform("diffuse_texture", 0);
-        r.setUniform("normal_map_texture", 1);
-        r.submit(program_);
 
         // Load texture.
         surface_texture_ = util::loadTexture(r, util::media("stone_wall.jpg"));
@@ -39,9 +36,10 @@ public:
         // Calculate matrices.
         static float angle = 0.0f;
         angle += M_PI / 4.0f * dt;  // 45 degrees per second.
-        Mat4 model = Mat4::Translate(Vec3{0.0f, 0.0f, -50.0f}).ToFloat4x4() * Mat4::RotateY(angle);
+        Mat4 model = Mat4::Translate(Vec3{0.0f, 0.0f, -50.0f}).ToFloat4x4() *
+                     Mat4::RotateX(M_PI / 8.0f) * Mat4::RotateY(angle);
         static Mat4 view = Mat4::identity;
-        static Mat4 proj = util::createProjMatrix(0.1f, 1000.0f, 60.0f, aspect());
+        static Mat4 proj = util::createProjMatrix(r, 0.1f, 1000.0f, 60.0f, aspect());
         r.setUniform("model_matrix", model);
         r.setUniform("mvp_matrix", proj * view * model);
         r.setUniform("light_direction", Vec3{1.0f, 1.0f, 1.0f}.Normalized());

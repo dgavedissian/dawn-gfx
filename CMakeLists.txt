@@ -13,17 +13,11 @@ if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     set(MASTER_PROJECT ON)
 endif()
 
-# Use GLVND if possible.
-if(POLICY CMP0072)
-    cmake_policy(SET CMP0072 NEW)
-endif()
-
-# Dependencies.
-find_package(OpenGL REQUIRED)
-
+# Pinned dependencies.
 FetchContent_Declare(
     base
-    URL https://github.com/dgavedissian/base/archive/03643c3692416899b023319badc14b8b23e212e6.zip
+    URL https://github.com/dgavedissian/base/archive/aa1cd34a84a22fc0becd4ed4eb5cd022b8685cfe.zip
+    URL_MD5 3584045bab754ed8e8cf163bc9b2683e
 )
 FetchContent_MakeAvailable(base)
 make_patch_tool_available()
@@ -77,9 +71,10 @@ endif()
 
 FetchContent_Declare(
     glslang
-    URL https://github.com/KhronosGroup/glslang/archive/7.10.2984.tar.gz
-    URL_MD5 865bad2658dd1d61f9c5583a4a1992e6
+    URL https://github.com/KhronosGroup/glslang/archive/7.13.3496.tar.gz
+    URL_MD5 9bfbff6115e490654e149fd0558dba0c
 )
+set(BUILD_EXTERNAL OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)
 set(ENABLE_HLSL OFF CACHE BOOL "" FORCE)
@@ -112,8 +107,8 @@ target_include_directories(MathGeoLib PUBLIC $<BUILD_INTERFACE:${mathgeolib_SOUR
 
 FetchContent_Declare(
     spirv-cross
-    URL https://github.com/KhronosGroup/SPIRV-Cross/archive/ed16b3e69985feaf565efbecea70a1cc2fca2a58.tar.gz
-    URL_MD5 970fa559c40cee3ba603246a1696a6c9
+    URL https://github.com/KhronosGroup/SPIRV-Cross/archive/2020-01-16.tar.gz
+    URL_MD5 0cb174fe01ffb9f6d14f4c3c53af003d
 )
 FetchContent_GetProperties(spirv-cross)
 if(NOT spirv-cross_POPULATED)
@@ -122,6 +117,10 @@ if(NOT spirv-cross_POPULATED)
     target_include_directories(spirv-cross-core PUBLIC $<BUILD_INTERFACE:${spirv-cross_SOURCE_DIR}/include/spirv_cross>)
 endif()
 
+# Vulkan
+find_package(Vulkan REQUIRED)
+
+# Main library
 add_library(dawn-gfx
     include/dawn-gfx/detail/Handle.h
     include/dawn-gfx/detail/MathGeoLib.h
@@ -137,10 +136,12 @@ add_library(dawn-gfx
     include/dawn-gfx/TriangleBuffer.h
     include/dawn-gfx/VertexDecl.h
     src/gl/GL.h
-    src/gl/GLRenderContext.cpp
-    src/gl/GLRenderContext.h
-    src/null/NullRenderContext.cpp
-    src/null/NullRenderContext.h
+    src/gl/RenderContextGL.cpp
+    src/gl/RenderContextGL.h
+    src/null/RenderContextNull.cpp
+    src/null/RenderContextNull.h
+    src/vulkan/RenderContextVK.cpp
+    src/vulkan/RenderContextVK.h
     src/Colour.cpp
     src/Glslang.h
     src/Memory.cpp
@@ -153,7 +154,7 @@ add_library(dawn-gfx
     src/VertexDecl.cpp)
 target_include_directories(dawn-gfx PUBLIC include)
 target_include_directories(dawn-gfx PRIVATE include/dawn-gfx src)
-target_link_libraries(dawn-gfx dga-base expected fmt glad glfw glslang SPIRV MathGeoLib spirv-cross-glsl)
+target_link_libraries(dawn-gfx dga-base expected fmt glad glfw glslang SPIRV MathGeoLib spirv-cross-glsl Vulkan::Vulkan)
 target_compile_features(dawn-gfx PUBLIC cxx_std_17)
 set_target_properties(dawn-gfx PROPERTIES CXX_EXTENSIONS OFF)
 if(MSVC)
