@@ -141,33 +141,6 @@ inline Mat4 createProjMatrix(Renderer& r, float n, float f, float fov_y, float a
     return r.adjustProjectionMatrix(mat);
 }
 
-inline uint createFullscreenQuad(Renderer& r, VertexBufferHandle& vb) {
-    // clang-format off
-    float flipped_vertices[] = {
-        // Position | UV
-        3.0f,  1.0f, 2.0f, 0.0f,
-        -1.0f, 1.0f, 0.0f, 0.0f,
-        -1.0f, -3.0f, 0.0f, 2.0f
-    };
-    float non_flipped_vertices[] = {
-        // Position | UV
-        -1.0f, -1.0f, 0.0f, 0.0f,
-        3.0f,  -1.0f, 2.0f, 0.0f,
-        -1.0f, 3.0f, 0.0f, 2.0f
-    };
-    // clang-format on
-    VertexDecl decl;
-    decl.begin()
-        .add(VertexDecl::Attribute::Position, 2, VertexDecl::AttributeType::Float)
-        .add(VertexDecl::Attribute::TexCoord0, 2, VertexDecl::AttributeType::Float)
-        .end();
-    vb = r.createVertexBuffer(
-        Memory(r.hasFlippedViewport() ? flipped_vertices : non_flipped_vertices,
-               sizeof(flipped_vertices)),
-        decl);
-    return 3;
-}
-
 inline ShaderHandle loadShader(Renderer& r, ShaderStage type, const std::string& source_file) {
     std::ifstream shader(source_file);
     std::string shader_source((std::istreambuf_iterator<char>(shader)),

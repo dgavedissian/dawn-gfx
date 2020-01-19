@@ -483,7 +483,8 @@ public:
     /// Does nothing unless init() has been called.
     Mat4 adjustProjectionMatrix(Mat4 projection_matrix) const;
 
-    /// Returns true if viewport coordinates are from the top-left (Vulkan) rather than bottom-left (OpenGL, D3D).
+    /// Returns true if viewport coordinates are from the top-left (Vulkan) rather than bottom-left
+    /// (OpenGL, D3D).
     bool hasFlippedViewport() const;
 
     /// Create vertex buffer.
@@ -533,7 +534,7 @@ public:
 
     // Create texture.
     TextureHandle createTexture2D(u16 width, u16 height, TextureFormat format, Memory data,
-                                   bool generate_mipmaps = true, bool framebuffer_usage = false);
+                                  bool generate_mipmaps = true, bool framebuffer_usage = false);
     void setTexture(TextureHandle handle, uint sampler_unit,
                     u32 sampler_flags = SamplerFlag::Default, float max_anisotropy = 0.0f);
     // get texture information.
@@ -593,6 +594,13 @@ public:
     /// Offset is in vertices/indices depending on whether an index buffer is being used.
     void submit(uint render_queue, ProgramHandle program, uint vertex_count, uint offset = 0);
 
+    /// Update uniform and draw state, then draws a full screen quad. Submits to the last created
+    /// render queue.
+    void submitFullscreenQuad(ProgramHandle program);
+
+    /// Update uniform and draw state, then draws a full screen quad.
+    void submitFullscreenQuad(uint render_queue, ProgramHandle program);
+
     /// Render a single frame.
     bool frame();
 
@@ -645,6 +653,9 @@ private:
 
     // Framebuffers.
     std::unordered_map<FrameBufferHandle, std::vector<TextureHandle>> frame_buffer_textures_;
+
+    // Fullscreen quad.
+    VertexBufferHandle fullscreen_quad_vb_;
 
     // Shared.
     std::atomic<bool> shared_rt_should_exit_;

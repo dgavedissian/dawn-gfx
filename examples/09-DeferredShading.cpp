@@ -94,7 +94,6 @@ public:
 
     ProgramHandle post_process_;
 
-    VertexBufferHandle fsq_vb_;
     FrameBufferHandle gbuffer_;
 
     struct PointLightInfo {
@@ -147,9 +146,6 @@ public:
 
         // Load texture.
         texture_ = util::loadTexture(r, util::media("wall.jpg"));
-
-        // Create full screen quad.
-        util::createFullscreenQuad(r, fsq_vb_);
 
         // Set up frame buffer.
         auto format = TextureFormat::RGBA32F;
@@ -250,8 +246,7 @@ public:
         r.setTexture(r.getFrameBufferTexture(gbuffer_, 0), 0);
         r.setTexture(r.getFrameBufferTexture(gbuffer_, 1), 1);
         r.setTexture(r.getFrameBufferTexture(gbuffer_, 2), 2);
-        r.setVertexBuffer(fsq_vb_);
-        r.submit(post_process_, 3);
+        r.submitFullscreenQuad(post_process_);
 
         // Update and draw point lights.
 #ifndef DEBUG_GBUFFER
@@ -274,7 +269,6 @@ public:
 
     void stop() override {
         r.deleteProgram(post_process_);
-        r.deleteVertexBuffer(fsq_vb_);
         r.deleteTexture(texture_);
         r.deleteProgram(ground_program_);
     }

@@ -120,6 +120,32 @@ tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16
     } else {
         shared_render_context_->startRendering();
     }
+
+    // Create fullscreen quad object.
+    // clang-format off
+    float flipped_vertices[] = {
+        // Position | UV
+        3.0f,  1.0f, 2.0f, 0.0f,
+        -1.0f, 1.0f, 0.0f, 0.0f,
+        -1.0f, -3.0f, 0.0f, 2.0f
+    };
+    float non_flipped_vertices[] = {
+        // Position | UV
+        -1.0f, -1.0f, 0.0f, 0.0f,
+        3.0f,  -1.0f, 2.0f, 0.0f,
+        -1.0f, 3.0f, 0.0f, 2.0f
+    };
+    // clang-format on
+    VertexDecl decl;
+    decl.begin()
+        .add(VertexDecl::Attribute::Position, 2, VertexDecl::AttributeType::Float)
+        .add(VertexDecl::Attribute::TexCoord0, 2, VertexDecl::AttributeType::Float)
+        .end();
+    fullscreen_quad_vb_ =
+        createVertexBuffer(Memory(hasFlippedViewport() ? flipped_vertices : non_flipped_vertices,
+                                  sizeof(flipped_vertices)),
+                           decl);
+
     return {};
 }
 
@@ -515,6 +541,17 @@ void Renderer::submit(uint render_queue, ProgramHandle program, uint vertex_coun
     // Move the "pending" render item to the specified render queue.
     submit_->render_queues[render_queue].render_items.emplace_back(std::move(item));
     item = RenderItem();
+}
+
+void Renderer::submitFullscreenQuad(ProgramHandle program) {
+    submitFullscreenQuad(lastCreatedRenderQueue(), program);
+}
+
+void Renderer::submitFullscreenQuad(uint render_queue, ProgramHandle program) {
+    setVertexBuffer(fullscreen_quad_vb_);
+    submit_->pending_item.ib.reset();
+    submit_->pending_item.ib_offset = 0;
+    submit(render_queue, program, 3, 0);
 }
 
 bool Renderer::frame() {

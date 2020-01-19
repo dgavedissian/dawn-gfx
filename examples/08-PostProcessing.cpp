@@ -9,7 +9,6 @@ public:
     Mesh box_;
     ProgramHandle box_program_;
 
-    VertexBufferHandle fsq_vb_;
     ProgramHandle post_process_;
     FrameBufferHandle fb_handle_;
 
@@ -25,9 +24,6 @@ public:
 
         // Create box.
         box_ = MeshBuilder{r}.normals(true).texcoords(true).createBox(10.0f);
-
-        // Create full screen quad.
-        util::createFullscreenQuad(r, fsq_vb_);
 
         // Set up frame buffer.
         fb_handle_ = r.createFrameBuffer(width(), height(), TextureFormat::RGBA8);
@@ -70,13 +66,11 @@ public:
 
         // Draw fb.
         r.setTexture(r.getFrameBufferTexture(fb_handle_, 0), 0);
-        r.setVertexBuffer(fsq_vb_);
-        r.submit(post_process_, 3);
+        r.submitFullscreenQuad(post_process_);
     }
 
     void stop() override {
         r.deleteProgram(post_process_);
-        r.deleteVertexBuffer(fsq_vb_);
         r.deleteProgram(box_program_);
     }
 };
