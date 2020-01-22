@@ -6,6 +6,7 @@
 
 #include <dga/aliases.h>
 #include <dga/platform.h>
+#include <dga/result.h>
 
 namespace dw {
 namespace gfx {
@@ -20,6 +21,9 @@ using dga::i64;
 using dga::usize;
 using dga::uint;
 using dga::byte;
+
+using dga::Result;
+using dga::Error;
 }
 }
 

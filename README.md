@@ -10,7 +10,7 @@ A low level multi-threaded graphics abstraction layer. Supports OpenGL 3+, WebGL
         2. [Resource bindings](#resource-bindings)
     2. [Hello world](#hello-world)
     
-![Quad](screenshot1.jpg) ![Deferred shading](screenshot2.jpg) ![Normal mapping](screenshot3.jpg)
+![Quad](docs/screenshot1.jpg) ![Deferred shading](docs/screenshot2.jpg) ![Normal mapping](docs/screenshot3.jpg)
     
 ### Dependencies
 

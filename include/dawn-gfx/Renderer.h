@@ -15,7 +15,6 @@
 
 #include <dga/barrier.h>
 #include <dga/hash_combine.h>
-#include <tl/expected.hpp>
 #include <vector>
 #include <variant>
 #include <unordered_map>
@@ -475,7 +474,7 @@ public:
     ~Renderer();
 
     /// Initialise.
-    tl::expected<void, std::string> init(RendererType type, u16 width, u16 height,
+    Result<void, std::string> init(RendererType type, u16 width, u16 height,
                                          const std::string& title, InputCallbacks input_callbacks,
                                          bool use_render_thread);
 

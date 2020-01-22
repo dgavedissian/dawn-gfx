@@ -23,7 +23,7 @@ public:
     virtual bool hasFlippedViewport() const = 0;
 
     // Window management. Executed on the main thread.
-    virtual tl::expected<void, std::string> createWindow(u16 width, u16 height,
+    virtual Result<void, std::string> createWindow(u16 width, u16 height,
                                                          const std::string& title,
                                                          InputCallbacks input_callbacks) = 0;
     virtual void destroyWindow() = 0;

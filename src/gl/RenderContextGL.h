@@ -42,7 +42,7 @@ public:
     bool hasFlippedViewport() const override;
 
     // Window management. Executed on the main thread.
-    tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title,
+    Result<void, std::string> createWindow(u16 width, u16 height, const std::string& title,
                                                  InputCallbacks desc) override;
     void destroyWindow() override;
     void processEvents() override;

@@ -127,7 +127,7 @@ constexpr TBuiltInResource kDefaultTBuiltInResource = {
 
 namespace dw {
 namespace gfx {
-tl::expected<CompiledShader, ShaderCompileError> compileGLSL(
+Result<CompiledShader, ShaderCompileError> compileGLSL(
     ShaderStage stage, const std::string& glsl_source,
     const std::vector<std::string>& compile_definitions) {
     EShLanguage esh_stage;
@@ -142,7 +142,7 @@ tl::expected<CompiledShader, ShaderCompileError> compileGLSL(
             esh_stage = EShLangFragment;
             break;
         default:
-            return tl::make_unexpected(
+            return Error(
                 ShaderCompileError{fmt::format("Unexpected shader stage {}", esh_stage), ""});
     }
 
@@ -180,16 +180,14 @@ tl::expected<CompiledShader, ShaderCompileError> compileGLSL(
     EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
 
     if (!shader.parse(&kDefaultTBuiltInResource, 100, false, messages)) {
-        return tl::make_unexpected(
-            ShaderCompileError{shader.getInfoLog(), shader.getInfoDebugLog()});
+        return Error(ShaderCompileError{shader.getInfoLog(), shader.getInfoDebugLog()});
     }
 
     // Link to program.
     glslang::TProgram program;
     program.addShader(&shader);
     if (!program.link(messages)) {
-        return tl::make_unexpected(
-            ShaderCompileError{program.getInfoLog(), program.getInfoDebugLog()});
+        return Error(ShaderCompileError{program.getInfoLog(), program.getInfoDebugLog()});
     }
 
     // Convert to SPIR-V.
@@ -199,7 +197,8 @@ tl::expected<CompiledShader, ShaderCompileError> compileGLSL(
     spv_version.spv = 0x10000;
     intermediate.setSpv(spv_version);
     glslang::GlslangToSpv(*program.getIntermediate(esh_stage), spirv_out);
-    return CompiledShader{std::move(spirv_out), intermediate.getEntryPointName()};
+    return Result<CompiledShader, ShaderCompileError>(
+        CompiledShader{std::move(spirv_out), intermediate.getEntryPointName()});
 }
 }  // namespace gfx
 }  // namespace dw

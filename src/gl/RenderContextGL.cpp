@@ -448,9 +448,9 @@ bool RenderContextGL::hasFlippedViewport() const {
     return false;
 }
 
-tl::expected<void, std::string> RenderContextGL::createWindow(u16 width, u16 height,
-                                                              const std::string& title,
-                                                              InputCallbacks input_callbacks) {
+Result<void, std::string> RenderContextGL::createWindow(u16 width, u16 height,
+                                                        const std::string& title,
+                                                        InputCallbacks input_callbacks) {
     logger_.info("Creating window.");
 
     // Initialise GLFW.
@@ -460,12 +460,12 @@ tl::expected<void, std::string> RenderContextGL::createWindow(u16 width, u16 hei
 #endif
     if (!glfwInit()) {
 #ifdef DGA_EMSCRIPTEN
-        return tl::make_unexpected("Failed to initialise GLFW.");
+        return Error("Failed to initialise GLFW.");
 #else
         const char* last_error;
         int error_code = glfwGetError(&last_error);
-        return tl::make_unexpected(fmt::format(
-            "Failed to initialise GLFW. Code: {:#x}. Description: {}", error_code, last_error));
+        return Error(fmt::format("Failed to initialise GLFW. Code: {:#x}. Description: {}",
+                                 error_code, last_error));
 #endif
     }
 
@@ -508,9 +508,8 @@ tl::expected<void, std::string> RenderContextGL::createWindow(u16 width, u16 hei
                                nullptr);
     if (!window_) {
         // Failed to create window.
-        return tl::make_unexpected(
-            fmt::format("glfwCreateWindow failed. Code: {:#x}. Description: {}", last_error_code,
-                        last_error_description));
+        return Error(fmt::format("glfwCreateWindow failed. Code: {:#x}. Description: {}",
+                                 last_error_code, last_error_description));
     }
     Vec2i fb_size = framebufferSize();
     backbuffer_width_ = static_cast<u16>(fb_size.x);
@@ -599,7 +598,7 @@ tl::expected<void, std::string> RenderContextGL::createWindow(u16 width, u16 hei
 
     // Initialise GL function pointers.
     if (!gladLoadGL(glfwGetProcAddress)) {
-        return tl::make_unexpected("gladLoadGL failed.");
+        return Error<std::string>("gladLoadGL failed.");
     }
 
     // Set debug callbacks.

@@ -67,10 +67,9 @@ Renderer::~Renderer() {
     shared_render_context_.reset();
 }
 
-tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16 height,
-                                               const std::string& title,
-                                               InputCallbacks input_callbacks,
-                                               bool use_render_thread) {
+Result<void, std::string> Renderer::init(RendererType type, u16 width, u16 height,
+                                         const std::string& title, InputCallbacks input_callbacks,
+                                         bool use_render_thread) {
 #ifdef DGA_EMSCRIPTEN
     use_render_thread = false;
 #endif

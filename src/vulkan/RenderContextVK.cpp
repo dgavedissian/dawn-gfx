@@ -830,9 +830,9 @@ bool RenderContextVK::hasFlippedViewport() const {
     return true;
 }
 
-tl::expected<void, std::string> RenderContextVK::createWindow(u16 width, u16 height,
-                                                              const std::string& title,
-                                                              InputCallbacks input_callbacks) {
+Result<void, std::string> RenderContextVK::createWindow(u16 width, u16 height,
+                                                        const std::string& title,
+                                                        InputCallbacks input_callbacks) {
     glfwInit();
 
     // Select monitor.
