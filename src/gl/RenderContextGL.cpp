@@ -736,6 +736,7 @@ bool RenderContextGL::frame(const Frame* frame) {
         }
 
         // Render items.
+        u32 previous_max_texture_unit = 0;
         for (uint i = 0; i < q.render_items.size(); ++i) {
             auto* previous = i > 0 ? &q.render_items[i - 1] : nullptr;
             auto* current = &q.render_items[i];
@@ -826,36 +827,39 @@ bool RenderContextGL::frame(const Frame* frame) {
             }
 
             // Bind textures.
-            uint texture_count =
-                std::max(previous ? previous->textures.size() : 0, current->textures.size());
-            for (uint j = 0; j < texture_count; ++j) {
+            for (uint j = 0; j < current->textures.size(); ++j) {
                 const auto& texture = current->textures[j];
 
                 GL_CHECK(glActiveTexture(GL_TEXTURE0 + j));
-                if (j >= current->textures.size()) {
-                    // If the iterator is greater than the number of current textures, this means we
-                    // are hitting texture units used by the previous render item. Unbind it as it's
-                    // no longer in use.
+
+                auto texture_unit_it =
+                    program_data.binding_location_to_texture_unit.find(texture.binding_location);
+                if (texture_unit_it == program_data.binding_location_to_texture_unit.end()) {
+                    logger_.warn("Binding location {} does not correspond to a texture.",
+                                 texture.binding_location);
                     GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
                     GL_CHECK(glBindSampler(j, 0));
-                } else if (!texture) {
-                    // Unbind the texture if the handle is invalid.
-                    GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
-                    GL_CHECK(glBindSampler(j, 0));
-                } else {
-                    const auto& texture_data = texture_map_.at(texture->handle);
-                    GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture_data.texture));
-                    if (texture->sampler_info.sampler_flags != 0) {
-                        auto sampler_info = texture->sampler_info;
-                        if (!texture_data.has_mip_maps) {
-                            sampler_info.sampler_flags &= ~SamplerFlag::maskMipFilter;
-                        }
-                        GLuint sampler = sampler_cache_.findOrCreate(sampler_info);
-                        GL_CHECK(glBindSampler(j, sampler));
-                    } else {
-                        GL_CHECK(glBindSampler(j, 0));
-                    }
+                    continue;
                 }
+
+                const auto& texture_data = texture_map_.at(texture.handle);
+                GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture_data.texture));
+                if (texture.sampler_info.sampler_flags != 0) {
+                    auto sampler_info = texture.sampler_info;
+                    if (!texture_data.has_mip_maps) {
+                        sampler_info.sampler_flags &= ~SamplerFlag::maskMipFilter;
+                    }
+                    GLuint sampler = sampler_cache_.findOrCreate(sampler_info);
+                    GL_CHECK(glBindSampler(j, sampler));
+                } else {
+                    GL_CHECK(glBindSampler(j, 0));
+                }
+            }
+            // Unbind any previously bound texture units.
+            for (int j = current->textures.size(); j < previous_max_texture_unit; ++j) {
+                GL_CHECK(glActiveTexture(GL_TEXTURE0 + j));
+                GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
+                GL_CHECK(glBindSampler(j, 0));
             }
 
             // Bind vertex data.
@@ -926,6 +930,13 @@ bool RenderContextGL::frame(const Frame* frame) {
             if (current->scissor_enabled) {
                 GL_CHECK(glDisable(GL_SCISSOR_TEST));
             }
+        }
+
+        // Unbind all previously bound texture units.
+        for (int j = 0; j < previous_max_texture_unit; ++j) {
+            GL_CHECK(glActiveTexture(GL_TEXTURE0 + j));
+            GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
+            GL_CHECK(glBindSampler(j, 0));
         }
     }
 
@@ -1018,6 +1029,7 @@ void RenderContextGL::operator()(const cmd::CreateShader& c) {
     // Remap texture binding locations.
     u32 next_texture_binding_location = 0;
     std::map<u32, const spirv_cross::Resource*> sampled_images_by_binding;
+    std::unordered_map<u32, u32> binding_location_to_texture_unit;
     for (const auto& resource : resources.sampled_images) {
         sampled_images_by_binding[glsl.get_decoration(resource.id, spv::DecorationBinding)] =
             &resource;
@@ -1032,6 +1044,7 @@ void RenderContextGL::operator()(const cmd::CreateShader& c) {
             set, binding, new_binding);
         glsl.unset_decoration(resource.id, spv::DecorationDescriptorSet);
         glsl.set_decoration(resource.id, spv::DecorationBinding, new_binding);
+        binding_location_to_texture_unit[binding] = new_binding;
     }
 
     // If we use the 'emit_uniform_buffer_as_plain_uniforms' option on an empty uniform block,
@@ -1090,7 +1103,8 @@ void RenderContextGL::operator()(const cmd::CreateShader& c) {
         return;
     }
 
-    shader_map_.emplace(c.handle, ShaderData{shader, std::move(uniform_remap_ids)});
+    shader_map_.emplace(c.handle, ShaderData{shader, std::move(uniform_remap_ids),
+                                             std::move(binding_location_to_texture_unit)});
 }
 
 void RenderContextGL::operator()(const cmd::DeleteShader& c) {
@@ -1112,6 +1126,9 @@ void RenderContextGL::operator()(const cmd::AttachShader& c) {
     GL_CHECK(glAttachShader(program_data.program, shader_data.shader));
     program_data.uniform_remap_ids.insert(shader_data.uniform_remap_ids.begin(),
                                           shader_data.uniform_remap_ids.end());
+    program_data.binding_location_to_texture_unit.insert(
+        shader_data.binding_location_to_texture_unit.begin(),
+        shader_data.binding_location_to_texture_unit.end());
 }
 
 void RenderContextGL::operator()(const cmd::LinkProgram& c) {

@@ -209,9 +209,8 @@ void ImGuiBackend::render(ImDrawData* draw_data) {
                                                io_.DisplayFramebufferScale.y));
 
                 // Set resources.
-                r_.setTexture(TextureHandle{static_cast<TextureHandle::base_type>(
-                                  reinterpret_cast<dga::uintptr>(cmd->TextureId))},
-                              0);
+                r_.setTexture(1, TextureHandle{static_cast<TextureHandle::base_type>(
+                                     reinterpret_cast<dga::uintptr>(cmd->TextureId))});
                 r_.setVertexBuffer(*tvb);
                 r_.setIndexBuffer(*tib);
 

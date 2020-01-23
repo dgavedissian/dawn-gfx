@@ -1121,14 +1121,8 @@ bool RenderContextVK::frame(const Frame* frame) {
             }
 
             // Bind descriptor set.
-            std::vector<RenderItem::TextureBinding> textures;
-            for (const auto& texture_unit : ri.textures) {
-                if (texture_unit) {
-                    textures.emplace_back(*texture_unit);
-                }
-            }
             auto descriptor_set =
-                findOrCreateDescriptorSet(DescriptorSetVK::Info{&program, std::move(textures)});
+                findOrCreateDescriptorSet(DescriptorSetVK::Info{&program, std::move(ri.textures)});
             command_buffer.bindDescriptorSets(
                 vk::PipelineBindPoint::eGraphics, graphics_pipeline.layout, 0,
                 descriptor_set.descriptor_sets[next_frame_index_], dynamic_offsets);
@@ -2009,7 +2003,6 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(DescriptorSetVK::Info
         std::vector<std::unique_ptr<vk::DescriptorBufferInfo>> buffer_info_storage;
         std::vector<std::unique_ptr<vk::DescriptorImageInfo>> image_info_storage;
 
-        usize texture_unit_index = 0;
         for (const auto& binding : info.program->layout_bindings) {
             vk::WriteDescriptorSet descriptor_write;
             descriptor_write.dstSet = descriptor_sets[i];
@@ -2038,15 +2031,21 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(DescriptorSetVK::Info
                     descriptor_write.pBufferInfo = &buffer_info;
                 } break;
                 case vk::DescriptorType::eCombinedImageSampler: {
-                    if (texture_unit_index >= info.textures.size()) {
-                        // Not enough textures are bound, bail from this binding.
-                        logger_.error(
-                            "Binding location {} requires a texture to be bound to texture "
-                            "unit {}",
-                            binding.binding, texture_unit_index);
+                    // TODO: Consider storing resource bindings in a more convenient way that
+                    // avoids the O(n) search, although for almost all cases linear search shouldn't
+                    // matter as we won't really ever have more than 10 uniform buffers.
+                    auto texture_binding_it = std::find_if(
+                        info.textures.begin(), info.textures.end(),
+                        [binding = binding.binding](const RenderItem::TextureBinding& texture) {
+                            return texture.binding_location == binding;
+                        });
+                    if (texture_binding_it == info.textures.end()) {
+                        logger_.error("Binding location {} requires a texture to be bound.",
+                                      binding.binding);
                         continue;
                     }
-                    const auto& texture_info = info.textures[texture_unit_index];
+
+                    const auto& texture_info = *texture_binding_it;
                     const auto& texture = texture_map_.at(texture_info.handle);
 
                     image_info_storage.emplace_back(std::make_unique<vk::DescriptorImageInfo>());
@@ -2056,7 +2055,6 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(DescriptorSetVK::Info
                     image_info.imageView = texture.image_view;
                     image_info.sampler = findOrCreateSampler(texture_info.sampler_info);
                     descriptor_write.pImageInfo = &image_info;
-                    texture_unit_index++;
                 } break;
                 default:
                     logger_.error("Unhandled descriptor type {}",

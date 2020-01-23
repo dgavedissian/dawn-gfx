@@ -118,11 +118,13 @@ private:
     struct ShaderData {
         GLuint shader;
         std::unordered_map<std::string, u32> uniform_remap_ids;
+        std::unordered_map<u32, u32> binding_location_to_texture_unit;
     };
     struct ProgramData {
         GLuint program;
         std::unordered_map<std::string, GLint> uniform_location_map;
         std::unordered_map<std::string, u32> uniform_remap_ids;
+        std::unordered_map<u32, u32> binding_location_to_texture_unit;
     };
     std::unordered_map<ShaderHandle, ShaderData> shader_map_;
     std::unordered_map<ProgramHandle, ProgramData> program_map_;

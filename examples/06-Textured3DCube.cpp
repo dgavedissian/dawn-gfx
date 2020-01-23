@@ -43,13 +43,14 @@ public:
         r.setUniform("light_direction", Vec3{1.0f, 1.0f, 1.0f}.Normalized());
 
         // Set vertex buffer and submit.
-        r.setTexture(texture_, 0);
+        r.setTexture(2, texture_);
         r.setVertexBuffer(box_.vb);
         r.setIndexBuffer(box_.ib);
         r.submit(program_, box_.index_count);
     }
 
     void stop() override {
+        r.deleteTexture(texture_);
         r.deleteProgram(program_);
     }
 };

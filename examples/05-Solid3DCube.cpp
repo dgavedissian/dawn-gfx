@@ -8,7 +8,6 @@ class Solid3DCube : public Example {
 public:
     Mesh box_;
     ProgramHandle program_;
-    TextureHandle texture_;
 
     void start() override {
         // Load shaders.
@@ -19,9 +18,6 @@ public:
         r.attachShader(program_, vs);
         r.attachShader(program_, fs);
         r.linkProgram(program_);
-
-        // Load texture.
-        texture_ = util::loadTexture(r, util::media("wall.jpg"));
 
         // Create box.
         box_ = MeshBuilder{r}.normals(true).texcoords(true).createBox(10.0f);
@@ -42,7 +38,6 @@ public:
         r.setUniform("light_direction", Vec3{1.0f, 1.0f, 1.0f}.Normalized());
 
         // Set vertex buffer and submit.
-        r.setTexture(texture_, 0);
         r.setVertexBuffer(box_.vb);
         r.setIndexBuffer(box_.ib);
         r.submit(program_, box_.index_count);

@@ -65,7 +65,7 @@ public:
         r.setRenderQueueClear({0.0f, 0.2f, 0.0f});
 
         // Draw fb.
-        r.setTexture(r.getFrameBufferTexture(fb_handle_, 0), 0);
+        r.setTexture(1, r.getFrameBufferTexture(fb_handle_, 0));
         r.submitFullscreenQuad(post_process_);
     }
 

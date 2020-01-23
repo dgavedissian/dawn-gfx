@@ -360,11 +360,13 @@ struct RenderItem {
     };
 
     struct TextureBinding {
+        uint binding_location;
         TextureHandle handle;
         SamplerInfo sampler_info;
 
         bool operator==(const TextureBinding& other) const {
-            return handle == other.handle && sampler_info == other.sampler_info;
+            return binding_location == other.binding_location && handle == other.handle &&
+                   sampler_info == other.sampler_info;
         }
     };
 
@@ -379,7 +381,7 @@ struct RenderItem {
     // Shader program and parameters.
     std::optional<ProgramHandle> program;
     std::unordered_map<std::string, UniformData> uniforms;
-    std::array<std::optional<TextureBinding>, DW_MAX_TEXTURE_SAMPLERS> textures;
+    std::vector<TextureBinding> textures;
 
     // Scissor.
     bool scissor_enabled = false;
@@ -475,8 +477,8 @@ public:
 
     /// Initialise.
     Result<void, std::string> init(RendererType type, u16 width, u16 height,
-                                         const std::string& title, InputCallbacks input_callbacks,
-                                         bool use_render_thread);
+                                   const std::string& title, InputCallbacks input_callbacks,
+                                   bool use_render_thread);
 
     /// Adjusts a RH D3D projection matrix to be compatible with the underlying renderer type.
     /// Does nothing unless init() has been called.
@@ -534,10 +536,11 @@ public:
     // Create texture.
     TextureHandle createTexture2D(u16 width, u16 height, TextureFormat format, Memory data,
                                   bool generate_mipmaps = true, bool framebuffer_usage = false);
-    void setTexture(TextureHandle handle, uint sampler_unit,
-                    u32 sampler_flags = SamplerFlag::Default, float max_anisotropy = 0.0f);
     // get texture information.
     void deleteTexture(TextureHandle handle);
+    // Binds a texture to a binding location defined in the current shader program.
+    bool setTexture(uint binding_location, TextureHandle handle, u32 sampler_flags = SamplerFlag::Default,
+              float max_anisotropy = 0.0f);
 
     // Framebuffer.
     FrameBufferHandle createFrameBuffer(u16 width, u16 height, TextureFormat format);

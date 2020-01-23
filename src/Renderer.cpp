@@ -375,11 +375,14 @@ TextureHandle Renderer::createTexture2D(u16 width, u16 height, TextureFormat for
     return handle;
 }
 
-void Renderer::setTexture(TextureHandle handle, uint sampler_unit, u32 sampler_flags,
-                          float max_anisotropy) {
-    assert(sampler_unit < DW_MAX_TEXTURE_SAMPLERS);
-    auto& binding = submit_->pending_item.textures[sampler_unit];
-    binding.emplace(RenderItem::TextureBinding{handle, sampler_flags, max_anisotropy});
+bool Renderer::setTexture(uint binding_location, TextureHandle handle, u32 sampler_flags,
+                    float max_anisotropy) {
+    if (submit_->pending_item.textures.size() == DW_MAX_TEXTURE_SAMPLERS) {
+        return false;
+    }
+    submit_->pending_item.textures.emplace_back(
+        RenderItem::TextureBinding{binding_location, handle, {sampler_flags, max_anisotropy}});
+    return true;
 }
 
 void Renderer::deleteTexture(TextureHandle handle) {

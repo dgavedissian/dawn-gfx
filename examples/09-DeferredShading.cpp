@@ -223,7 +223,7 @@ public:
 
             r.setVertexBuffer(ground_.vb);
             r.setIndexBuffer(ground_.ib);
-            r.setTexture(texture_, 0);
+            r.setTexture(2, texture_);
             r.submit(ground_program_, ground_.index_count);
         }
 
@@ -234,7 +234,7 @@ public:
             r.setUniform("mvp_matrix", proj * view * model);
             r.setVertexBuffer(sphere_.vb);
             r.setIndexBuffer(sphere_.ib);
-            r.setTexture(texture_, 0);
+            r.setTexture(2, texture_);
             r.submit(sphere_program_, sphere_.index_count);
         }
 
@@ -243,9 +243,9 @@ public:
         r.setRenderQueueClear({0.0f, 0.0f, 0.0f});
 
         // Draw fb.
-        r.setTexture(r.getFrameBufferTexture(gbuffer_, 0), 0);
-        r.setTexture(r.getFrameBufferTexture(gbuffer_, 1), 1);
-        r.setTexture(r.getFrameBufferTexture(gbuffer_, 2), 2);
+        r.setTexture(1, r.getFrameBufferTexture(gbuffer_, 0));
+        r.setTexture(2, r.getFrameBufferTexture(gbuffer_, 1));
+        r.setTexture(3, r.getFrameBufferTexture(gbuffer_, 2));
         r.submitFullscreenQuad(post_process_);
 
         // Update and draw point lights.
@@ -259,9 +259,9 @@ public:
                      light_info.origin.y,
                      light_info.origin.z - sin(angle + light_info.angle_offset * 0.5f) * 5.5f +
                          cos(angle + light_info.angle_offset * 0.8f) * 6.0f));
-            r.setTexture(r.getFrameBufferTexture(gbuffer_, 0), 0);
-            r.setTexture(r.getFrameBufferTexture(gbuffer_, 1), 1);
-            r.setTexture(r.getFrameBufferTexture(gbuffer_, 2), 2);
+            r.setTexture(1, r.getFrameBufferTexture(gbuffer_, 0));
+            r.setTexture(2, r.getFrameBufferTexture(gbuffer_, 1));
+            r.setTexture(3, r.getFrameBufferTexture(gbuffer_, 2));
             light_info.light->draw(view, proj);
         }
 #endif
