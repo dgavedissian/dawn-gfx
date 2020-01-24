@@ -127,7 +127,7 @@ constexpr TBuiltInResource kDefaultTBuiltInResource = {
 
 namespace dw {
 namespace gfx {
-Result<CompiledShader, ShaderCompileError> compileGLSL(
+Result<ShaderStageInfo, ShaderCompileError> compileGLSL(
     ShaderStage stage, const std::string& glsl_source,
     const std::vector<std::string>& compile_definitions) {
     EShLanguage esh_stage;
@@ -197,8 +197,8 @@ Result<CompiledShader, ShaderCompileError> compileGLSL(
     spv_version.spv = 0x10000;
     intermediate.setSpv(spv_version);
     glslang::GlslangToSpv(*program.getIntermediate(esh_stage), spirv_out);
-    return Result<CompiledShader, ShaderCompileError>(
-        CompiledShader{std::move(spirv_out), intermediate.getEntryPointName()});
+    return Result<ShaderStageInfo, ShaderCompileError>(
+        ShaderStageInfo{stage, intermediate.getEntryPointName(), Memory(std::move(spirv_out))});
 }
 }  // namespace gfx
 }  // namespace dw

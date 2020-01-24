@@ -129,17 +129,10 @@ ImGuiBackend::ImGuiBackend(Renderer& r, ImGuiIO& io) : r_(r), io_(io) {
         throw std::runtime_error("Failed to compile ImGui fragment shader: " +
                                  compiled_vs_result.error().compile_error);
     }
-    auto vs = r_.createShader(ShaderStage::Vertex, compiled_vs_result->entry_point,
-                              Memory(std::move(compiled_vs_result->spirv)));
-    auto fs = r_.createShader(ShaderStage::Fragment, compiled_fs_result->entry_point,
-                              Memory(std::move(compiled_fs_result->spirv)));
-    shader_program_ = r_.createProgram();
-    r_.attachShader(shader_program_, vs);
-    r_.attachShader(shader_program_, fs);
-    r_.linkProgram(shader_program_);
-    r_.deleteShader(vs);
-    r_.deleteShader(fs);
-    r_.submit(shader_program_);
+    shader_program_ = r_.createProgram({{ShaderStage::Vertex, compiled_vs_result->entry_point,
+                                         Memory(std::move(compiled_vs_result->spirv))},
+                                        {ShaderStage::Fragment, compiled_fs_result->entry_point,
+                                         Memory(std::move(compiled_fs_result->spirv))}});
 }
 
 ImGuiBackend::~ImGuiBackend() {

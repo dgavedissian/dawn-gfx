@@ -155,7 +155,7 @@ inline Mat4 createProjMatrix(Renderer& r, float n, float f, float fov_y, float a
     return r.adjustProjectionMatrix(mat);
 }
 
-inline ShaderHandle loadShader(Renderer& r, ShaderStage type, const std::string& source_file) {
+inline ShaderStageInfo loadShader(Renderer& r, ShaderStage type, const std::string& source_file) {
     std::ifstream shader(source_file);
     std::string shader_source((std::istreambuf_iterator<char>(shader)),
                               std::istreambuf_iterator<char>());
@@ -164,8 +164,7 @@ inline ShaderHandle loadShader(Renderer& r, ShaderStage type, const std::string&
         throw std::runtime_error("Compile error whilst loading " + source_file + ": " +
                                  spv_result.error().compile_error);
     }
-    return r.createShader(type, spv_result.value().entry_point,
-                          Memory(std::move(spv_result.value().spirv)));
+    return std::move(*spv_result);
 }
 
 inline TextureHandle loadTexture(Renderer& r, const std::string& texture) {

@@ -109,10 +109,7 @@ void setup() {
     // Load shaders. Omitted for brevity.
     auto vs = compileGLSL(...);
     auto fs = compileGLSL(...);
-    program_handle = r.createProgram();
-    r.attachShader(program_handle, vs);
-    r.attachShader(program_handle, fs);
-    r.linkProgram(program_handle);
+    program_handle = r.createProgram({vs, fs});
 
     // Set up vertex buffer.
     struct Vertex { float x; float y; u32 colour; };

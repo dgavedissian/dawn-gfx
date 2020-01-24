@@ -27,11 +27,7 @@ public:
                                    util::media("shaders/deferred_shading/light_pass.vert"));
         auto fs = util::loadShader(r, ShaderStage::Fragment,
                                    util::media("shaders/deferred_shading/light_pass_point.frag"));
-        program_ = r.createProgram();
-        r.attachShader(program_, vs);
-        r.attachShader(program_, fs);
-        r.linkProgram(program_);
-
+        program_ = r.createProgram({vs, fs});
         r.setUniform("screen_size", screen_size);
         r.setUniform("light_colour", colour.rgb());
         r.setUniform("linear_term", linear_term);
@@ -123,17 +119,11 @@ public:
                                    util::media("shaders/deferred_shading/object_gbuffer.vert"));
         auto fs = util::loadShader(r, ShaderStage::Fragment,
                                    util::media("shaders/deferred_shading/object_gbuffer.frag"));
-        ground_program_ = r.createProgram();
-        r.attachShader(ground_program_, vs);
-        r.attachShader(ground_program_, fs);
-        r.linkProgram(ground_program_);
+        ground_program_ = r.createProgram({vs, fs});
         r.setUniform("texcoord_scale", Vec2{kGroundSize / 5.0f, kGroundSize / 5.0f});
         r.submit(ground_program_);
 
-        sphere_program_ = r.createProgram();
-        r.attachShader(sphere_program_, vs);
-        r.attachShader(sphere_program_, fs);
-        r.linkProgram(sphere_program_);
+        sphere_program_ = r.createProgram({vs, fs});
         r.setUniform("texcoord_scale", Vec2{1.0f, 1.0f});
         r.submit(sphere_program_);
 
@@ -166,10 +156,7 @@ public:
             r, ShaderStage::Fragment,
             util::media("shaders/deferred_shading/deferred_ambient_light_pass.frag"));
 #endif
-        post_process_ = r.createProgram();
-        r.attachShader(post_process_, pp_vs);
-        r.attachShader(post_process_, pp_fs);
-        r.linkProgram(post_process_);
+        post_process_ = r.createProgram({pp_vs, pp_fs});
         r.setUniform("ambient_light", Vec3{0.1f, 0.1f, 0.1f});
         r.submit(post_process_);
 

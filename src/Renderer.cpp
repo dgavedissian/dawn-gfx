@@ -298,29 +298,10 @@ void Renderer::setIndexBuffer(TransientIndexBufferHandle handle) {
     submit_->pending_item.ib_offset = uint(tib.data - submit_->transient_ib_storage.data.data());
 }
 
-ShaderHandle Renderer::createShader(ShaderStage stage, const std::string& entry_point,
-                                    Memory data) {
-    auto handle = shader_handle_.next();
-    submitPreFrameCommand(cmd::CreateShader{handle, stage, entry_point, std::move(data)});
-    return handle;
-}
-
-void Renderer::deleteShader(ShaderHandle handle) {
-    submitPostFrameCommand(cmd::DeleteShader{handle});
-}
-
-ProgramHandle Renderer::createProgram() {
+ProgramHandle Renderer::createProgram(std::vector<ShaderStageInfo> stages) {
     auto handle = program_handle_.next();
-    submitPreFrameCommand(cmd::CreateProgram{handle});
+    submitPreFrameCommand(cmd::CreateProgram{handle, std::move(stages)});
     return handle;
-}
-
-void Renderer::attachShader(ProgramHandle program, ShaderHandle shader) {
-    submitPreFrameCommand(cmd::AttachShader{program, shader});
-}
-
-void Renderer::linkProgram(ProgramHandle program) {
-    submitPreFrameCommand(cmd::LinkProgram{program});
 }
 
 void Renderer::deleteProgram(ProgramHandle program) {
@@ -376,7 +357,7 @@ TextureHandle Renderer::createTexture2D(u16 width, u16 height, TextureFormat for
 }
 
 bool Renderer::setTexture(uint binding_location, TextureHandle handle, u32 sampler_flags,
-                    float max_anisotropy) {
+                          float max_anisotropy) {
     if (submit_->pending_item.textures.size() == DW_MAX_TEXTURE_SAMPLERS) {
         return false;
     }
