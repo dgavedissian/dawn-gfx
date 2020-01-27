@@ -194,6 +194,8 @@ const std::unordered_map<BlendFunc, GLenum> kBlendFuncMap = {
     {BlendFunc::OneMinusConstantAlpha, GL_ONE_MINUS_CONSTANT_ALPHA},
     {BlendFunc::SrcAlphaSaturate, GL_SRC_ALPHA_SATURATE},
 };
+const std::unordered_map<ShaderStage, GLenum> kShaderStageMap = {
+    {ShaderStage::Vertex, GL_VERTEX_SHADER}, {ShaderStage::Geometry, GL_GEOMETRY_SHADER}, {ShaderStage::Fragment, GL_FRAGMENT_SHADER}};
 
 // GLFW key map.
 const std::unordered_map<int, Key::Enum> kGlfwKeyMap = {
@@ -448,9 +450,9 @@ bool RenderContextGL::hasFlippedViewport() const {
     return false;
 }
 
-tl::expected<void, std::string> RenderContextGL::createWindow(u16 width, u16 height,
-                                                              const std::string& title,
-                                                              InputCallbacks input_callbacks) {
+Result<void, std::string> RenderContextGL::createWindow(u16 width, u16 height,
+                                                        const std::string& title,
+                                                        InputCallbacks input_callbacks) {
     logger_.info("Creating window.");
 
     // Initialise GLFW.
@@ -460,12 +462,12 @@ tl::expected<void, std::string> RenderContextGL::createWindow(u16 width, u16 hei
 #endif
     if (!glfwInit()) {
 #ifdef DGA_EMSCRIPTEN
-        return tl::make_unexpected("Failed to initialise GLFW.");
+        return Error("Failed to initialise GLFW.");
 #else
         const char* last_error;
         int error_code = glfwGetError(&last_error);
-        return tl::make_unexpected(fmt::format(
-            "Failed to initialise GLFW. Code: {:#x}. Description: {}", error_code, last_error));
+        return Error(fmt::format("Failed to initialise GLFW. Code: {:#x}. Description: {}",
+                                 error_code, last_error));
 #endif
     }
 
@@ -508,9 +510,8 @@ tl::expected<void, std::string> RenderContextGL::createWindow(u16 width, u16 hei
                                nullptr);
     if (!window_) {
         // Failed to create window.
-        return tl::make_unexpected(
-            fmt::format("glfwCreateWindow failed. Code: {:#x}. Description: {}", last_error_code,
-                        last_error_description));
+        return Error(fmt::format("glfwCreateWindow failed. Code: {:#x}. Description: {}",
+                                 last_error_code, last_error_description));
     }
     Vec2i fb_size = framebufferSize();
     backbuffer_width_ = static_cast<u16>(fb_size.x);
@@ -599,7 +600,7 @@ tl::expected<void, std::string> RenderContextGL::createWindow(u16 width, u16 hei
 
     // Initialise GL function pointers.
     if (!gladLoadGL(glfwGetProcAddress)) {
-        return tl::make_unexpected("gladLoadGL failed.");
+        return Error<std::string>("gladLoadGL failed.");
     }
 
     // Set debug callbacks.
@@ -737,6 +738,7 @@ bool RenderContextGL::frame(const Frame* frame) {
         }
 
         // Render items.
+        u32 previous_max_texture_unit = 0;
         for (uint i = 0; i < q.render_items.size(); ++i) {
             auto* previous = i > 0 ? &q.render_items[i - 1] : nullptr;
             auto* current = &q.render_items[i];
@@ -827,36 +829,39 @@ bool RenderContextGL::frame(const Frame* frame) {
             }
 
             // Bind textures.
-            uint texture_count =
-                std::max(previous ? previous->textures.size() : 0, current->textures.size());
-            for (uint j = 0; j < texture_count; ++j) {
+            for (uint j = 0; j < current->textures.size(); ++j) {
                 const auto& texture = current->textures[j];
 
                 GL_CHECK(glActiveTexture(GL_TEXTURE0 + j));
-                if (j >= current->textures.size()) {
-                    // If the iterator is greater than the number of current textures, this means we
-                    // are hitting texture units used by the previous render item. Unbind it as it's
-                    // no longer in use.
+
+                auto texture_unit_it =
+                    program_data.binding_location_to_texture_unit.find(texture.binding_location);
+                if (texture_unit_it == program_data.binding_location_to_texture_unit.end()) {
+                    logger_.warn("Binding location {} does not correspond to a texture.",
+                                 texture.binding_location);
                     GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
                     GL_CHECK(glBindSampler(j, 0));
-                } else if (!texture) {
-                    // Unbind the texture if the handle is invalid.
-                    GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
-                    GL_CHECK(glBindSampler(j, 0));
-                } else {
-                    const auto& texture_data = texture_map_.at(texture->handle);
-                    GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture_data.texture));
-                    if (texture->sampler_info.sampler_flags != 0) {
-                        auto sampler_info = texture->sampler_info;
-                        if (!texture_data.has_mip_maps) {
-                            sampler_info.sampler_flags &= ~SamplerFlag::maskMipFilter;
-                        }
-                        GLuint sampler = sampler_cache_.findOrCreate(sampler_info);
-                        GL_CHECK(glBindSampler(j, sampler));
-                    } else {
-                        GL_CHECK(glBindSampler(j, 0));
-                    }
+                    continue;
                 }
+
+                const auto& texture_data = texture_map_.at(texture.handle);
+                GL_CHECK(glBindTexture(GL_TEXTURE_2D, texture_data.texture));
+                if (texture.sampler_info.sampler_flags != 0) {
+                    auto sampler_info = texture.sampler_info;
+                    if (!texture_data.has_mip_maps) {
+                        sampler_info.sampler_flags &= ~SamplerFlag::maskMipFilter;
+                    }
+                    GLuint sampler = sampler_cache_.findOrCreate(sampler_info);
+                    GL_CHECK(glBindSampler(j, sampler));
+                } else {
+                    GL_CHECK(glBindSampler(j, 0));
+                }
+            }
+            // Unbind any previously bound texture units.
+            for (int j = current->textures.size(); j < previous_max_texture_unit; ++j) {
+                GL_CHECK(glActiveTexture(GL_TEXTURE0 + j));
+                GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
+                GL_CHECK(glBindSampler(j, 0));
             }
 
             // Bind vertex data.
@@ -927,6 +932,13 @@ bool RenderContextGL::frame(const Frame* frame) {
             if (current->scissor_enabled) {
                 GL_CHECK(glDisable(GL_SCISSOR_TEST));
             }
+        }
+
+        // Unbind all previously bound texture units.
+        for (int j = 0; j < previous_max_texture_unit; ++j) {
+            GL_CHECK(glActiveTexture(GL_TEXTURE0 + j));
+            GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
+            GL_CHECK(glBindSampler(j, 0));
         }
     }
 
@@ -1005,130 +1017,126 @@ void RenderContextGL::operator()(const cmd::DeleteIndexBuffer& c) {
     index_buffer_map_.erase(it);
 }
 
-void RenderContextGL::operator()(const cmd::CreateShader& c) {
-    static std::unordered_map<ShaderStage, GLenum> shader_type_map = {
-        {ShaderStage::Vertex, GL_VERTEX_SHADER}, {ShaderStage::Fragment, GL_FRAGMENT_SHADER}};
-    GLuint shader = 0;
-    GL_CHECK(shader = glCreateShader(shader_type_map.at(c.stage)));
+void RenderContextGL::operator()(const cmd::CreateProgram& c) {
+    ProgramData program_data;
+    GL_CHECK(program_data.program = glCreateProgram());
 
-    // Convert SPIR-V into GLSL.
-    spirv_cross::CompilerGLSL glsl{reinterpret_cast<const u32*>(c.data.data()),
-                                   c.data.size() / sizeof(u32)};
-    spirv_cross::ShaderResources resources = glsl.get_shader_resources();
+    // Transpile each provided shader stage to GLSL.
+    std::vector<GLuint> created_shaders;
+    created_shaders.reserve(c.stages.size());
+    for (const auto& stage : c.stages) {
+        GLuint shader = 0;
+        GL_CHECK(shader = glCreateShader(kShaderStageMap.at(stage.stage)));
 
-    // Remap texture binding locations.
-    u32 next_texture_binding_location = 0;
-    std::map<u32, const spirv_cross::Resource*> sampled_images_by_binding;
-    for (const auto& resource : resources.sampled_images) {
-        sampled_images_by_binding[glsl.get_decoration(resource.id, spv::DecorationBinding)] =
-            &resource;
-    }
-    for (const auto& entry : sampled_images_by_binding) {
-        const auto& resource = *entry.second;
-        u32 set = glsl.get_decoration(resource.id, spv::DecorationDescriptorSet);
-        u32 binding = glsl.get_decoration(resource.id, spv::DecorationBinding);
-        u32 new_binding = next_texture_binding_location++;
-        logger_.debug(
-            "Remapping sampled image with location(set={}, binding={}) to location(binding={})",
-            set, binding, new_binding);
-        glsl.unset_decoration(resource.id, spv::DecorationDescriptorSet);
-        glsl.set_decoration(resource.id, spv::DecorationBinding, new_binding);
-    }
+        // Convert SPIR-V into GLSL.
+        spirv_cross::CompilerGLSL glsl{reinterpret_cast<const u32*>(stage.spirv.data()),
+                                       stage.spirv.size() / sizeof(u32)};
+        spirv_cross::ShaderResources resources = glsl.get_shader_resources();
 
-    // If we use the 'emit_uniform_buffer_as_plain_uniforms' option on an empty uniform block,
-    // variables are going to be prefixed with _<id>, where <id> is the resource ID in SPIR-V.
-    // In those cases, we need to store that information so it can be looked up during frame().
-    std::unordered_map<std::string, u32> uniform_remap_ids;
-    for (const auto& resource : resources.uniform_buffers) {
-        if (!glsl.get_name(resource.id).empty()) {
-            continue;
+        // Remap texture binding locations.
+        u32 next_texture_binding_location = 0;
+        std::map<u32, const spirv_cross::Resource*> sampled_images_by_binding;
+        for (const auto& resource : resources.sampled_images) {
+            sampled_images_by_binding[glsl.get_decoration(resource.id, spv::DecorationBinding)] =
+                &resource;
+        }
+        for (const auto& entry : sampled_images_by_binding) {
+            const auto& resource = *entry.second;
+            u32 set = glsl.get_decoration(resource.id, spv::DecorationDescriptorSet);
+            u32 binding = glsl.get_decoration(resource.id, spv::DecorationBinding);
+            u32 new_binding = next_texture_binding_location++;
+            logger_.debug(
+                "Remapping sampled image with location(set={}, binding={}) to location(binding={})",
+                set, binding, new_binding);
+            glsl.unset_decoration(resource.id, spv::DecorationDescriptorSet);
+            glsl.set_decoration(resource.id, spv::DecorationBinding, new_binding);
+            assert(program_data.binding_location_to_texture_unit.count(binding) == 0);
+            program_data.binding_location_to_texture_unit[binding] = new_binding;
         }
 
-        const spirv_cross::SPIRType& type = glsl.get_type(resource.base_type_id);
-        usize member_count = type.member_types.size();
-        for (usize i = 0; i < member_count; ++i) {
-            uniform_remap_ids[glsl.get_member_name(type.self, i)] = resource.id;
-        }
-    }
+        // If we use the 'emit_uniform_buffer_as_plain_uniforms' option on an empty uniform block,
+        // variables are going to be prefixed with _<id>, where <id> is the resource ID in SPIR-V.
+        // In those cases, we need to store that information so it can be looked up during frame().
+        for (const auto& resource : resources.uniform_buffers) {
+            if (!glsl.get_name(resource.id).empty()) {
+                continue;
+            }
 
-    // Compile to GLSL, ready to give to GL driver.
-    spirv_cross::CompilerGLSL::Options options;
-    options.emit_push_constant_as_uniform_buffer = true;
-    options.emit_uniform_buffer_as_plain_uniforms = true;
+            const spirv_cross::SPIRType& type = glsl.get_type(resource.base_type_id);
+            usize member_count = type.member_types.size();
+            for (usize i = 0; i < member_count; ++i) {
+                auto member_name = glsl.get_member_name(type.self, i);
+                assert(program_data.uniform_remap_ids.count(member_name) == 0);
+                program_data.uniform_remap_ids[member_name] = resource.id;
+            }
+        }
+
+        // Compile to GLSL, ready to give to GL driver.
+        spirv_cross::CompilerGLSL::Options options;
+        options.emit_push_constant_as_uniform_buffer = true;
+        options.emit_uniform_buffer_as_plain_uniforms = true;
 #if DW_GL_VERSION == DW_GL_410
-    options.version = 410;
-    options.es = false;
+        options.version = 410;
+        options.es = false;
 #elif DW_GL_VERSION == DW_GLES_300
-    options.version = 300;
-    options.es = true;
+        options.version = 300;
+        options.es = true;
 #else
 #error "Unsupported DW_GL_VERSION"
 #endif
-    glsl.set_common_options(options);
-    std::string source = glsl.compile();
+        glsl.set_common_options(options);
+        std::string source = glsl.compile();
 
-    // Postprocess the GLSL to remove a GL 4.2 extension, which doesn't exist on macOS.
+        // Postprocess the GLSL to remove a GL 4.2 extension, which doesn't exist on macOS.
 #if DGA_PLATFORM == DGA_MACOS
-    source = dga::strReplaceAll(source, "#extension GL_ARB_shading_language_420pack : require",
-                                "#extension GL_ARB_shading_language_420pack : disable");
+        source = dga::strReplaceAll(source, "#extension GL_ARB_shading_language_420pack : require",
+                                    "#extension GL_ARB_shading_language_420pack : disable");
 #endif
 
-    // Compile the shader.
-    // logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
-    const char* sources[] = {source.c_str()};
-    GL_CHECK(glShaderSource(shader, 1, sources, nullptr));
-    GL_CHECK(glCompileShader(shader));
+        // Compile the shader.
+        // logger_.debug("Decompiled GLSL from SPIR-V: {}", source);
+        const char* sources_cstr = source.c_str();
+        GL_CHECK(glShaderSource(shader, 1, &sources_cstr, nullptr));
+        GL_CHECK(glCompileShader(shader));
 
-    // Check compilation result.
-    GLint result;
-    GL_CHECK(glGetShaderiv(shader, GL_COMPILE_STATUS, &result));
-    if (result == GL_FALSE) {
-        int info_log_length;
-        GL_CHECK(glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length));
-        std::string error_message(info_log_length, '\0');
-        GL_CHECK(glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data()));
-        logger_.error("[CreateShader] Shader Compile Error: {}", error_message);
-        return;
+        // Check compilation result.
+        GLint result;
+        GL_CHECK(glGetShaderiv(shader, GL_COMPILE_STATUS, &result));
+        if (result == GL_FALSE) {
+            int info_log_length;
+            GL_CHECK(glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length));
+            std::string error_message(info_log_length, '\0');
+            GL_CHECK(glGetShaderInfoLog(shader, info_log_length, nullptr, error_message.data()));
+            logger_.error("[CreateProgram] Shader compile error: {}", error_message);
+            return;
+        }
+
+        // Attach shader to program.
+        GL_CHECK(glAttachShader(program_data.program, shader));
+        created_shaders.push_back(shader);
     }
 
-    shader_map_.emplace(c.handle, ShaderData{shader, std::move(uniform_remap_ids)});
-}
-
-void RenderContextGL::operator()(const cmd::DeleteShader& c) {
-    auto it = shader_map_.find(c.handle);
-    GL_CHECK(glDeleteShader(it->second.shader));
-    shader_map_.erase(it);
-}
-
-void RenderContextGL::operator()(const cmd::CreateProgram& c) {
-    ProgramData program_data;
-    program_data.program = glCreateProgram();
-    assert(program_data.program != 0);
-    program_map_.emplace(c.handle, program_data);
-}
-
-void RenderContextGL::operator()(const cmd::AttachShader& c) {
-    const auto& shader_data = shader_map_.at(c.shader_handle);
-    auto& program_data = program_map_.at(c.handle);
-    GL_CHECK(glAttachShader(program_data.program, shader_data.shader));
-    program_data.uniform_remap_ids.insert(shader_data.uniform_remap_ids.begin(),
-                                          shader_data.uniform_remap_ids.end());
-}
-
-void RenderContextGL::operator()(const cmd::LinkProgram& c) {
-    GLuint program = program_map_.at(c.handle).program;
-    GL_CHECK(glLinkProgram(program));
+    // Link program.
+    GL_CHECK(glLinkProgram(program_data.program));
 
     // Check the result of the link process.
     GLint result = GL_FALSE;
-    glGetProgramiv(program, GL_LINK_STATUS, &result);
+    glGetProgramiv(program_data.program, GL_LINK_STATUS, &result);
     if (result == GL_FALSE) {
         int info_log_length;
-        GL_CHECK(glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_log_length));
+        GL_CHECK(glGetProgramiv(program_data.program, GL_INFO_LOG_LENGTH, &info_log_length));
         std::string error_message(info_log_length, '\0');
-        GL_CHECK(glGetProgramInfoLog(program, info_log_length, nullptr, error_message.data()));
-        logger_.error("[CreateShader] Shader Compile Error: {}", error_message);
+        GL_CHECK(glGetProgramInfoLog(program_data.program, info_log_length, nullptr,
+                                     error_message.data()));
+        logger_.error("[CreateProgram] Shader link error: {}", error_message);
     }
+
+    // Destroy leftover shaders.
+    for (auto shader : created_shaders) {
+        GL_CHECK(glDeleteShader(shader));
+    }
+
+    program_map_.emplace(c.handle, std::move(program_data));
 }
 
 void RenderContextGL::operator()(const cmd::DeleteProgram& c) {

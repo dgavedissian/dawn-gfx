@@ -830,9 +830,9 @@ bool RenderContextVK::hasFlippedViewport() const {
     return true;
 }
 
-tl::expected<void, std::string> RenderContextVK::createWindow(u16 width, u16 height,
-                                                              const std::string& title,
-                                                              InputCallbacks input_callbacks) {
+Result<void, std::string> RenderContextVK::createWindow(u16 width, u16 height,
+                                                        const std::string& title,
+                                                        InputCallbacks input_callbacks) {
     glfwInit();
 
     // Select monitor.
@@ -1121,14 +1121,8 @@ bool RenderContextVK::frame(const Frame* frame) {
             }
 
             // Bind descriptor set.
-            std::vector<RenderItem::TextureBinding> textures;
-            for (const auto& texture_unit : ri.textures) {
-                if (texture_unit) {
-                    textures.emplace_back(*texture_unit);
-                }
-            }
             auto descriptor_set =
-                findOrCreateDescriptorSet(DescriptorSetVK::Info{&program, std::move(textures)});
+                findOrCreateDescriptorSet(DescriptorSetVK::Info{&program, std::move(ri.textures)});
             command_buffer.bindDescriptorSets(
                 vk::PipelineBindPoint::eGraphics, graphics_pipeline.layout, 0,
                 descriptor_set.descriptor_sets[next_frame_index_], dynamic_offsets);
@@ -1227,93 +1221,75 @@ void RenderContextVK::operator()(const cmd::DeleteIndexBuffer& c) {
     index_buffer_map_.erase(index_buffer_map_.find(c.handle));
 }
 
-void RenderContextVK::operator()(const cmd::CreateShader& c) {
-    ShaderVK shader;
-    shader.stage = c.stage;
-    shader.entry_point = c.entry_point;
-
-    // Create shader module.
-    vk::ShaderModuleCreateInfo create_info;
-    create_info.pCode = reinterpret_cast<const u32*>(c.data.data());
-    create_info.codeSize = c.data.size();
-    shader.module = vk_device_.createShaderModule(create_info);
-
-    // Generate reflection data and create UBOs.
-    spirv_cross::Compiler comp(reinterpret_cast<const u32*>(c.data.data()),
-                               c.data.size() / sizeof(u32));
-    spirv_cross::ShaderResources res = comp.get_shader_resources();
-    for (const auto& resource : res.uniform_buffers) {
-        const spirv_cross::SPIRType& type = comp.get_type(resource.base_type_id);
-
-        ShaderVK::StructLayout struct_layout;
-        struct_layout.name = comp.get_name(resource.id);
-        struct_layout.size = comp.get_declared_struct_size(type);
-
-        usize member_count = type.member_types.size();
-        struct_layout.fields.reserve(member_count);
-        for (usize i = 0; i < member_count; ++i) {
-            struct_layout.fields.emplace_back(ShaderVK::StructLayout::StructField{
-                comp.get_member_name(type.self, i), comp.type_struct_member_offset(type, i),
-                comp.get_declared_struct_member_size(type, i)});
-        }
-        shader.uniform_buffer_bindings.emplace(
-            comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
-            std::move(struct_layout));
-    }
-
-    // Find bindings.
-    for (const auto& resource : res.uniform_buffers) {
-        shader.descriptor_type_bindings.emplace(
-            comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
-            vk::DescriptorType::eUniformBufferDynamic);
-    }
-    for (const auto& resource : res.sampled_images) {
-        shader.descriptor_type_bindings.emplace(
-            comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
-            vk::DescriptorType::eCombinedImageSampler);
-    }
-    for (const auto& resource : res.separate_images) {
-        shader.descriptor_type_bindings.emplace(
-            comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
-            vk::DescriptorType::eSampledImage);
-    }
-    for (const auto& resource : res.separate_samplers) {
-        shader.descriptor_type_bindings.emplace(
-            comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
-            vk::DescriptorType::eSampler);
-    }
-
-    shader_map_.emplace(c.handle, std::move(shader));
-}
-
-void RenderContextVK::operator()(const cmd::DeleteShader& c) {
-    assert(shader_map_.count(c.handle) > 0);
-    vk_device_.destroy(shader_map_.at(c.handle).module);
-    shader_map_.erase(c.handle);
-}
-
 void RenderContextVK::operator()(const cmd::CreateProgram& c) {
-    program_map_.emplace(c.handle, ProgramVK{});
-}
+    ProgramVK program;
 
-void RenderContextVK::operator()(const cmd::AttachShader& c) {
-    assert(program_map_.count(c.handle) > 0);
-    assert(shader_map_.count(c.shader_handle) > 0);
+    for (const auto& stage : c.stages) {
+        ShaderVK shader;
+        shader.stage = stage.stage;
+        shader.entry_point = std::make_unique<char[]>(stage.entry_point.size() + 1);
+        std::memcpy(shader.entry_point.get(), stage.entry_point.c_str(),
+                    stage.entry_point.size() + 1);
 
-    const auto& shader = shader_map_.at(c.shader_handle);
+        // Create shader module.
+        vk::ShaderModuleCreateInfo create_info;
+        create_info.pCode = reinterpret_cast<const u32*>(stage.spirv.data());
+        create_info.codeSize = stage.spirv.size();
+        shader.module = vk_device_.createShaderModule(create_info);
 
-    vk::PipelineShaderStageCreateInfo stage_info;
-    stage_info.stage = convertShaderStage(shader.stage);
-    stage_info.module = shader.module;
-    stage_info.pName = shader.entry_point.c_str();
+        // Generate reflection data and create UBOs.
+        spirv_cross::Compiler comp(reinterpret_cast<const u32*>(stage.spirv.data()),
+                                   stage.spirv.size() / sizeof(u32));
+        spirv_cross::ShaderResources res = comp.get_shader_resources();
+        for (const auto& resource : res.uniform_buffers) {
+            const spirv_cross::SPIRType& type = comp.get_type(resource.base_type_id);
 
-    auto& program = program_map_.at(c.handle);
-    program.stages[stage_info.stage] = shader;
-    program.pipeline_stages.push_back(stage_info);
-}
+            ShaderVK::StructLayout struct_layout;
+            struct_layout.name = comp.get_name(resource.id);
+            struct_layout.size = comp.get_declared_struct_size(type);
 
-void RenderContextVK::operator()(const cmd::LinkProgram& c) {
-    auto& program = program_map_.at(c.handle);
+            usize member_count = type.member_types.size();
+            struct_layout.fields.reserve(member_count);
+            for (usize i = 0; i < member_count; ++i) {
+                struct_layout.fields.emplace_back(ShaderVK::StructLayout::StructField{
+                    comp.get_member_name(type.self, i), comp.type_struct_member_offset(type, i),
+                    comp.get_declared_struct_member_size(type, i)});
+            }
+            shader.uniform_buffer_bindings.emplace(
+                comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
+                std::move(struct_layout));
+        }
+
+        // Find bindings.
+        for (const auto& resource : res.uniform_buffers) {
+            shader.descriptor_type_bindings.emplace(
+                comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
+                vk::DescriptorType::eUniformBufferDynamic);
+        }
+        for (const auto& resource : res.sampled_images) {
+            shader.descriptor_type_bindings.emplace(
+                comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
+                vk::DescriptorType::eCombinedImageSampler);
+        }
+        for (const auto& resource : res.separate_images) {
+            shader.descriptor_type_bindings.emplace(
+                comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
+                vk::DescriptorType::eSampledImage);
+        }
+        for (const auto& resource : res.separate_samplers) {
+            shader.descriptor_type_bindings.emplace(
+                comp.get_decoration(resource.id, spv::Decoration::DecorationBinding),
+                vk::DescriptorType::eSampler);
+        }
+
+        vk::PipelineShaderStageCreateInfo stage_info;
+        stage_info.stage = convertShaderStage(shader.stage);
+        stage_info.module = shader.module;
+        stage_info.pName = shader.entry_point.get();
+
+        program.stages[stage_info.stage] = std::move(shader);
+        program.pipeline_stages.push_back(stage_info);
+    }
 
     // Create descriptor set layout.
     std::map<u32, vk::DescriptorSetLayoutBinding> descriptor_bindings_map;
@@ -1381,9 +1357,16 @@ void RenderContextVK::operator()(const cmd::LinkProgram& c) {
                 ProgramVK::Uniform{binding.first, field.offset, field.size, {}});
         }
     }
+
+    program_map_.emplace(c.handle, std::move(program));
 }
 
 void RenderContextVK::operator()(const cmd::DeleteProgram& c) {
+    auto& program = program_map_.at(c.handle);
+    vk_device_.destroy(program.descriptor_set_layout);
+    for (const auto& stage : program.stages) {
+        vk_device_.destroy(stage.second.module);
+    }
     program_map_.erase(c.handle);
 }
 
@@ -2009,7 +1992,6 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(DescriptorSetVK::Info
         std::vector<std::unique_ptr<vk::DescriptorBufferInfo>> buffer_info_storage;
         std::vector<std::unique_ptr<vk::DescriptorImageInfo>> image_info_storage;
 
-        usize texture_unit_index = 0;
         for (const auto& binding : info.program->layout_bindings) {
             vk::WriteDescriptorSet descriptor_write;
             descriptor_write.dstSet = descriptor_sets[i];
@@ -2038,15 +2020,21 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(DescriptorSetVK::Info
                     descriptor_write.pBufferInfo = &buffer_info;
                 } break;
                 case vk::DescriptorType::eCombinedImageSampler: {
-                    if (texture_unit_index >= info.textures.size()) {
-                        // Not enough textures are bound, bail from this binding.
-                        logger_.error(
-                            "Binding location {} requires a texture to be bound to texture "
-                            "unit {}",
-                            binding.binding, texture_unit_index);
+                    // TODO: Consider storing resource bindings in a more convenient way that
+                    // avoids the O(n) search, although for almost all cases linear search shouldn't
+                    // matter as we won't really ever have more than 10 uniform buffers.
+                    auto texture_binding_it = std::find_if(
+                        info.textures.begin(), info.textures.end(),
+                        [binding = binding.binding](const RenderItem::TextureBinding& texture) {
+                            return texture.binding_location == binding;
+                        });
+                    if (texture_binding_it == info.textures.end()) {
+                        logger_.error("Binding location {} requires a texture to be bound.",
+                                      binding.binding);
                         continue;
                     }
-                    const auto& texture_info = info.textures[texture_unit_index];
+
+                    const auto& texture_info = *texture_binding_it;
                     const auto& texture = texture_map_.at(texture_info.handle);
 
                     image_info_storage.emplace_back(std::make_unique<vk::DescriptorImageInfo>());
@@ -2056,7 +2044,6 @@ DescriptorSetVK RenderContextVK::findOrCreateDescriptorSet(DescriptorSetVK::Info
                     image_info.imageView = texture.image_view;
                     image_info.sampler = findOrCreateSampler(texture_info.sampler_info);
                     descriptor_write.pImageInfo = &image_info;
-                    texture_unit_index++;
                 } break;
                 default:
                     logger_.error("Unhandled descriptor type {}",
@@ -2161,14 +2148,10 @@ void RenderContextVK::cleanup() {
     for (const auto& entry : program_map_) {
         vk_device_.destroy(entry.second.descriptor_set_layout);
         for (const auto& stage : entry.second.stages) {
-            // vk_device_.destroy(stage.second.module);
+            vk_device_.destroy(stage.second.module);
         }
     }
     program_map_.clear();
-    for (const auto& entry : shader_map_) {
-        vk_device_.destroy(entry.second.module);
-    }
-    shader_map_.clear();
     index_buffer_map_.clear();
     vertex_buffer_map_.clear();
 

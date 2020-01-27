@@ -34,7 +34,7 @@ public:
     ~RenderContextGL() override;
 
     RendererType type() const override {
-        return RendererType::Null;
+        return RendererType::OpenGL;
     }
 
     // Capabilities / customisations.
@@ -42,8 +42,8 @@ public:
     bool hasFlippedViewport() const override;
 
     // Window management. Executed on the main thread.
-    tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title,
-                                                 InputCallbacks desc) override;
+    Result<void, std::string> createWindow(u16 width, u16 height, const std::string& title,
+                                           InputCallbacks desc) override;
     void destroyWindow() override;
     void processEvents() override;
     bool isWindowClosed() const override;
@@ -58,18 +58,14 @@ public:
     void processCommandList(std::vector<RenderCommand>& command_list) override;
     bool frame(const Frame* frame) override;
 
-    // Variant walker methods. Executed on the render thread.
+    // Command queue walker methods. Executed on the render thread.
     void operator()(const cmd::CreateVertexBuffer& c);
     void operator()(const cmd::UpdateVertexBuffer& c);
     void operator()(const cmd::DeleteVertexBuffer& c);
     void operator()(const cmd::CreateIndexBuffer& c);
     void operator()(const cmd::UpdateIndexBuffer& c);
     void operator()(const cmd::DeleteIndexBuffer& c);
-    void operator()(const cmd::CreateShader& c);
-    void operator()(const cmd::DeleteShader& c);
     void operator()(const cmd::CreateProgram& c);
-    void operator()(const cmd::AttachShader& c);
-    void operator()(const cmd::LinkProgram& c);
     void operator()(const cmd::DeleteProgram& c);
     void operator()(const cmd::CreateTexture2D& c);
     void operator()(const cmd::DeleteTexture& c);
@@ -114,17 +110,14 @@ private:
     std::unordered_map<VertexBufferHandle, VertexBufferData> vertex_buffer_map_;
     std::unordered_map<IndexBufferHandle, IndexBufferData> index_buffer_map_;
 
-    // Shaders and programs.
-    struct ShaderData {
-        GLuint shader;
-        std::unordered_map<std::string, u32> uniform_remap_ids;
-    };
+    // Shaders programs.
     struct ProgramData {
         GLuint program;
-        std::unordered_map<std::string, GLint> uniform_location_map;
         std::unordered_map<std::string, u32> uniform_remap_ids;
+        std::unordered_map<u32, u32> binding_location_to_texture_unit;
+        // This is a cache of uniform locations that is built up during rendering.
+        std::unordered_map<std::string, GLint> uniform_location_map;
     };
-    std::unordered_map<ShaderHandle, ShaderData> shader_map_;
     std::unordered_map<ProgramHandle, ProgramData> program_map_;
 
     // Textures.

@@ -67,10 +67,9 @@ Renderer::~Renderer() {
     shared_render_context_.reset();
 }
 
-tl::expected<void, std::string> Renderer::init(RendererType type, u16 width, u16 height,
-                                               const std::string& title,
-                                               InputCallbacks input_callbacks,
-                                               bool use_render_thread) {
+Result<void, std::string> Renderer::init(RendererType type, u16 width, u16 height,
+                                         const std::string& title, InputCallbacks input_callbacks,
+                                         bool use_render_thread) {
 #ifdef DGA_EMSCRIPTEN
     use_render_thread = false;
 #endif
@@ -299,29 +298,10 @@ void Renderer::setIndexBuffer(TransientIndexBufferHandle handle) {
     submit_->pending_item.ib_offset = uint(tib.data - submit_->transient_ib_storage.data.data());
 }
 
-ShaderHandle Renderer::createShader(ShaderStage stage, const std::string& entry_point,
-                                    Memory data) {
-    auto handle = shader_handle_.next();
-    submitPreFrameCommand(cmd::CreateShader{handle, stage, entry_point, std::move(data)});
-    return handle;
-}
-
-void Renderer::deleteShader(ShaderHandle handle) {
-    submitPostFrameCommand(cmd::DeleteShader{handle});
-}
-
-ProgramHandle Renderer::createProgram() {
+ProgramHandle Renderer::createProgram(std::vector<ShaderStageInfo> stages) {
     auto handle = program_handle_.next();
-    submitPreFrameCommand(cmd::CreateProgram{handle});
+    submitPreFrameCommand(cmd::CreateProgram{handle, std::move(stages)});
     return handle;
-}
-
-void Renderer::attachShader(ProgramHandle program, ShaderHandle shader) {
-    submitPreFrameCommand(cmd::AttachShader{program, shader});
-}
-
-void Renderer::linkProgram(ProgramHandle program) {
-    submitPreFrameCommand(cmd::LinkProgram{program});
 }
 
 void Renderer::deleteProgram(ProgramHandle program) {
@@ -376,11 +356,14 @@ TextureHandle Renderer::createTexture2D(u16 width, u16 height, TextureFormat for
     return handle;
 }
 
-void Renderer::setTexture(TextureHandle handle, uint sampler_unit, u32 sampler_flags,
+bool Renderer::setTexture(uint binding_location, TextureHandle handle, u32 sampler_flags,
                           float max_anisotropy) {
-    assert(sampler_unit < DW_MAX_TEXTURE_SAMPLERS);
-    auto& binding = submit_->pending_item.textures[sampler_unit];
-    binding.emplace(RenderItem::TextureBinding{handle, sampler_flags, max_anisotropy});
+    if (submit_->pending_item.textures.size() == DW_MAX_TEXTURE_SAMPLERS) {
+        return false;
+    }
+    submit_->pending_item.textures.emplace_back(
+        RenderItem::TextureBinding{binding_location, handle, {sampler_flags, max_anisotropy}});
+    return true;
 }
 
 void Renderer::deleteTexture(TextureHandle handle) {

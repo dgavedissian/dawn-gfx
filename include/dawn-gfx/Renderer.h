@@ -15,7 +15,6 @@
 
 #include <dga/barrier.h>
 #include <dga/hash_combine.h>
-#include <tl/expected.hpp>
 #include <vector>
 #include <variant>
 #include <unordered_map>
@@ -234,6 +233,13 @@ enum class BlendFunc {
 };
 enum class BlendEquation { Add, Subtract, ReverseSubtract, Min, Max };
 
+// Shader stage info.
+struct ShaderStageInfo {
+    ShaderStage stage;
+    std::string entry_point;
+    Memory spirv;
+};
+
 // Render commands.
 namespace cmd {
 struct CreateVertexBuffer {
@@ -272,28 +278,9 @@ struct DeleteIndexBuffer {
     IndexBufferHandle handle;
 };
 
-struct CreateShader {
-    ShaderHandle handle;
-    ShaderStage stage;
-    std::string entry_point;
-    Memory data;
-};
-
-struct DeleteShader {
-    ShaderHandle handle;
-};
-
 struct CreateProgram {
     ProgramHandle handle;
-};
-
-struct AttachShader {
-    ProgramHandle handle;
-    ShaderHandle shader_handle;
-};
-
-struct LinkProgram {
-    ProgramHandle handle;
+    std::vector<ShaderStageInfo> stages;
 };
 
 struct DeleteProgram {
@@ -335,11 +322,7 @@ using RenderCommand =
             cmd::CreateIndexBuffer,
             cmd::UpdateIndexBuffer,
             cmd::DeleteIndexBuffer,
-            cmd::CreateShader,
-            cmd::DeleteShader,
             cmd::CreateProgram,
-            cmd::AttachShader,
-            cmd::LinkProgram,
             cmd::DeleteProgram,
             cmd::CreateTexture2D,
             cmd::DeleteTexture,
@@ -361,11 +344,13 @@ struct RenderItem {
     };
 
     struct TextureBinding {
+        uint binding_location;
         TextureHandle handle;
         SamplerInfo sampler_info;
 
         bool operator==(const TextureBinding& other) const {
-            return handle == other.handle && sampler_info == other.sampler_info;
+            return binding_location == other.binding_location && handle == other.handle &&
+                   sampler_info == other.sampler_info;
         }
     };
 
@@ -380,7 +365,7 @@ struct RenderItem {
     // Shader program and parameters.
     std::optional<ProgramHandle> program;
     std::unordered_map<std::string, UniformData> uniforms;
-    std::array<std::optional<TextureBinding>, DW_MAX_TEXTURE_SAMPLERS> textures;
+    std::vector<TextureBinding> textures;
 
     // Scissor.
     bool scissor_enabled = false;
@@ -475,9 +460,9 @@ public:
     ~Renderer();
 
     /// Initialise.
-    tl::expected<void, std::string> init(RendererType type, u16 width, u16 height,
-                                         const std::string& title, InputCallbacks input_callbacks,
-                                         bool use_render_thread);
+    Result<void, std::string> init(RendererType type, u16 width, u16 height,
+                                   const std::string& title, InputCallbacks input_callbacks,
+                                   bool use_render_thread);
 
     /// Adjusts a RH D3D projection matrix to be compatible with the underlying renderer type.
     /// Does nothing unless init() has been called.
@@ -512,14 +497,8 @@ public:
     byte* getTransientIndexBufferData(TransientIndexBufferHandle handle);
     void setIndexBuffer(TransientIndexBufferHandle handle);
 
-    /// Create shader.
-    ShaderHandle createShader(ShaderStage type, const std::string& entry_point, Memory data);
-    void deleteShader(ShaderHandle handle);
-
     /// Create program.
-    ProgramHandle createProgram();
-    void attachShader(ProgramHandle program, ShaderHandle shader);
-    void linkProgram(ProgramHandle program);
+    ProgramHandle createProgram(std::vector<ShaderStageInfo> stages);
     void deleteProgram(ProgramHandle program);
 
     /// Uniforms.
@@ -535,10 +514,11 @@ public:
     // Create texture.
     TextureHandle createTexture2D(u16 width, u16 height, TextureFormat format, Memory data,
                                   bool generate_mipmaps = true, bool framebuffer_usage = false);
-    void setTexture(TextureHandle handle, uint sampler_unit,
-                    u32 sampler_flags = SamplerFlag::Default, float max_anisotropy = 0.0f);
     // get texture information.
     void deleteTexture(TextureHandle handle);
+    // Binds a texture to a binding location defined in the current shader program.
+    bool setTexture(uint binding_location, TextureHandle handle,
+                    u32 sampler_flags = SamplerFlag::Default, float max_anisotropy = 0.0f);
 
     // Framebuffer.
     FrameBufferHandle createFrameBuffer(u16 width, u16 height, TextureFormat format);

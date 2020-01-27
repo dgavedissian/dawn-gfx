@@ -120,7 +120,8 @@ struct IndexBufferVK {
 struct ShaderVK {
     vk::ShaderModule module;
     ShaderStage stage;
-    std::string entry_point;
+    // We use a raw pointer here, because vk::PipelineShaderStageCreateInfo needs a stable pointer.
+    std::unique_ptr<char[]> entry_point;
 
     // Reflection data.
     struct StructLayout {
@@ -308,8 +309,8 @@ public:
     bool hasFlippedViewport() const override;
 
     // Window management. Executed on the main thread.
-    tl::expected<void, std::string> createWindow(u16 width, u16 height, const std::string& title,
-                                                 InputCallbacks input_callbacks) override;
+    Result<void, std::string> createWindow(u16 width, u16 height, const std::string& title,
+                                           InputCallbacks input_callbacks) override;
     void destroyWindow() override;
     void processEvents() override;
     bool isWindowClosed() const override;
@@ -331,11 +332,7 @@ public:
     void operator()(const cmd::CreateIndexBuffer& c);
     void operator()(const cmd::UpdateIndexBuffer& c);
     void operator()(const cmd::DeleteIndexBuffer& c);
-    void operator()(const cmd::CreateShader& c);
-    void operator()(const cmd::DeleteShader& c);
     void operator()(const cmd::CreateProgram& c);
-    void operator()(const cmd::AttachShader& c);
-    void operator()(const cmd::LinkProgram& c);
     void operator()(const cmd::DeleteProgram& c);
     void operator()(const cmd::CreateTexture2D& c);
     void operator()(const cmd::DeleteTexture& c);
@@ -398,7 +395,6 @@ private:
     // Resource maps.
     std::unordered_map<VertexBufferHandle, VertexBufferVK> vertex_buffer_map_;
     std::unordered_map<IndexBufferHandle, IndexBufferVK> index_buffer_map_;
-    std::unordered_map<ShaderHandle, ShaderVK> shader_map_;
     std::unordered_map<ProgramHandle, ProgramVK> program_map_;
     std::unordered_map<TextureHandle, TextureVK> texture_map_;
     std::unordered_map<FrameBufferHandle, FramebufferVK> framebuffer_map_;

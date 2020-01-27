@@ -17,8 +17,8 @@ bool RenderContextNull::hasFlippedViewport() const {
     return false;
 }
 
-tl::expected<void, std::string> RenderContextNull::createWindow(u16, u16, const std::string&,
-                                                                InputCallbacks) {
+Result<void, std::string> RenderContextNull::createWindow(u16, u16, const std::string&,
+                                                          InputCallbacks) {
     return {};
 }
 

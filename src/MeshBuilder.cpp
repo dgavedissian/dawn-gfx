@@ -6,7 +6,8 @@
 
 namespace dw {
 namespace gfx {
-MeshBuilder::MeshBuilder(Renderer& r) : r_(r), with_normals_(false), with_texcoords_(false) {
+MeshBuilder::MeshBuilder(Renderer& r)
+    : r_(r), with_normals_(false), with_texcoords_(false), with_tangents_(false) {
 }
 
 MeshBuilder& MeshBuilder::normals(bool normals) {

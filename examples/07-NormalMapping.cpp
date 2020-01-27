@@ -17,10 +17,7 @@ public:
                                    util::media("shaders/cube_textured_normal_map.vert"));
         auto fs = util::loadShader(r, ShaderStage::Fragment,
                                    util::media("shaders/cube_textured_normal_map.frag"));
-        program_ = r.createProgram();
-        r.attachShader(program_, vs);
-        r.attachShader(program_, fs);
-        r.linkProgram(program_);
+        program_ = r.createProgram({vs, fs});
 
         // Load texture.
         surface_texture_ = util::loadTexture(r, util::media("stone_wall.jpg"));
@@ -45,8 +42,8 @@ public:
         r.setUniform("light_direction", Vec3{1.0f, 1.0f, 1.0f}.Normalized());
 
         // Set vertex buffer and submit.
-        r.setTexture(surface_texture_, 0);
-        r.setTexture(normal_texture_, 1);
+        r.setTexture(2, surface_texture_);
+        r.setTexture(3, normal_texture_);
         r.setVertexBuffer(box_.vb);
         r.setIndexBuffer(box_.ib);
         r.submit(program_, box_.index_count);

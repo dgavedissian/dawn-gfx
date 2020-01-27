@@ -16,22 +16,11 @@ endif()
 # Pinned dependencies.
 FetchContent_Declare(
     base
-    URL https://github.com/dgavedissian/base/archive/aa1cd34a84a22fc0becd4ed4eb5cd022b8685cfe.zip
-    URL_MD5 3584045bab754ed8e8cf163bc9b2683e
+    URL https://github.com/dgavedissian/base/archive/36453e75da8eceef1d32a3a2a299526cf9e79dbb.zip
+    URL_MD5 cc35ded01a56e7afec9748881f4aa4fb
 )
 FetchContent_MakeAvailable(base)
 make_patch_tool_available()
-
-FetchContent_Declare(
-    expected
-    URL https://github.com/TartanLlama/expected/archive/fd96e4545cc50ddfbbead177ef6594b12b210d62.zip
-    URL_MD5 8e0769ee95b95f4aa58d5a37d51d9bad
-)
-if(NOT expected_POPULATED)
-    FetchContent_Populate(expected)
-    add_library(expected INTERFACE)
-    target_include_directories(expected INTERFACE ${expected_SOURCE_DIR}/include)
-endif()
 
 FetchContent_declare(
     fmt
@@ -154,7 +143,7 @@ add_library(dawn-gfx
     src/VertexDecl.cpp)
 target_include_directories(dawn-gfx PUBLIC include)
 target_include_directories(dawn-gfx PRIVATE include/dawn-gfx src)
-target_link_libraries(dawn-gfx dga-base expected fmt glad glfw glslang SPIRV MathGeoLib spirv-cross-glsl Vulkan::Vulkan)
+target_link_libraries(dawn-gfx dga-base fmt glad glfw glslang SPIRV MathGeoLib spirv-cross-glsl Vulkan::Vulkan)
 target_compile_features(dawn-gfx PUBLIC cxx_std_17)
 set_target_properties(dawn-gfx PROPERTIES CXX_EXTENSIONS OFF)
 if(MSVC)
