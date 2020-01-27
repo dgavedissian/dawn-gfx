@@ -14,10 +14,7 @@ public:
         auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("shaders/cube_solid.vert"));
         auto fs =
             util::loadShader(r, ShaderStage::Fragment, util::media("shaders/cube_solid.frag"));
-        program_ = r.createProgram();
-        r.attachShader(program_, vs);
-        r.attachShader(program_, fs);
-        r.linkProgram(program_);
+        program_ = r.createProgram({vs, fs});
 
         // Create box.
         box_ = MeshBuilder{r}.normals(true).texcoords(true).createBox(10.0f);

@@ -16,10 +16,7 @@ public:
             util::loadShader(r, ShaderStage::Vertex, util::media("shaders/basic_colour_3d.vert"));
         auto fs =
             util::loadShader(r, ShaderStage::Fragment, util::media("shaders/basic_colour.frag"));
-        program_ = r.createProgram();
-        r.attachShader(program_, vs);
-        r.attachShader(program_, fs);
-        r.linkProgram(program_);
+        program_ = r.createProgram({vs, fs});
 
         float vertices[] = {
             -0.5f, 0.5f,  1.0f, 0.0f, 0.0f,  // Top-left

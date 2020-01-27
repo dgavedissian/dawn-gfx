@@ -15,10 +15,7 @@ public:
             util::loadShader(r, ShaderStage::Vertex, util::media("shaders/basic_colour.vert"));
         auto fs =
             util::loadShader(r, ShaderStage::Fragment, util::media("shaders/basic_colour.frag"));
-        program_ = r.createProgram();
-        r.attachShader(program_, vs);
-        r.attachShader(program_, fs);
-        r.linkProgram(program_);
+        program_ = r.createProgram({vs, fs});
 
         struct Vertex {
             float x;

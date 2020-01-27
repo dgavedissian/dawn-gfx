@@ -17,10 +17,7 @@ public:
         auto vs = util::loadShader(r, ShaderStage::Vertex, util::media("shaders/cube_solid.vert"));
         auto fs =
             util::loadShader(r, ShaderStage::Fragment, util::media("shaders/cube_solid.frag"));
-        box_program_ = r.createProgram();
-        r.attachShader(box_program_, vs);
-        r.attachShader(box_program_, fs);
-        r.linkProgram(box_program_);
+        box_program_ = r.createProgram({vs, fs});
 
         // Create box.
         box_ = MeshBuilder{r}.normals(true).texcoords(true).createBox(10.0f);
@@ -33,10 +30,7 @@ public:
             util::loadShader(r, ShaderStage::Vertex, util::media("shaders/post_process.vert"));
         auto pp_fs =
             util::loadShader(r, ShaderStage::Fragment, util::media("shaders/post_process.frag"));
-        post_process_ = r.createProgram();
-        r.attachShader(post_process_, pp_vs);
-        r.attachShader(post_process_, pp_fs);
-        r.linkProgram(post_process_);
+        post_process_ = r.createProgram({pp_vs, pp_fs});
     }
 
     void render(float dt) override {

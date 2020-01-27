@@ -17,10 +17,7 @@ public:
                                    util::media("shaders/cube_textured_normal_map.vert"));
         auto fs = util::loadShader(r, ShaderStage::Fragment,
                                    util::media("shaders/cube_textured_normal_map.frag"));
-        program_ = r.createProgram();
-        r.attachShader(program_, vs);
-        r.attachShader(program_, fs);
-        r.linkProgram(program_);
+        program_ = r.createProgram({vs, fs});
 
         // Load texture.
         surface_texture_ = util::loadTexture(r, util::media("stone_wall.jpg"));
